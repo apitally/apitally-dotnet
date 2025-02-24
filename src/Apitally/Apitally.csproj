@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0;net7.0;net8.0;net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Version>0.1.0</Version>
+    <Authors>Simon Gurcke</Authors>
+    <Company>Apitally</Company>
+    <Description>Client library for Apitally, a simple API monitoring and analytics tool for REST
+      APIs built with ASP.NET Core.</Description>
+    <PackageProjectUrl>https://github.com/apitally/apitally-dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/apitally/apitally-dotnet</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>api;monitoring;analytics;aspnetcore</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+  </ItemGroup>
+
+</Project>
