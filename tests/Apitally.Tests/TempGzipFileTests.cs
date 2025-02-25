@@ -1,9 +1,9 @@
-namespace Apitally.Tests.Utility;
+namespace Apitally.Tests;
 
 using System;
 using System.IO;
 using System.Text;
-using Apitally.Utility;
+using Apitally;
 using Xunit;
 
 public class TempGzipFileTests : IDisposable
@@ -17,7 +17,7 @@ public class TempGzipFileTests : IDisposable
 
     public void Dispose()
     {
-        tempFile?.Dispose();
+        tempFile.Dispose();
     }
 
     [Fact]

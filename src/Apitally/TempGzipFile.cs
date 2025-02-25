@@ -1,4 +1,4 @@
-namespace Apitally.Utility;
+namespace Apitally;
 
 using System;
 using System.Collections.Generic;
@@ -43,9 +43,7 @@ public class TempGzipFile : IDisposable
 
     public Stream GetInputStream()
     {
-        // Ensure the current stream is flushed and closed before opening for reading
-        _gzipStream.Close();
-        _fileStream.Close();
+        Dispose();
         return new FileStream(_path, FileMode.Open, FileAccess.Read);
     }
 
@@ -95,10 +93,9 @@ public class TempGzipFile : IDisposable
         {
             if (disposing)
             {
-                _gzipStream?.Dispose();
-                _fileStream?.Dispose();
+                _gzipStream.Dispose();
+                _fileStream.Dispose();
             }
-
             _disposed = true;
         }
     }
