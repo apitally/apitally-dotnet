@@ -2,8 +2,10 @@ namespace Apitally;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Routing;
 
 public static class ApitallyExtensions
 {
@@ -28,15 +30,32 @@ public static class ApitallyExtensions
             services.PostConfigure(configureOptions);
         }
 
-        services.AddHostedService<ApitallyClient>();
-        services.AddSingleton(sp => sp.GetRequiredService<IHostedService>() as ApitallyClient ??
-            throw new InvalidOperationException("Failed to resolve ApitallyClient"));
+        // Ensure MVC services are registered
+        services.AddControllers();
 
+        services.AddSingleton<ApitallyClient>();
+        services.AddHostedService(sp => sp.GetRequiredService<ApitallyClient>());
         return services;
     }
 
     public static IApplicationBuilder UseApitally(this IApplicationBuilder builder)
     {
+        // Defer path collection until after application has fully started
+        builder.ApplicationServices.GetRequiredService<IHostApplicationLifetime>().ApplicationStarted.Register(() =>
+        {
+            var client = builder.ApplicationServices.GetRequiredService<ApitallyClient>();
+            var actionProvider = builder.ApplicationServices.GetRequiredService<IActionDescriptorCollectionProvider>();
+            var endpointSources = builder.ApplicationServices.GetServices<EndpointDataSource>();
+            var paths = ApitallyUtils.GetPaths(actionProvider, endpointSources);
+            var versions = ApitallyUtils.GetVersions();
+
+            client.SetStartupData(
+                paths: paths,
+                versions: versions,
+                client: "dotnet:aspnetcore"
+            );
+        });
+
         return builder.UseMiddleware<ApitallyMiddleware>();
     }
 }

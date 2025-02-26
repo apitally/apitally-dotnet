@@ -24,7 +24,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="[6.0.0,10.0.0)"
-      PrivateAssets="All" />
+      PrivateAssets="Build;Analyzers" />
+    <PackageReference Include="Polly" Version="[7.2.2,9.0.0)" PrivateAssets="Build;Analyzers" />
   </ItemGroup>
 
   <ItemGroup>

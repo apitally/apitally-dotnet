@@ -16,8 +16,7 @@ using Polly.Extensions.Http;
 
 public class ApitallyClient(
     IOptions<ApitallyOptions> options,
-    ILogger<ApitallyClient> logger,
-    IHttpClientFactory? httpClientFactory = null) : BackgroundService, IDisposable
+    ILogger<ApitallyClient> logger) : BackgroundService, IDisposable
 {
     public enum HubRequestStatus
     {
@@ -38,13 +37,14 @@ public class ApitallyClient(
     private readonly string _clientId = options.Value.ClientId;
     private readonly string _env = options.Value.Env;
     private readonly Guid _instanceUuid = Guid.NewGuid();
-    private readonly HttpClient _httpClient = httpClientFactory?.CreateClient("ApitallyClient") ?? CreateHttpClient();
+    private readonly HttpClient _httpClient = CreateHttpClient();
     private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = CreateRetryPolicy();
     private readonly ConcurrentQueue<SyncData> _syncDataQueue = new();
     private readonly Random _random = new();
     private readonly ILogger<ApitallyClient> _logger = logger;
 
     private StartupData? _startupData;
+    private bool _invalidClientId = false;
     private bool _startupDataSent = false;
     private bool _initialSyncPeriod = true;
     private readonly DateTime _initialSyncEndTime = DateTime.UtcNow.AddSeconds(InitialPeriodSeconds);
@@ -164,6 +164,7 @@ public class ApitallyClient(
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 _logger.LogError("Invalid Apitally client ID: {ClientId}", _clientId);
+                _invalidClientId = true;
                 await StopAsync(CancellationToken.None);
                 return HubRequestStatus.InvalidClientId;
             }
@@ -219,7 +220,10 @@ public class ApitallyClient(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        await SyncAsync(cancellationToken);
+        if (!_invalidClientId)
+        {
+            await SyncAsync(cancellationToken);
+        }
         await base.StopAsync(cancellationToken);
     }
 }
