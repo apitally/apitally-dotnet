@@ -8,32 +8,42 @@ using Xunit;
 
 public class TempGzipFileTests : IDisposable
 {
-    private TempGzipFile tempFile;
+    private readonly TempGzipFile _tempFile;
 
     public TempGzipFileTests()
     {
-        tempFile = new TempGzipFile();
+        _tempFile = new TempGzipFile();
     }
 
     public void Dispose()
     {
-        tempFile.Dispose();
+        _tempFile.Dispose();
     }
 
     [Fact]
-    public void TestEndToEnd()
+    public void WriteLine_ShouldWriteCompressed()
     {
-        Assert.Equal(36, tempFile.Uuid.ToString().Length);
-        Assert.True(File.Exists(tempFile.Path));
-        Assert.Equal(0, tempFile.Size);
+        Assert.Equal(36, _tempFile.Uuid.ToString().Length);
+        Assert.True(File.Exists(_tempFile.Path));
+        Assert.Equal(0, _tempFile.Size);
 
-        tempFile.WriteLine(Encoding.UTF8.GetBytes("test1"));
-        tempFile.WriteLine(Encoding.UTF8.GetBytes("test2"));
-        Assert.True(tempFile.Size > 0);
+        _tempFile.WriteLine(Encoding.UTF8.GetBytes("test1"));
+        _tempFile.WriteLine(Encoding.UTF8.GetBytes("test2"));
+        Assert.True(_tempFile.Size > 0);
 
-        var lines = tempFile.ReadDecompressedLines();
+        var lines = _tempFile.ReadDecompressedLines();
         Assert.Equal(2, lines.Count);
         Assert.Equal("test1", lines[0]);
         Assert.Equal("test2", lines[1]);
+    }
+
+    [Fact]
+    public void Delete_ShouldRemoveFile()
+    {
+        string filePath = _tempFile.Path;
+        Assert.True(File.Exists(filePath));
+
+        _tempFile.Delete();
+        Assert.False(File.Exists(filePath));
     }
 }

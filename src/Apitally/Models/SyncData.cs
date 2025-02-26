@@ -28,13 +28,13 @@ public class Requests
     public long ResponseSizeSum { get; set; }
 
     [JsonPropertyName("response_times")]
-    public Dictionary<int, int> ResponseTimes { get; set; } = [];
+    public Dictionary<int, int> ResponseTimes { get; set; } = new();
 
     [JsonPropertyName("request_sizes")]
-    public Dictionary<int, int> RequestSizes { get; set; } = [];
+    public Dictionary<int, int> RequestSizes { get; set; } = new();
 
     [JsonPropertyName("response_sizes")]
-    public Dictionary<int, int> ResponseSizes { get; set; } = [];
+    public Dictionary<int, int> ResponseSizes { get; set; } = new();
 }
 
 public class ValidationErrors
@@ -87,14 +87,33 @@ public class ServerErrors
 
 public class Consumer
 {
+    private string _identifier = string.Empty;
+    private string? _name;
+    private string? _group;
+
     [JsonPropertyName("identifier")]
-    public string Identifier { get; set; } = string.Empty;
+    public string Identifier
+    {
+        get => _identifier;
+        set => _identifier = TruncateString(value, 128) ?? string.Empty;
+    }
 
     [JsonPropertyName("name")]
-    public string? Name { get; set; }
+    public string? Name
+    {
+        get => _name;
+        set => _name = TruncateString(value, 64);
+    }
 
     [JsonPropertyName("group")]
-    public string? Group { get; set; }
+    public string? Group
+    {
+        get => _group;
+        set => _group = TruncateString(value, 64);
+    }
+
+    private static string? TruncateString(string? value, int maxLength) =>
+        value?.Trim()?.Substring(0, Math.Min(value.Trim().Length, maxLength));
 }
 
 public class SyncData
@@ -109,16 +128,16 @@ public class SyncData
     public Guid MessageUuid { get; set; } = Guid.NewGuid();
 
     [JsonPropertyName("requests")]
-    public List<Requests> Requests { get; set; } = [];
+    public List<Requests> Requests { get; set; } = new();
 
     [JsonPropertyName("validation_errors")]
-    public List<ValidationErrors> ValidationErrors { get; set; } = [];
+    public List<ValidationErrors> ValidationErrors { get; set; } = new();
 
     [JsonPropertyName("server_errors")]
-    public List<ServerErrors> ServerErrors { get; set; } = [];
+    public List<ServerErrors> ServerErrors { get; set; } = new();
 
     [JsonPropertyName("consumers")]
-    public List<Consumer> Consumers { get; set; } = [];
+    public List<Consumer> Consumers { get; set; } = new();
 
     [JsonIgnore]
     public double AgeInSeconds => DateTimeOffset.UtcNow.ToUnixTimeSeconds() - Timestamp;

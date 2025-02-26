@@ -22,10 +22,10 @@ public class StartupData
     public Guid MessageUuid { get; set; } = Guid.NewGuid();
 
     [JsonPropertyName("paths")]
-    public List<Path> Paths { get; set; } = [];
+    public List<Path> Paths { get; set; } = new();
 
     [JsonPropertyName("versions")]
-    public Dictionary<string, string> Versions { get; set; } = [];
+    public Dictionary<string, string> Versions { get; set; } = new();
 
     [JsonPropertyName("client")]
     public string Client { get; set; } = string.Empty;
