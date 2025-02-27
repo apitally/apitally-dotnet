@@ -1,8 +1,8 @@
 namespace Apitally;
 
 using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -35,7 +35,7 @@ public class ServerErrorCounter
             Path = path,
             Type = exception.GetType().Name,
             Message = exception.Message,
-            StackTrace = exception.StackTrace ?? string.Empty
+            StackTrace = exception.StackTrace ?? string.Empty,
         };
 
         string key = GetKey(error);
@@ -58,7 +58,7 @@ public class ServerErrorCounter
                     Type = error.Type,
                     Message = TruncateMessage(error.Message),
                     StackTrace = TruncateStackTrace(error.StackTrace),
-                    ErrorCount = entry.Value
+                    ErrorCount = entry.Value,
                 };
             })
             .ToList();
@@ -72,13 +72,15 @@ public class ServerErrorCounter
 
     private string GetKey(ServerErrorDetails error)
     {
-        string hashInput = string.Join("|",
+        string hashInput = string.Join(
+            "|",
             error.Consumer,
             error.Method,
             error.Path,
             error.Type,
             error.Message,
-            error.StackTrace);
+            error.StackTrace
+        );
 
         using var md5 = MD5.Create();
         byte[] hashBytes = md5.ComputeHash(Encoding.UTF8.GetBytes(hashInput));

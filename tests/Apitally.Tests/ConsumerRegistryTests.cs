@@ -1,7 +1,7 @@
 namespace Apitally.Tests;
 
-using Xunit;
 using Apitally.Models;
+using Xunit;
 
 public class ConsumerRegistryTests
 {
@@ -17,7 +17,12 @@ public class ConsumerRegistryTests
     {
         var consumer = ConsumerRegistry.ConsumerFromObject("test");
         _consumerRegistry.AddOrUpdateConsumer(consumer);
-        consumer = new Consumer { Identifier = "test", Name = "Test 1", Group = "Group 1" };
+        consumer = new Consumer
+        {
+            Identifier = "test",
+            Name = "Test 1",
+            Group = "Group 1",
+        };
         _consumerRegistry.AddOrUpdateConsumer(consumer);
         consumer = new Consumer { Identifier = "test", Group = "Group 2" };
         _consumerRegistry.AddOrUpdateConsumer(consumer);
@@ -30,7 +35,12 @@ public class ConsumerRegistryTests
         Assert.Equal("Test 2", consumers[0].Name);
         Assert.Equal("Group 2", consumers[0].Group);
 
-        consumer = new Consumer { Identifier = "test", Name = "Test 2", Group = "Group 2" };
+        consumer = new Consumer
+        {
+            Identifier = "test",
+            Name = "Test 2",
+            Group = "Group 2",
+        };
         _consumerRegistry.AddOrUpdateConsumer(consumer);
         consumers = _consumerRegistry.GetAndResetConsumers();
         Assert.Empty(consumers);
@@ -44,7 +54,14 @@ public class ConsumerRegistryTests
         Assert.Null(consumer?.Name);
         Assert.Null(consumer?.Group);
 
-        consumer = ConsumerRegistry.ConsumerFromObject(new Consumer { Identifier = "test", Name = "Test 1", Group = "Group 1" });
+        consumer = ConsumerRegistry.ConsumerFromObject(
+            new Consumer
+            {
+                Identifier = "test",
+                Name = "Test 1",
+                Group = "Group 1",
+            }
+        );
         Assert.Equal("test", consumer?.Identifier);
         Assert.Equal("Test 1", consumer?.Name);
         Assert.Equal("Group 1", consumer?.Group);

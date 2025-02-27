@@ -1,8 +1,8 @@
 namespace Apitally;
 
 using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -23,7 +23,14 @@ public class ValidationErrorCounter
         public string Type { get; set; } = string.Empty;
     }
 
-    public void AddValidationError(string consumer, string method, string path, string[] location, string message, string type)
+    public void AddValidationError(
+        string consumer,
+        string method,
+        string path,
+        string[] location,
+        string message,
+        string type
+    )
     {
         var error = new ValidationErrorDetails
         {
@@ -32,7 +39,7 @@ public class ValidationErrorCounter
             Path = path,
             Location = location,
             Message = message.Trim(),
-            Type = type
+            Type = type,
         };
 
         string key = GetKey(error);
@@ -55,7 +62,7 @@ public class ValidationErrorCounter
                     Location = error.Location,
                     Message = error.Message,
                     Type = error.Type,
-                    ErrorCount = entry.Value
+                    ErrorCount = entry.Value,
                 };
             })
             .ToList();
@@ -69,13 +76,15 @@ public class ValidationErrorCounter
 
     private string GetKey(ValidationErrorDetails error)
     {
-        string hashInput = string.Join("|",
+        string hashInput = string.Join(
+            "|",
             error.Consumer,
             error.Method.ToUpper(),
             error.Path,
             string.Join(".", error.Location),
             error.Message,
-            error.Type);
+            error.Type
+        );
 
         using var md5 = MD5.Create();
         byte[] hashBytes = md5.ComputeHash(Encoding.UTF8.GetBytes(hashInput));

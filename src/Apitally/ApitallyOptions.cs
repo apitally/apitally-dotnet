@@ -5,12 +5,16 @@ using System.ComponentModel.DataAnnotations;
 public class ApitallyOptions
 {
     [Required]
-    [RegularExpression(@"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-        ErrorMessage = "Client ID must be a valid UUID")]
+    [RegularExpression(
+        @"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        ErrorMessage = "Client ID must be a valid UUID"
+    )]
     public string ClientId { get; set; } = string.Empty;
 
-    [RegularExpression(@"^[\w-]{1,32}$",
-        ErrorMessage = "Env must be 1-32 characters long and contain only word characters and hyphens")]
+    [RegularExpression(
+        @"^[\w-]{1,32}$",
+        ErrorMessage = "Env must be 1-32 characters long and contain only word characters and hyphens"
+    )]
     public string Env { get; set; } = "default";
 
     public RequestLoggingOptions RequestLogging { get; set; } = new RequestLoggingOptions();

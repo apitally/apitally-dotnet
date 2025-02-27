@@ -16,7 +16,9 @@ using Polly.Extensions.Http;
 
 public class ApitallyClient(
     IOptions<ApitallyOptions> options,
-    ILogger<ApitallyClient> logger) : BackgroundService, IDisposable
+    RequestLogger requestLogger,
+    ILogger<ApitallyClient> logger
+) : BackgroundService, IDisposable
 {
     public enum HubRequestStatus
     {
@@ -24,7 +26,7 @@ public class ApitallyClient(
         ValidationError,
         InvalidClientId,
         PaymentRequired,
-        RetryableError
+        RetryableError,
     }
 
     private const int SyncIntervalSeconds = 60;
@@ -32,34 +34,36 @@ public class ApitallyClient(
     private const int InitialPeriodSeconds = 3600;
     private const int MaxQueueTimeSeconds = 3600;
     private const int RequestTimeoutSeconds = 10;
-    private static readonly string HubBaseUrl = Environment.GetEnvironmentVariable("APITALLY_HUB_BASE_URL") ?? "https://hub.apitally.io";
+    private static readonly string HubBaseUrl =
+        Environment.GetEnvironmentVariable("APITALLY_HUB_BASE_URL") ?? "https://hub.apitally.io";
 
-    private readonly string _clientId = options.Value.ClientId;
-    private readonly string _env = options.Value.Env;
     private readonly Guid _instanceUuid = Guid.NewGuid();
     private readonly HttpClient _httpClient = CreateHttpClient();
     private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = CreateRetryPolicy();
     private readonly ConcurrentQueue<SyncData> _syncDataQueue = new();
     private readonly Random _random = new();
-    private readonly ILogger<ApitallyClient> _logger = logger;
 
+    private bool _enabled = true;
     private StartupData? _startupData;
-    private bool _invalidClientId = false;
     private bool _startupDataSent = false;
     private bool _initialSyncPeriod = true;
-    private readonly DateTime _initialSyncEndTime = DateTime.UtcNow.AddSeconds(InitialPeriodSeconds);
+    private readonly DateTime _initialSyncEndTime = DateTime.UtcNow.AddSeconds(
+        InitialPeriodSeconds
+    );
 
-    public readonly RequestCounter RequestCounter = new RequestCounter();
-    public readonly ValidationErrorCounter ValidationErrorCounter = new ValidationErrorCounter();
-    public readonly ServerErrorCounter ServerErrorCounter = new ServerErrorCounter();
-    public readonly ConsumerRegistry ConsumerRegistry = new ConsumerRegistry();
+    public bool Enabled => _enabled;
+    public readonly RequestCounter RequestCounter = new();
+    public readonly ValidationErrorCounter ValidationErrorCounter = new();
+    public readonly ServerErrorCounter ServerErrorCounter = new();
+    public readonly ConsumerRegistry ConsumerRegistry = new();
+    public readonly RequestLogger RequestLogger = requestLogger;
 
     private static HttpClient CreateHttpClient()
     {
         return new HttpClient
         {
             BaseAddress = new Uri(HubBaseUrl),
-            Timeout = TimeSpan.FromSeconds(RequestTimeoutSeconds)
+            Timeout = TimeSpan.FromSeconds(RequestTimeoutSeconds),
         };
     }
 
@@ -68,12 +72,15 @@ public class ApitallyClient(
         return HttpPolicyExtensions
             .HandleTransientHttpError()
             .OrResult(msg => msg.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-            .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt - 1)));
+            .WaitAndRetryAsync(
+                3,
+                retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt - 1))
+            );
     }
 
     private string GetHubUrl(string endpoint, string query = "")
     {
-        var path = $"/v2/{_clientId}/{_env}/{endpoint}";
+        var path = $"/v2/{options.Value.ClientId}/{options.Value.Env}/{endpoint}";
         if (!string.IsNullOrEmpty(query))
         {
             path += "?" + query.TrimStart('?');
@@ -88,7 +95,7 @@ public class ApitallyClient(
             InstanceUuid = _instanceUuid,
             Paths = paths,
             Versions = versions,
-            Client = client
+            Client = client,
         };
     }
 
@@ -99,8 +106,10 @@ public class ApitallyClient(
             return;
         }
 
-        _logger.LogDebug("Sending startup data to Apitally hub");
-        var status = await SendHubRequestAsync(_httpClient.PostAsJsonAsync(GetHubUrl("startup"), _startupData, cancellationToken));
+        logger.LogDebug("Sending startup data to Apitally hub");
+        var status = await SendHubRequestAsync(
+            _httpClient.PostAsJsonAsync(GetHubUrl("startup"), _startupData, cancellationToken)
+        );
         if (status == HubRequestStatus.OK)
         {
             _startupDataSent = true;
@@ -117,7 +126,6 @@ public class ApitallyClient(
         }
     }
 
-
     private async Task SendSyncDataAsync(CancellationToken cancellationToken)
     {
         var data = new SyncData
@@ -126,7 +134,7 @@ public class ApitallyClient(
             Requests = RequestCounter.GetAndResetRequests(),
             ValidationErrors = ValidationErrorCounter.GetAndResetValidationErrors(),
             ServerErrors = ServerErrorCounter.GetAndResetServerErrors(),
-            Consumers = ConsumerRegistry.GetAndResetConsumers()
+            Consumers = ConsumerRegistry.GetAndResetConsumers(),
         };
         _syncDataQueue.Enqueue(data);
 
@@ -144,8 +152,10 @@ public class ApitallyClient(
                 await Task.Delay(100 + _random.Next(400), cancellationToken);
             }
 
-            _logger.LogDebug("Synchronizing data with Apitally hub");
-            var status = await SendHubRequestAsync(_httpClient.PostAsJsonAsync(GetHubUrl("sync"), payload, cancellationToken));
+            logger.LogDebug("Synchronizing data with Apitally hub");
+            var status = await SendHubRequestAsync(
+                _httpClient.PostAsJsonAsync(GetHubUrl("sync"), payload, cancellationToken)
+            );
             if (status == HubRequestStatus.RetryableError)
             {
                 _syncDataQueue.Enqueue(payload);
@@ -156,6 +166,51 @@ public class ApitallyClient(
         }
     }
 
+    private async Task SendLogDataAsync(CancellationToken cancellationToken)
+    {
+        TempGzipFile? logFile;
+        int i = 0;
+        while ((logFile = RequestLogger.GetFile()) != null)
+        {
+            if (i > 0)
+            {
+                await Task.Delay(100 + _random.Next(400), cancellationToken);
+            }
+
+            logger.LogDebug("Sending request log data to Apitally hub");
+            using var stream = logFile.GetInputStream();
+            var status = await SendHubRequestAsync(
+                _httpClient.PostAsync(
+                    GetHubUrl("log", $"uuid={logFile.Uuid}"),
+                    new StreamContent(stream),
+                    cancellationToken
+                )
+            );
+
+            if (status == HubRequestStatus.RetryableError)
+            {
+                RequestLogger.RetryFileLater(logFile);
+                break;
+            }
+            else if (status == HubRequestStatus.PaymentRequired)
+            {
+                RequestLogger.Clear();
+                RequestLogger.SuspendFor(TimeSpan.FromHours(1));
+                break;
+            }
+            else
+            {
+                logFile.Delete();
+            }
+
+            i++;
+            if (i >= 10)
+            {
+                break;
+            }
+        }
+    }
+
     private async Task<HubRequestStatus> SendHubRequestAsync(Task<HttpResponseMessage> requestTask)
     {
         try
@@ -163,16 +218,20 @@ public class ApitallyClient(
             var response = await _retryPolicy.ExecuteAsync(() => requestTask);
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                _logger.LogError("Invalid Apitally client ID: {ClientId}", _clientId);
-                _invalidClientId = true;
+                logger.LogError("Invalid Apitally client ID: {ClientId}", options.Value.ClientId);
+                _enabled = false;
                 await StopAsync(CancellationToken.None);
                 return HubRequestStatus.InvalidClientId;
             }
             else if (response.StatusCode == System.Net.HttpStatusCode.UnprocessableEntity)
             {
                 string content = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Received validation error from Apitally hub: {Content}", content);
+                logger.LogError("Received validation error from Apitally hub: {Content}", content);
                 return HubRequestStatus.ValidationError;
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.PaymentRequired)
+            {
+                return HubRequestStatus.PaymentRequired;
             }
             else
             {
@@ -182,7 +241,7 @@ public class ApitallyClient(
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending hub request");
+            logger.LogError(ex, "Error sending hub request");
             return HubRequestStatus.RetryableError;
         }
     }
@@ -196,10 +255,11 @@ public class ApitallyClient(
                 await SendStartupDataAsync(cancellationToken);
             }
             await SendSyncDataAsync(cancellationToken);
+            await SendLogDataAsync(cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during sync with Apitally hub");
+            logger.LogError(ex, "Error during sync with Apitally hub");
         }
     }
 
@@ -208,7 +268,9 @@ public class ApitallyClient(
         await SyncAsync(stoppingToken);
         while (!stoppingToken.IsCancellationRequested)
         {
-            int syncInterval = _initialSyncPeriod ? InitialSyncIntervalSeconds : SyncIntervalSeconds;
+            int syncInterval = _initialSyncPeriod
+                ? InitialSyncIntervalSeconds
+                : SyncIntervalSeconds;
             if (_initialSyncPeriod && DateTime.UtcNow >= _initialSyncEndTime)
             {
                 _initialSyncPeriod = false;
@@ -220,10 +282,30 @@ public class ApitallyClient(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (!_invalidClientId)
+        if (_enabled)
         {
             await SyncAsync(cancellationToken);
         }
         await base.StopAsync(cancellationToken);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            base.Dispose();
+            _httpClient.Dispose();
+        }
+    }
+
+    public override void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    ~ApitallyClient()
+    {
+        Dispose(false);
     }
 }

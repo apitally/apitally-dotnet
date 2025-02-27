@@ -50,3 +50,15 @@ public class Response : RequestResponseBase
     [JsonPropertyName("response_time")]
     public double ResponseTime { get; set; }
 }
+
+public class RequestLogItem
+{
+    [JsonPropertyName("uuid")]
+    public string Uuid { get; set; } = Guid.NewGuid().ToString();
+
+    [JsonPropertyName("request")]
+    public Request Request { get; set; } = new();
+
+    [JsonPropertyName("response")]
+    public Response Response { get; set; } = new();
+}

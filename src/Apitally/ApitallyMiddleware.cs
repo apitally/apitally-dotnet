@@ -2,10 +2,14 @@ namespace Apitally;
 
 using System.Diagnostics;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 
-public class ApitallyMiddleware(RequestDelegate next, ApitallyClient client, ILogger<ApitallyMiddleware> logger)
+public class ApitallyMiddleware(
+    RequestDelegate next,
+    ApitallyClient client,
+    ILogger<ApitallyMiddleware> logger
+)
 {
     private readonly RequestDelegate _next = next;
     private readonly ApitallyClient _client = client;
@@ -13,6 +17,12 @@ public class ApitallyMiddleware(RequestDelegate next, ApitallyClient client, ILo
 
     public async Task InvokeAsync(HttpContext context)
     {
+        if (!_client.Enabled)
+        {
+            await _next(context);
+            return;
+        }
+
         var stopwatch = Stopwatch.StartNew();
         Exception? exception = null;
 
@@ -36,8 +46,9 @@ public class ApitallyMiddleware(RequestDelegate next, ApitallyClient client, ILo
                 var statusCode = exception != null ? 500 : context.Response.StatusCode;
 
                 // Handle consumer registration
-                var consumer = context.Items.TryGetValue("ApitallyConsumer", out var consumerObj) ?
-                    ConsumerRegistry.ConsumerFromObject(consumerObj) : null;
+                var consumer = context.Items.TryGetValue("ApitallyConsumer", out var consumerObj)
+                    ? ConsumerRegistry.ConsumerFromObject(consumerObj)
+                    : null;
                 _client.ConsumerRegistry.AddOrUpdateConsumer(consumer);
                 var consumerIdentifier = consumer?.Identifier ?? "";
 

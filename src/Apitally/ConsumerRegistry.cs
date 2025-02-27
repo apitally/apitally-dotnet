@@ -15,7 +15,7 @@ public class ConsumerRegistry
             Consumer c => string.IsNullOrWhiteSpace(c.Identifier) ? null : c,
             string s => string.IsNullOrWhiteSpace(s) ? null : new Consumer { Identifier = s },
             int or long => new Consumer { Identifier = consumer.ToString()! },
-            _ => null
+            _ => null,
         };
     }
 
@@ -48,7 +48,12 @@ public class ConsumerRegistry
         }
         if (hasChanges)
         {
-            var updatedConsumer = new Consumer { Identifier = consumer.Identifier, Name = newName, Group = newGroup };
+            var updatedConsumer = new Consumer
+            {
+                Identifier = consumer.Identifier,
+                Name = newName,
+                Group = newGroup,
+            };
             _consumers[consumer.Identifier] = updatedConsumer;
             _updated.Add(consumer.Identifier);
         }
@@ -56,9 +61,7 @@ public class ConsumerRegistry
 
     public List<Consumer> GetAndResetConsumers()
     {
-        var data = _updated
-            .Select(identifier => _consumers[identifier])
-            .ToList();
+        var data = _updated.Select(identifier => _consumers[identifier]).ToList();
         _updated.Clear();
         return data;
     }

@@ -1,4 +1,7 @@
-.PHONY: test test-coverage
+.PHONY: format test test-coverage
+
+format:
+	dotnet csharpier .
 
 test:
 	dotnet test
