@@ -10,6 +10,9 @@ using Apitally.Models;
 
 public class ServerErrorCounter
 {
+    private const int MaxMessageLength = 2048;
+    private const int MaxStackTraceLength = 65536;
+
     private readonly ConcurrentDictionary<string, int> _errorCounts = new();
     private readonly ConcurrentDictionary<string, ServerErrorDetails> _errorDetails = new();
 
@@ -20,7 +23,7 @@ public class ServerErrorCounter
         public string Path { get; set; } = string.Empty;
         public string Type { get; set; } = string.Empty;
         public string Message { get; set; } = string.Empty;
-        public string StackTraceString { get; set; } = string.Empty;
+        public string StackTrace { get; set; } = string.Empty;
     }
 
     public void AddServerError(string consumer, string method, string path, Exception exception)
@@ -32,7 +35,7 @@ public class ServerErrorCounter
             Path = path,
             Type = exception.GetType().Name,
             Message = exception.Message,
-            StackTraceString = exception.StackTrace ?? string.Empty
+            StackTrace = exception.StackTrace ?? string.Empty
         };
 
         string key = GetKey(error);
@@ -53,8 +56,8 @@ public class ServerErrorCounter
                     Method = error.Method,
                     Path = error.Path,
                     Type = error.Type,
-                    Message = error.Message,
-                    StackTraceString = error.StackTraceString,
+                    Message = TruncateMessage(error.Message),
+                    StackTrace = TruncateStackTrace(error.StackTrace),
                     ErrorCount = entry.Value
                 };
             })
@@ -75,10 +78,49 @@ public class ServerErrorCounter
             error.Path,
             error.Type,
             error.Message,
-            error.StackTraceString);
+            error.StackTrace);
 
         using var md5 = MD5.Create();
         byte[] hashBytes = md5.ComputeHash(Encoding.UTF8.GetBytes(hashInput));
         return Convert.ToHexString(hashBytes).ToLower();
+    }
+
+    private static string TruncateMessage(string message)
+    {
+        message = message.Trim();
+        if (message.Length <= MaxMessageLength)
+        {
+            return message;
+        }
+
+        const string suffix = "... (truncated)";
+        var cutoff = MaxMessageLength - suffix.Length;
+        return message[..cutoff] + suffix;
+    }
+
+    private static string TruncateStackTrace(string stackTrace)
+    {
+        stackTrace = stackTrace.Trim();
+        if (stackTrace.Length <= MaxStackTraceLength)
+        {
+            return stackTrace;
+        }
+
+        const string suffix = "... (truncated) ...";
+        var cutoff = MaxStackTraceLength - suffix.Length;
+        var lines = stackTrace.Split('\n');
+        var truncatedLines = new List<string>();
+        var length = 0;
+        foreach (var line in lines)
+        {
+            if (length + line.Length + 1 > cutoff)
+            {
+                truncatedLines.Add(suffix);
+                break;
+            }
+            truncatedLines.Add(line);
+            length += line.Length + 1;
+        }
+        return string.Join('\n', truncatedLines);
     }
 }

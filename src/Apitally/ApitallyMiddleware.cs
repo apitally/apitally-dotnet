@@ -33,6 +33,7 @@ public class ApitallyMiddleware(RequestDelegate next, ApitallyClient client, ILo
                 var responseTimeMs = stopwatch.ElapsedMilliseconds;
                 var endpoint = context.GetEndpoint();
                 var routePattern = (endpoint as RouteEndpoint)?.RoutePattern.RawText;
+                var statusCode = exception != null ? 500 : context.Response.StatusCode;
 
                 // Handle consumer registration
                 var consumer = context.Items.TryGetValue("ApitallyConsumer", out var consumerObj) ?
@@ -47,28 +48,21 @@ public class ApitallyMiddleware(RequestDelegate next, ApitallyClient client, ILo
                         consumerIdentifier,
                         context.Request.Method,
                         routePattern,
-                        context.Response.StatusCode,
+                        statusCode,
                         responseTimeMs,
                         context.Request.ContentLength ?? -1,
                         context.Response.ContentLength ?? -1
                     );
 
                     // Add server error to counter
-                    if (context.Response.StatusCode == 500)
+                    if (exception != null)
                     {
-                        if (exception == null && context.Items.TryGetValue("ApitallyCapturedException", out var capturedException))
-                        {
-                            exception = capturedException as Exception;
-                        }
-                        if (exception != null)
-                        {
-                            _client.ServerErrorCounter.AddServerError(
-                                consumerIdentifier,
-                                context.Request.Method,
-                                routePattern,
-                                exception
-                            );
-                        }
+                        _client.ServerErrorCounter.AddServerError(
+                            consumerIdentifier,
+                            context.Request.Method,
+                            routePattern,
+                            exception
+                        );
                     }
                 }
             }

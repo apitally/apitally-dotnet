@@ -79,7 +79,7 @@ public class ServerErrors
     public string Message { get; set; } = string.Empty;
 
     [JsonPropertyName("traceback")]
-    public string StackTraceString { get; set; } = string.Empty;
+    public string StackTrace { get; set; } = string.Empty;
 
     [JsonPropertyName("error_count")]
     public int ErrorCount { get; set; }
