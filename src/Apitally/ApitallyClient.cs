@@ -168,6 +168,7 @@ public class ApitallyClient(
 
     private async Task SendLogDataAsync(CancellationToken cancellationToken)
     {
+        RequestLogger.RotateFile();
         TempGzipFile? logFile;
         int i = 0;
         while ((logFile = RequestLogger.GetFile()) != null)

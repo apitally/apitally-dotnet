@@ -42,8 +42,8 @@ public static class ApitallyExtensions
         // Register RequestLogger and ApitallyClient
         services.AddSingleton<RequestLogger>();
         services.AddSingleton<ApitallyClient>();
-        services.AddHostedService<ApitallyClient>();
-        services.AddHostedService<RequestLogger>();
+        services.AddHostedService(sp => sp.GetRequiredService<ApitallyClient>());
+        services.AddHostedService(sp => sp.GetRequiredService<RequestLogger>());
 
         return services;
     }

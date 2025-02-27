@@ -1,6 +1,7 @@
 namespace Apitally;
 
 using System.Collections.Concurrent;
+using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -21,7 +22,11 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
     private static readonly byte[] BodyTooLarge = Encoding.UTF8.GetBytes("<body too large>");
     private static readonly byte[] BodyMasked = Encoding.UTF8.GetBytes("<masked>");
     private const string Masked = "******";
-    private static readonly string[] AllowedContentTypes = ["application/json", "text/plain"];
+    private static readonly string[] AllowedContentTypes =
+    [
+        MediaTypeNames.Application.Json,
+        MediaTypeNames.Text.Plain,
+    ];
     private static readonly string[] ExcludePathPatterns =
     [
         "/_?healthz?$",
@@ -220,7 +225,7 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
         _files.Enqueue(file);
     }
 
-    private void RotateFile()
+    public void RotateFile()
     {
         lock (_lock)
         {
@@ -235,7 +240,6 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
 
     private void Maintain()
     {
-        logger.LogDebug("Maintaining request logger");
         WriteToFile();
 
         if (_currentFile != null && _currentFile.Size > MaxFileSize)
