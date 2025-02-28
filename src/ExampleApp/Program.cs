@@ -2,6 +2,13 @@ using Apitally;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApitally();
+builder.Services.Configure<ApitallyOptions>(options =>
+{
+    options.RequestLogging.ShouldExclude = (request, response) =>
+    {
+        return false;
+    };
+});
 
 var app = builder.Build();
 app.UseApitally();

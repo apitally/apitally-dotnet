@@ -1,6 +1,7 @@
 namespace Apitally;
 
 using System.ComponentModel.DataAnnotations;
+using Apitally.Models;
 
 public class ApitallyOptions
 {
@@ -28,7 +29,26 @@ public class RequestLoggingOptions
     public bool IncludeRequestBody { get; set; } = false;
     public bool IncludeResponseHeaders { get; set; } = true;
     public bool IncludeResponseBody { get; set; } = false;
-    public List<string> QueryParamMaskPatterns { get; set; } = new();
-    public List<string> HeaderMaskPatterns { get; set; } = new();
-    public List<string> PathExcludePatterns { get; set; } = new();
+    public List<string> QueryParamMaskPatterns { get; set; } = [];
+    public List<string> HeaderMaskPatterns { get; set; } = [];
+    public List<string> PathExcludePatterns { get; set; } = [];
+
+    /// <summary>
+    /// Function to mask sensitive data in the request body.
+    /// Return null to mask the whole body.
+    /// </summary>
+    public Func<Request, byte[]?> MaskRequestBody { get; set; } = request => request.Body;
+
+    /// <summary>
+    /// Function to mask sensitive data in the response body.
+    /// Return null to mask the whole body.
+    /// </summary>
+    public Func<Request, Response, byte[]?> MaskResponseBody { get; set; } =
+        (request, response) => response.Body;
+
+    /// <summary>
+    /// Function to determine whether a request should be excluded from logging.
+    /// Return true to exclude the request.
+    /// </summary>
+    public Func<Request, Response, bool> ShouldExclude { get; set; } = (request, response) => false;
 }

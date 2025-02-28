@@ -120,7 +120,11 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
         try
         {
             var userAgent = GetHeaderValue(request.Headers, "user-agent");
-            if (ShouldExcludePath(request.Path) || ShouldExcludeUserAgent(userAgent))
+            if (
+                ShouldExcludePath(request.Path)
+                || ShouldExcludeUserAgent(userAgent)
+                || requestLoggingOptions.ShouldExclude(request, response)
+            )
             {
                 return;
             }
@@ -164,6 +168,14 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
                 {
                     request.Body = BodyTooLarge;
                 }
+                else
+                {
+                    request.Body = requestLoggingOptions.MaskRequestBody(request) ?? BodyMasked;
+                    if (request.Body.Length > MaxBodySize)
+                    {
+                        request.Body = BodyTooLarge;
+                    }
+                }
             }
 
             // Process response body
@@ -179,6 +191,15 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
                 if (response.Body.Length > MaxBodySize)
                 {
                     response.Body = BodyTooLarge;
+                }
+                else
+                {
+                    response.Body =
+                        requestLoggingOptions.MaskResponseBody(request, response) ?? BodyMasked;
+                    if (response.Body.Length > MaxBodySize)
+                    {
+                        response.Body = BodyTooLarge;
+                    }
                 }
             }
 
