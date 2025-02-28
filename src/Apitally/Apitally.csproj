@@ -10,7 +10,7 @@
     <Company>Apitally</Company>
     <Description>Client library for Apitally, a simple API monitoring and analytics tool for REST
       APIs built with ASP.NET Core.</Description>
-    <PackageProjectUrl>https://github.com/apitally/apitally-dotnet</PackageProjectUrl>
+    <PackageProjectUrl>https://apitally.io</PackageProjectUrl>
     <RepositoryUrl>https://github.com/apitally/apitally-dotnet</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
