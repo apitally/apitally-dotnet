@@ -43,7 +43,6 @@ public class ApitallyClient(
     private readonly ConcurrentQueue<SyncData> _syncDataQueue = new();
     private readonly Random _random = new();
 
-    private bool _enabled = true;
     private StartupData? _startupData;
     private bool _startupDataSent = false;
     private bool _initialSyncPeriod = true;
@@ -51,7 +50,7 @@ public class ApitallyClient(
         InitialPeriodSeconds
     );
 
-    public bool Enabled => _enabled;
+    public bool Enabled { get; private set; } = true;
     public readonly RequestCounter RequestCounter = new();
     public readonly ValidationErrorCounter ValidationErrorCounter = new();
     public readonly ServerErrorCounter ServerErrorCounter = new();
@@ -78,7 +77,7 @@ public class ApitallyClient(
             );
     }
 
-    private string GetHubUrl(string endpoint, string query = "")
+    private string GetHubUrlPath(string endpoint, string query = "")
     {
         var path = $"/v2/{options.Value.ClientId}/{options.Value.Env}/{endpoint}";
         if (!string.IsNullOrEmpty(query))
@@ -108,7 +107,7 @@ public class ApitallyClient(
 
         logger.LogDebug("Sending startup data to Apitally hub");
         var status = await SendHubRequestAsync(
-            _httpClient.PostAsJsonAsync(GetHubUrl("startup"), _startupData, cancellationToken)
+            _httpClient.PostAsJsonAsync(GetHubUrlPath("startup"), _startupData, cancellationToken)
         );
         if (status == HubRequestStatus.OK)
         {
@@ -154,7 +153,7 @@ public class ApitallyClient(
 
             logger.LogDebug("Synchronizing data with Apitally hub");
             var status = await SendHubRequestAsync(
-                _httpClient.PostAsJsonAsync(GetHubUrl("sync"), payload, cancellationToken)
+                _httpClient.PostAsJsonAsync(GetHubUrlPath("sync"), payload, cancellationToken)
             );
             if (status == HubRequestStatus.RetryableError)
             {
@@ -182,7 +181,7 @@ public class ApitallyClient(
             using var stream = logFile.GetInputStream();
             var status = await SendHubRequestAsync(
                 _httpClient.PostAsync(
-                    GetHubUrl("log", $"uuid={logFile.Uuid}"),
+                    GetHubUrlPath("log", $"uuid={logFile.Uuid}"),
                     new StreamContent(stream),
                     cancellationToken
                 )
@@ -220,7 +219,7 @@ public class ApitallyClient(
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
                 logger.LogError("Invalid Apitally client ID: {ClientId}", options.Value.ClientId);
-                _enabled = false;
+                Enabled = false;
                 await StopAsync(CancellationToken.None);
                 return HubRequestStatus.InvalidClientId;
             }
@@ -283,7 +282,7 @@ public class ApitallyClient(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_enabled)
+        if (Enabled)
         {
             await SyncAsync(cancellationToken);
         }

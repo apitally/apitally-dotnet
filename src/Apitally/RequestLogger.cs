@@ -22,11 +22,6 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
     private static readonly byte[] BodyTooLarge = Encoding.UTF8.GetBytes("<body too large>");
     private static readonly byte[] BodyMasked = Encoding.UTF8.GetBytes("<masked>");
     private const string Masked = "******";
-    private static readonly string[] AllowedContentTypes =
-    [
-        MediaTypeNames.Application.Json,
-        MediaTypeNames.Text.Plain,
-    ];
     private static readonly string[] ExcludePathPatterns =
     [
         "/_?healthz?$",
@@ -61,6 +56,12 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
         "cookie",
     ];
 
+    public static readonly string[] AllowedContentTypes =
+    [
+        MediaTypeNames.Application.Json,
+        MediaTypeNames.Text.Plain,
+    ];
+
     private readonly object _lock = new();
     private readonly ConcurrentQueue<string> _pendingWrites = new();
     private readonly ConcurrentQueue<TempGzipFile> _files = new();
@@ -87,11 +88,10 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
             | System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault,
     };
     private TempGzipFile? _currentFile;
-    private bool _enabled = options.Value.RequestLogging.Enabled;
     private long? _suspendUntil;
     private bool _disposed;
 
-    public bool Enabled => _enabled;
+    public bool Enabled { get; private set; } = options.Value.RequestLogging.Enabled;
     public bool Suspended =>
         _suspendUntil != null && _suspendUntil > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
@@ -200,7 +200,7 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
 
     private void WriteToFile()
     {
-        if (!_enabled || _pendingWrites.IsEmpty)
+        if (!Enabled || _pendingWrites.IsEmpty)
         {
             return;
         }
@@ -346,7 +346,7 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        if (!_enabled)
+        if (!Enabled)
         {
             return Task.CompletedTask;
         }
@@ -364,7 +364,7 @@ public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLog
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _enabled = false;
+        Enabled = false;
         await base.StopAsync(cancellationToken);
         Clear();
     }
