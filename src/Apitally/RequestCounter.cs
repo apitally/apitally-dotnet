@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Apitally.Models;
 
-public class RequestCounter
+class RequestCounter
 {
     private readonly ConcurrentDictionary<string, int> _requestCounts = new();
     private readonly ConcurrentDictionary<string, long> _requestSizeSums = new();

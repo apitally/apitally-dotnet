@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-public class Path
+class Path
 {
     [JsonPropertyName("method")]
     public string Method { get; set; } = string.Empty;
@@ -13,7 +13,7 @@ public class Path
     public string PathValue { get; set; } = string.Empty;
 }
 
-public class StartupData
+class StartupData
 {
     [JsonPropertyName("instance_uuid")]
     public Guid InstanceUuid { get; set; }

@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-public class Requests
+class Requests
 {
     [JsonPropertyName("consumer")]
     public string Consumer { get; set; } = string.Empty;
@@ -37,7 +37,7 @@ public class Requests
     public Dictionary<int, int> ResponseSizes { get; set; } = new();
 }
 
-public class ValidationErrors
+class ValidationErrors
 {
     [JsonPropertyName("consumer")]
     public string Consumer { get; set; } = string.Empty;
@@ -61,7 +61,7 @@ public class ValidationErrors
     public int ErrorCount { get; set; }
 }
 
-public class ServerErrors
+class ServerErrors
 {
     [JsonPropertyName("consumer")]
     public string Consumer { get; set; } = string.Empty;
@@ -116,7 +116,7 @@ public class Consumer
         value?.Trim()?.Substring(0, Math.Min(value.Trim().Length, maxLength));
 }
 
-public class SyncData
+class SyncData
 {
     [JsonPropertyName("timestamp")]
     public double Timestamp { get; set; } = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

@@ -10,7 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-public class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> logger)
+class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> logger)
     : BackgroundService,
         IDisposable
 {

@@ -2,7 +2,7 @@ namespace Apitally;
 
 using Apitally.Models;
 
-public class ConsumerRegistry
+class ConsumerRegistry
 {
     private readonly Dictionary<string, Consumer> _consumers = new();
     private readonly HashSet<string> _updated = new();

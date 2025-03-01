@@ -8,7 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Apitally.Models;
 
-public class ServerErrorCounter
+class ServerErrorCounter
 {
     private const int MaxMessageLength = 2048;
     private const int MaxStackTraceLength = 65536;

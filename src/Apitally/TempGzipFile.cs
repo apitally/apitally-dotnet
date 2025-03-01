@@ -6,7 +6,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 
-public class TempGzipFile : IDisposable
+class TempGzipFile : IDisposable
 {
     private readonly Guid _uuid;
     private readonly string _path;

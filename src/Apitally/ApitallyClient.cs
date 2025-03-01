@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Extensions.Http;
 
-public class ApitallyClient(
+class ApitallyClient(
     IOptions<ApitallyOptions> options,
     RequestLogger requestLogger,
     ILogger<ApitallyClient> logger

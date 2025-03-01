@@ -51,7 +51,7 @@ public class Response : RequestResponseBase
     public double ResponseTime { get; set; }
 }
 
-public class RequestLogItem
+class RequestLogItem
 {
     [JsonPropertyName("uuid")]
     public string Uuid { get; set; } = Guid.NewGuid().ToString();

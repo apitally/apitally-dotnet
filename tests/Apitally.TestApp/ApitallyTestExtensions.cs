@@ -1,6 +1,6 @@
+namespace Apitally.TestApp;
+
 using Apitally;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 
 public static class ApitallyTestExtensions
 {

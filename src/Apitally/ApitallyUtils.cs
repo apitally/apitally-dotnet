@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc.ActionConstraints;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Routing;
 
-public static class ApitallyUtils
+static class ApitallyUtils
 {
     public static List<Path> GetPaths(
         IActionDescriptorCollectionProvider actionDescriptorCollectionProvider,

@@ -8,7 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Apitally.Models;
 
-public class ValidationErrorCounter
+class ValidationErrorCounter
 {
     private readonly ConcurrentDictionary<string, int> _errorCounts = new();
     private readonly ConcurrentDictionary<string, ValidationErrorDetails> _errorDetails = new();

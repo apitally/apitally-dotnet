@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-public class ApitallyMiddleware(
+class ApitallyMiddleware(
     RequestDelegate next,
     ApitallyClient client,
     ILogger<ApitallyMiddleware> logger,
