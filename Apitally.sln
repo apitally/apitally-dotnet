@@ -10,7 +10,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{4F985842
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apitally.Tests", "tests\Apitally.Tests\Apitally.Tests.csproj", "{A1EF68D1-C18E-4DC0-A092-B4150B0F5E34}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestApp", "tests\TestApp\TestApp.csproj", "{E7A981FE-A344-4954-A0FC-41BB268C5CF1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Apitally.TestApp", "tests\Apitally.TestApp\Apitally.TestApp.csproj", "{E7A981FE-A344-4954-A0FC-41BB268C5CF1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

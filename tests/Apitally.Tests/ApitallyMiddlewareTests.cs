@@ -3,12 +3,12 @@ namespace Apitally.Tests;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
-public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<TestApp>>
+public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<Program>>
 {
-    private readonly WebApplicationFactory<TestApp> _factory;
+    private readonly WebApplicationFactory<Program> _factory;
     private readonly HttpClient _client;
 
-    public ApitallyMiddlewareTests(WebApplicationFactory<TestApp> factory)
+    public ApitallyMiddlewareTests(WebApplicationFactory<Program> factory)
     {
         _factory = factory;
         _client = factory.CreateClient();

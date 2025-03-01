@@ -25,7 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Apitally/Apitally.csproj" />
-    <ProjectReference Include="../TestApp/TestApp.csproj" />
+    <ProjectReference Include="../Apitally.TestApp/Apitally.TestApp.csproj" />
   </ItemGroup>
 
 </Project>

@@ -45,6 +45,6 @@ app.MapGet(
 
 app.Run();
 
-public partial class TestApp { }
+public partial class Program { }
 
 record Item(int Id, string Name);
