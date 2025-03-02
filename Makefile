@@ -4,10 +4,10 @@ format:
 	dotnet csharpier .
 
 test:
-	dotnet test --framework net9.0
+	dotnet test --framework net9.0 --logger "console;verbosity=normal"
 
 test-coverage:
-	dotnet test --framework net9.0 --collect:"XPlat Code Coverage"
+	dotnet test --framework net9.0 --logger "console;verbosity=normal" --collect:"XPlat Code Coverage"
 
 test-matrix:
-	dotnet test
+	dotnet test --logger "console;verbosity=normal"
