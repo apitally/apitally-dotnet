@@ -89,6 +89,72 @@ public class RequestLoggerTests
         Assert.Equal(1, responseHeadersNode.GetArrayLength());
         Assert.Equal("Content-Type", responseHeadersNode[0][0].GetString());
         Assert.Equal("application/json", responseHeadersNode[0][1].GetString());
+
+        requestLogger.Clear();
+        Assert.Null(requestLogger.GetFile());
+    }
+
+    [Fact]
+    public void LogRequest_ShouldExcludeBasedOnOptions()
+    {
+        // Arrange
+        var requestLogger = CreateRequestLogger(
+            new RequestLoggingOptions
+            {
+                Enabled = true,
+                IncludeQueryParams = false,
+                IncludeRequestHeaders = false,
+                IncludeRequestBody = false,
+                IncludeResponseHeaders = false,
+                IncludeResponseBody = false,
+            }
+        );
+        var request = new Request
+        {
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            Consumer = "tester",
+            Method = "POST",
+            Path = "/items",
+            Url = "http://test/items?token=my-secret-token",
+            Headers = new[]
+            {
+                new Header("Authorization", "Bearer 1234567890"),
+                new Header("Content-Type", "application/json"),
+            },
+            Size = 16,
+            Body = Encoding.UTF8.GetBytes("{\"key\": \"value\"}"),
+        };
+        var response = new Response
+        {
+            StatusCode = 200,
+            ResponseTime = 0.123,
+            Headers = new[] { new Header("Content-Type", "application/json") },
+            Size = 16,
+            Body = Encoding.UTF8.GetBytes("{\"key\": \"value\"}"),
+        };
+
+        // Act
+        requestLogger.LogRequest(request, response);
+        requestLogger.Maintain();
+        requestLogger.RotateFile();
+
+        // Assert
+        var logFile = requestLogger.GetFile();
+        Assert.NotNull(logFile);
+        Assert.True(logFile.Size > 0);
+
+        var lines = logFile.ReadDecompressedLines();
+        Assert.Single(lines);
+
+        var jsonNode = JsonDocument.Parse(lines[0]).RootElement;
+        Assert.Equal(
+            "http://test/items",
+            jsonNode.GetProperty("request").GetProperty("url").GetString()
+        );
+        Assert.Empty(jsonNode.GetProperty("request").GetProperty("headers").EnumerateArray());
+        Assert.False(jsonNode.GetProperty("request").TryGetProperty("body", out _));
+        Assert.Empty(jsonNode.GetProperty("response").GetProperty("headers").EnumerateArray());
+        Assert.False(jsonNode.GetProperty("response").TryGetProperty("body", out _));
     }
 
     [Fact]

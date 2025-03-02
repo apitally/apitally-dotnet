@@ -97,6 +97,51 @@ public class ApitallyClientTests
         Assert.False(client.Enabled);
     }
 
+    [Fact]
+    public async Task RequestLogger_ShouldSuspendOn402()
+    {
+        // Arrange
+        var mockHttpHandler = new Mock<HttpMessageHandler>();
+        mockHttpHandler
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>()
+            )
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.PaymentRequired));
+        var client = CreateClient(mockHttpHandler.Object);
+
+        var request = new Request
+        {
+            Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            Method = "GET",
+            Path = "/items",
+            Url = "http://test/items",
+            Headers = Array.Empty<Header>(),
+            Size = 0,
+            Body = Array.Empty<byte>(),
+        };
+        var response = new Response
+        {
+            StatusCode = 200,
+            ResponseTime = 0.123,
+            Headers = Array.Empty<Header>(),
+            Size = 0,
+            Body = Array.Empty<byte>(),
+        };
+        client.RequestLogger.LogRequest(request, response);
+        client.RequestLogger.Maintain();
+
+        // Act
+        await client.StartAsync(CancellationToken.None);
+        await Task.Delay(100);
+
+        // Assert
+        Assert.True(client.Enabled);
+        Assert.True(client.RequestLogger.Suspended);
+    }
+
     private static ApitallyClient CreateClient(HttpMessageHandler httpHandler)
     {
         var options = new OptionsWrapper<ApitallyOptions>(
