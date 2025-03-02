@@ -4,8 +4,8 @@ using Apitally.Models;
 
 class ConsumerRegistry
 {
-    private readonly Dictionary<string, Consumer> _consumers = new();
-    private readonly HashSet<string> _updated = new();
+    private readonly Dictionary<string, Consumer> _consumers = [];
+    private readonly HashSet<string> _updated = [];
 
     public static Consumer? ConsumerFromObject(object? consumer)
     {
@@ -64,5 +64,11 @@ class ConsumerRegistry
         var data = _updated.Select(identifier => _consumers[identifier]).ToList();
         _updated.Clear();
         return data;
+    }
+
+    public void Clear()
+    {
+        _consumers.Clear();
+        _updated.Clear();
     }
 }

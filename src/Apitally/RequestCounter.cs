@@ -96,15 +96,17 @@ class RequestCounter
                 };
             })
             .ToList();
+        Clear();
+        return data;
+    }
 
-        // Reset all counters
+    public void Clear()
+    {
         _requestCounts.Clear();
         _requestSizeSums.Clear();
         _responseSizeSums.Clear();
         _responseTimes.Clear();
         _requestSizes.Clear();
         _responseSizes.Clear();
-
-        return data;
     }
 }

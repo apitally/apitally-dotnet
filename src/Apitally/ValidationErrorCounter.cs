@@ -66,12 +66,14 @@ class ValidationErrorCounter
                 };
             })
             .ToList();
+        Clear();
+        return data;
+    }
 
-        // Reset all counters
+    public void Clear()
+    {
         _errorCounts.Clear();
         _errorDetails.Clear();
-
-        return data;
     }
 
     private string GetKey(ValidationErrorDetails error)

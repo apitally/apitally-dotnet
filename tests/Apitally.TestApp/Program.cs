@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Runtime.Serialization;
 using Apitally;
 using Apitally.TestApp;
 using Microsoft.AspNetCore.Mvc;
@@ -32,7 +33,7 @@ app.MapGet(
         "/items",
         (HttpContext context, [FromQuery] [StringLength(10, MinimumLength = 2)] string? name) =>
         {
-            context.Items["apitallyConsumer"] = new ApitallyConsumer
+            context.Items["ApitallyConsumer"] = new ApitallyConsumer
             {
                 Identifier = "tester",
                 Name = "Tester",
@@ -79,7 +80,7 @@ app.MapGet(
         "/throw",
         () =>
         {
-            throw new Exception("an expected error occurred");
+            throw new TestException("an expected error occurred");
         }
     )
     .WithName("ThrowError");
@@ -88,6 +89,7 @@ app.Run();
 
 public partial class Program { }
 
+#pragma warning disable CA1050 // Declare types in namespaces
 public record Item
 {
     public Item(int id, string name)
@@ -102,4 +104,10 @@ public record Item
     [Required]
     [StringLength(10, MinimumLength = 2)]
     public string Name { get; init; }
+}
+
+class TestException : Exception
+{
+    public TestException(string? message)
+        : base(message) { }
 }
