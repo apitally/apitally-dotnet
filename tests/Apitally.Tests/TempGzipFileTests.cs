@@ -18,6 +18,7 @@ public class TempGzipFileTests : IDisposable
     public void Dispose()
     {
         _tempFile.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     [Fact]

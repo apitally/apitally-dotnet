@@ -17,7 +17,8 @@ using Polly.Extensions.Http;
 class ApitallyClient(
     IOptions<ApitallyOptions> options,
     RequestLogger requestLogger,
-    ILogger<ApitallyClient> logger
+    ILogger<ApitallyClient> logger,
+    HttpClient? httpClient = null
 ) : BackgroundService, IDisposable
 {
     public enum HubRequestStatus
@@ -38,7 +39,7 @@ class ApitallyClient(
         Environment.GetEnvironmentVariable("APITALLY_HUB_BASE_URL") ?? "https://hub.apitally.io";
 
     private readonly Guid _instanceUuid = Guid.NewGuid();
-    private readonly HttpClient _httpClient = CreateHttpClient();
+    private readonly HttpClient _httpClient = httpClient ?? CreateHttpClient();
     private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = CreateRetryPolicy();
     private readonly ConcurrentQueue<SyncData> _syncDataQueue = new();
     private readonly Random _random = new();

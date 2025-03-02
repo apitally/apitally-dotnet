@@ -259,7 +259,7 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
         }
     }
 
-    private void Maintain()
+    public void Maintain()
     {
         WriteToFile();
 
