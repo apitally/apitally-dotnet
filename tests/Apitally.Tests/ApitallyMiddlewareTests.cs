@@ -24,8 +24,12 @@ public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<Progr
         // Arrange
         _apitallyOptions.RequestLogging.Enabled = false;
         _apitallyClient.RequestCounter.Clear();
+
         // Act
-        var response = await _httpClient.GetAsync("/items");
+        var response = await _httpClient.GetAsync("/controller/items");
+        response.EnsureSuccessStatusCode();
+
+        response = await _httpClient.GetAsync("/items");
         response.EnsureSuccessStatusCode();
 
         response = await _httpClient.GetAsync("/items/1");
@@ -41,8 +45,17 @@ public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<Progr
 
         // Assert
         var requests = _apitallyClient.RequestCounter.GetAndResetRequests();
-        Assert.Equal(3, requests.Count);
+        Assert.Equal(4, requests.Count);
 
+        Assert.Single(
+            requests,
+            r =>
+                r.Method == "GET"
+                && r.Path == "/controller/items"
+                && r.StatusCode == 200
+                && r.RequestCount == 1
+                && r.ResponseSizeSum > 0
+        );
         Assert.Single(
             requests,
             r =>

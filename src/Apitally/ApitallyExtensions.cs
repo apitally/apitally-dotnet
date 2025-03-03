@@ -1,7 +1,6 @@
 namespace Apitally;
 
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,10 +55,8 @@ public static class ApitallyExtensions
             .ApplicationStarted.Register(() =>
             {
                 var client = builder.ApplicationServices.GetRequiredService<ApitallyClient>();
-                var actionProvider =
-                    builder.ApplicationServices.GetRequiredService<IActionDescriptorCollectionProvider>();
                 var endpointSources = builder.ApplicationServices.GetServices<EndpointDataSource>();
-                var paths = ApitallyUtils.GetPaths(actionProvider, endpointSources);
+                var paths = ApitallyUtils.GetPaths(endpointSources);
                 var versions = ApitallyUtils.GetVersions();
 
                 client.SetStartupData(

@@ -96,9 +96,13 @@ class ApitallyMiddleware(
             {
                 stopwatch.Stop();
                 var responseTimeMs = stopwatch.ElapsedMilliseconds;
+                var statusCode = exception != null ? 500 : context.Response.StatusCode;
                 var endpoint = context.GetEndpoint();
                 var routePattern = (endpoint as RouteEndpoint)?.RoutePattern.RawText;
-                var statusCode = exception != null ? 500 : context.Response.StatusCode;
+                if (routePattern != null)
+                {
+                    routePattern = ApitallyUtils.NormalizePath(routePattern);
+                }
 
                 // Handle consumer registration
                 var consumer = context.Items.TryGetValue("ApitallyConsumer", out var consumerObj)

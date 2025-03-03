@@ -1,10 +1,10 @@
 using System.ComponentModel.DataAnnotations;
-using System.Runtime.Serialization;
 using Apitally;
 using Apitally.TestApp;
 using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddControllers();
 builder.Services.AddApitallyWithoutBackgroundServices();
 builder.Services.Configure<ApitallyOptions>(options =>
 {
@@ -18,6 +18,7 @@ builder.Services.Configure<ApitallyOptions>(options =>
 });
 
 var app = builder.Build();
+app.MapControllers();
 app.UseExceptionHandler(errorApp =>
 {
     errorApp.Run(context =>
