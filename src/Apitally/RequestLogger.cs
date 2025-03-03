@@ -146,14 +146,6 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
                 request.Url = uriBuilder.Uri.ToString();
             }
 
-            // Process headers
-            request.Headers = requestLoggingOptions.IncludeRequestHeaders
-                ? MaskHeaders(request.Headers)
-                : [];
-            response.Headers = requestLoggingOptions.IncludeResponseHeaders
-                ? MaskHeaders(response.Headers)
-                : [];
-
             // Process request body
             if (
                 !requestLoggingOptions.IncludeRequestBody
@@ -202,6 +194,14 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
                     }
                 }
             }
+
+            // Process headers
+            request.Headers = requestLoggingOptions.IncludeRequestHeaders
+                ? MaskHeaders(request.Headers)
+                : [];
+            response.Headers = requestLoggingOptions.IncludeResponseHeaders
+                ? MaskHeaders(response.Headers)
+                : [];
 
             // Create log item
             var item = new RequestLogItem { Request = request, Response = response };

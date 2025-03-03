@@ -20,7 +20,6 @@ class ApitallyMiddleware(
     {
         if (!client.Enabled)
         {
-            logger.LogInformation("Apitally is disabled");
             await next(context);
             return;
         }

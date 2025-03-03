@@ -1,5 +1,7 @@
 namespace Apitally.Tests;
 
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -166,5 +168,70 @@ public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<Progr
 
         var resetConsumers = _apitallyClient.ConsumerRegistry.GetAndResetConsumers();
         Assert.Empty(resetConsumers);
+    }
+
+    [Fact]
+    public async Task RequestLogger_ShouldLogRequests()
+    {
+        // Arrange
+        _apitallyOptions.RequestLogging.Enabled = true;
+        _apitallyOptions.RequestLogging.IncludeRequestBody = true;
+        _apitallyOptions.RequestLogging.IncludeResponseBody = true;
+        _apitallyClient.RequestLogger.Clear();
+
+        // Act
+        var response = await _httpClient.GetAsync("/items");
+        response.EnsureSuccessStatusCode();
+
+        response = await _httpClient.PostAsync(
+            "/items",
+            new StringContent(
+                "{\"id\": 1, \"name\": \"bob\"}",
+                System.Text.Encoding.UTF8,
+                "application/json"
+            )
+        );
+        response.EnsureSuccessStatusCode();
+
+        // Assert
+        _apitallyClient.RequestLogger.Maintain();
+        _apitallyClient.RequestLogger.RotateFile();
+        var logFile = _apitallyClient.RequestLogger.GetFile();
+        Assert.NotNull(logFile);
+        Assert.True(logFile.Size > 0);
+
+        var lines = logFile.ReadDecompressedLines();
+        Assert.Equal(2, lines.Count);
+
+        var jsonNode = JsonDocument.Parse(lines[0]).RootElement;
+        Assert.Equal("GET", jsonNode.GetProperty("request").GetProperty("method").GetString());
+        Assert.Equal(
+            "http://localhost/items",
+            jsonNode.GetProperty("request").GetProperty("url").GetString()
+        );
+        Assert.Equal(200, jsonNode.GetProperty("response").GetProperty("status_code").GetInt32());
+        Assert.Contains(
+            "alice",
+            Encoding.UTF8.GetString(
+                Convert.FromBase64String(
+                    jsonNode.GetProperty("response").GetProperty("body").GetString()!
+                )
+            )
+        );
+
+        jsonNode = JsonDocument.Parse(lines[1]).RootElement;
+        Assert.Equal("POST", jsonNode.GetProperty("request").GetProperty("method").GetString());
+        Assert.Equal(
+            "http://localhost/items",
+            jsonNode.GetProperty("request").GetProperty("url").GetString()
+        );
+        Assert.Contains(
+            "bob",
+            Encoding.UTF8.GetString(
+                Convert.FromBase64String(
+                    jsonNode.GetProperty("request").GetProperty("body").GetString()!
+                )
+            )
+        );
     }
 }
