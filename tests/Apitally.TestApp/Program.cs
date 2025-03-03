@@ -90,23 +90,6 @@ app.Run();
 
 public partial class Program { }
 
-#pragma warning disable CA1050 // Declare types in namespaces
-public record Item
-{
-    public Item(int id, string name)
-    {
-        Id = id;
-        Name = name;
-    }
-
-    [Range(1, int.MaxValue)]
-    public int Id { get; init; }
-
-    [Required]
-    [StringLength(10, MinimumLength = 2)]
-    public string Name { get; init; }
-}
-
 class TestException : Exception
 {
     public TestException(string? message)

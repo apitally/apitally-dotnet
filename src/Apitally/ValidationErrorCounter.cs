@@ -13,14 +13,11 @@ class ValidationErrorCounter
     private readonly ConcurrentDictionary<string, int> _errorCounts = new();
     private readonly ConcurrentDictionary<string, ValidationErrorDetails> _errorDetails = new();
 
-    private class ValidationErrorDetails
+    private class ValidationErrorDetails : ValidationError
     {
         public string Consumer { get; set; } = string.Empty;
         public string Method { get; set; } = string.Empty;
         public string Path { get; set; } = string.Empty;
-        public string[] Location { get; set; } = [];
-        public string Message { get; set; } = string.Empty;
-        public string Type { get; set; } = string.Empty;
     }
 
     public void AddValidationError(

@@ -88,6 +88,38 @@ public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<Progr
     }
 
     [Fact]
+    public async Task ValidationErrorCounter_ShouldCountErrors()
+    {
+        // Arrange
+        _apitallyClient.ValidationErrorCounter.Clear();
+
+        // Act
+        var response = await _httpClient.PostAsync(
+            "/controller/items",
+            new StringContent("{\"id\": 1001}", System.Text.Encoding.UTF8, "application/json")
+        );
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+
+        await Task.Delay(100);
+
+        // Assert
+        var errors = _apitallyClient.ValidationErrorCounter.GetAndResetValidationErrors();
+        Assert.Equal(2, errors.Count);
+        Assert.Single(
+            errors,
+            e =>
+                e.Location.SequenceEqual(new[] { "Id" })
+                && e.Message == "The field Id must be between 1 and 1000."
+        );
+        Assert.Single(
+            errors,
+            e =>
+                e.Location.SequenceEqual(new[] { "Name" })
+                && e.Message == "The Name field is required."
+        );
+    }
+
+    [Fact]
     public async Task ServerErrorCounter_ShouldCountErrors()
     {
         // Arrange

@@ -35,8 +35,15 @@ public static class ApitallyExtensions
             services.PostConfigure(configureOptions);
         }
 
-        // Ensure MVC services are registered
-        services.AddControllers();
+        // Ensure MVC services are registered and add global filter
+        services.AddSingleton<ValidationErrorFilter>();
+        services.AddControllers(options =>
+        {
+            var filter = services
+                .BuildServiceProvider()
+                .GetRequiredService<ValidationErrorFilter>();
+            options.Filters.Add(filter);
+        });
 
         // Register RequestLogger and ApitallyClient
         services.AddSingleton<RequestLogger>();

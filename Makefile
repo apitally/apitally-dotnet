@@ -7,6 +7,7 @@ test:
 	dotnet test --framework net9.0 --logger "console;verbosity=normal"
 
 test-coverage:
+	rm -rf tests/Apitally.Tests/TestResults
 	dotnet test --framework net9.0 --logger "console;verbosity=normal" --collect:"XPlat Code Coverage"
 
 test-matrix:

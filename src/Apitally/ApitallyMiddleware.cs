@@ -125,6 +125,26 @@ class ApitallyMiddleware(
                         context.Response.ContentLength ?? responseSize
                     );
 
+                    // Add validation errors to counter
+                    if (
+                        context.Items.TryGetValue(
+                            "ApitallyValidationErrors",
+                            out var validationErrors
+                        ) && validationErrors is List<ValidationError> validationErrorsList
+                    )
+                    {
+                        validationErrorsList.ForEach(item =>
+                            client.ValidationErrorCounter.AddValidationError(
+                                consumerIdentifier,
+                                context.Request.Method,
+                                routePattern,
+                                item.Location,
+                                item.Message,
+                                item.Type
+                            )
+                        );
+                    }
+
                     // Add server error to counter
                     if (exception != null)
                     {

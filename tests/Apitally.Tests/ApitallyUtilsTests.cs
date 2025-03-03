@@ -22,7 +22,7 @@ public class ApitallyUtilsTests : IClassFixture<WebApplicationFactory<Program>>
         var paths = ApitallyUtils.GetPaths(_factory.Services.GetServices<EndpointDataSource>());
 
         // Assert
-        Assert.Equal(7, paths.Count);
+        Assert.Equal(8, paths.Count);
         Assert.Single(paths, p => p.Method == "GET" && p.PathValue == "/items");
         Assert.Single(paths, p => p.Method == "GET" && p.PathValue == "/items/{id:min(1)}");
         Assert.Single(paths, p => p.Method == "POST" && p.PathValue == "/items");
@@ -30,6 +30,7 @@ public class ApitallyUtilsTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Single(paths, p => p.Method == "DELETE" && p.PathValue == "/items/{id:min(1)}");
         Assert.Single(paths, p => p.Method == "GET" && p.PathValue == "/throw");
         Assert.Single(paths, p => p.Method == "GET" && p.PathValue == "/controller/items");
+        Assert.Single(paths, p => p.Method == "POST" && p.PathValue == "/controller/items");
     }
 
     [Fact]
