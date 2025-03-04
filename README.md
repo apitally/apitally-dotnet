@@ -91,7 +91,7 @@ Then add the following configuration to your `appsettings.json` file:
 {
   "Apitally": {
     "ClientId": "your-client-id",
-    "Env": "dev" // or "prod" etc.
+    "Env": "prod"
   }
 }
 ```
