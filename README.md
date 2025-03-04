@@ -58,4 +58,54 @@ email, Slack or Microsoft Teams.
 
 ## Install
 
-_Coming soon!_
+Install the NuGet package:
+
+```shell
+dotnet add package Apitally
+```
+
+## Usage
+
+Add Apitally to your ASP.NET Core application by registering the required
+services and middleware in your `Program.cs` file:
+
+```csharp
+using Apitally;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add Apitally services
+builder.Services.AddApitally();
+
+var app = builder.Build();
+
+// Add Apitally middleware
+app.UseApitally();
+
+// ... rest of your middleware configuration
+```
+
+Then add the following configuration to your `appsettings.json` file:
+
+```json
+{
+  "Apitally": {
+    "ClientId": "your-client-id",
+    "Env": "dev" // or "prod" etc.
+  }
+}
+```
+
+For further instructions, see our
+[setup guide for ASP.NET Core](https://docs.apitally.io/frameworks/aspnet-core).
+
+## Getting help
+
+If you need help please
+[create a new discussion](https://github.com/orgs/apitally/discussions/categories/q-a)
+on GitHub or
+[join our Slack workspace](https://join.slack.com/t/apitally-community/shared_invite/zt-2b3xxqhdu-9RMq2HyZbR79wtzNLoGHrg).
+
+## License
+
+This library is licensed under the terms of the MIT license.
