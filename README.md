@@ -75,7 +75,11 @@ using Apitally;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add Apitally services
-builder.Services.AddApitally();
+builder.Services.AddApitally(options =>
+{
+    options.ClientId = "your-client-id";
+    options.Env = "dev"; // or "prod" etc.
+});
 
 var app = builder.Build();
 
@@ -83,17 +87,6 @@ var app = builder.Build();
 app.UseApitally();
 
 // ... rest of your middleware configuration
-```
-
-Then add the following configuration to your `appsettings.json` file:
-
-```json
-{
-  "Apitally": {
-    "ClientId": "your-client-id",
-    "Env": "prod"
-  }
-}
 ```
 
 For further instructions, see our
