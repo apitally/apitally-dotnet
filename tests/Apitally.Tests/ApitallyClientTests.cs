@@ -157,14 +157,14 @@ public class ApitallyClientTests
 
         // Create a mock IHttpClientFactory that returns a client with the specified handler
         var httpClient = new HttpClient(httpHandler) { BaseAddress = new Uri("http://test") };
-        var mockFactory = new Mock<IHttpClientFactory>();
-        mockFactory.Setup(f => f.CreateClient("Apitally")).Returns(httpClient);
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        mockHttpClientFactory.Setup(f => f.CreateClient("Apitally")).Returns(httpClient);
 
         var client = new ApitallyClient(
             options,
             requestLogger,
             loggerFactory.CreateLogger<ApitallyClient>(),
-            mockFactory.Object
+            mockHttpClientFactory.Object
         );
         return client;
     }

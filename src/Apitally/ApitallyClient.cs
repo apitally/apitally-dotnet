@@ -34,12 +34,9 @@ class ApitallyClient(
     private const int InitialSyncIntervalSeconds = 10;
     private const int InitialPeriodSeconds = 3600;
     private const int MaxQueueTimeSeconds = 3600;
-    private const int RequestTimeoutSeconds = 10;
-    private static readonly string HubBaseUrl =
-        Environment.GetEnvironmentVariable("APITALLY_HUB_BASE_URL") ?? "https://hub.apitally.io";
 
     private readonly Guid _instanceUuid = Guid.NewGuid();
-    private readonly HttpClient _httpClient = CreateHttpClient(httpClientFactory);
+    private readonly HttpClient _httpClient = httpClientFactory.CreateClient("Apitally");
     private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = CreateRetryPolicy();
     private readonly ConcurrentQueue<SyncData> _syncDataQueue = new();
     private readonly Random _random = new();
@@ -57,17 +54,6 @@ class ApitallyClient(
     public readonly ServerErrorCounter ServerErrorCounter = new();
     public readonly ConsumerRegistry ConsumerRegistry = new();
     public readonly RequestLogger RequestLogger = requestLogger;
-
-    private static HttpClient CreateHttpClient(IHttpClientFactory httpClientFactory)
-    {
-        var client = httpClientFactory.CreateClient("Apitally");
-        client.Timeout = TimeSpan.FromSeconds(RequestTimeoutSeconds);
-        if (client.BaseAddress == null)
-        {
-            client.BaseAddress = new Uri(HubBaseUrl);
-        }
-        return client;
-    }
 
     private static IAsyncPolicy<HttpResponseMessage> CreateRetryPolicy()
     {

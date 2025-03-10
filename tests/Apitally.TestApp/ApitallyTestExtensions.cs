@@ -15,7 +15,14 @@ public static class ApitallyTestExtensions
             services.PostConfigure(configureOptions);
         }
 
-        services.AddHttpClient();
+        services.AddHttpClient(
+            "Apitally",
+            client =>
+            {
+                client.BaseAddress = new Uri("http://test");
+                client.Timeout = TimeSpan.FromSeconds(1);
+            }
+        );
         services.AddSingleton<ValidationErrorFilter>();
         services.AddControllers(options =>
         {
