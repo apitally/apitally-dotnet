@@ -35,6 +35,9 @@ public static class ApitallyExtensions
             services.PostConfigure(configureOptions);
         }
 
+        // Register IHttpClientFactory which is required by ApitallyClient
+        services.AddHttpClient();
+
         // Ensure MVC services are registered and add global filter
         services.AddSingleton<ValidationErrorFilter>();
         services.AddControllers(options =>

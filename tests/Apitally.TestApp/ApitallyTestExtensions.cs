@@ -14,6 +14,8 @@ public static class ApitallyTestExtensions
         {
             services.PostConfigure(configureOptions);
         }
+
+        services.AddHttpClient();
         services.AddSingleton<ValidationErrorFilter>();
         services.AddControllers(options =>
         {

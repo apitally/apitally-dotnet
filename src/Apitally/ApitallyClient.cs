@@ -18,7 +18,7 @@ class ApitallyClient(
     IOptions<ApitallyOptions> options,
     RequestLogger requestLogger,
     ILogger<ApitallyClient> logger,
-    HttpClient? httpClient = null
+    IHttpClientFactory httpClientFactory
 ) : BackgroundService, IDisposable
 {
     public enum HubRequestStatus
@@ -39,7 +39,7 @@ class ApitallyClient(
         Environment.GetEnvironmentVariable("APITALLY_HUB_BASE_URL") ?? "https://hub.apitally.io";
 
     private readonly Guid _instanceUuid = Guid.NewGuid();
-    private readonly HttpClient _httpClient = httpClient ?? CreateHttpClient();
+    private readonly HttpClient _httpClient = CreateHttpClient(httpClientFactory);
     private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = CreateRetryPolicy();
     private readonly ConcurrentQueue<SyncData> _syncDataQueue = new();
     private readonly Random _random = new();
@@ -58,13 +58,15 @@ class ApitallyClient(
     public readonly ConsumerRegistry ConsumerRegistry = new();
     public readonly RequestLogger RequestLogger = requestLogger;
 
-    private static HttpClient CreateHttpClient()
+    private static HttpClient CreateHttpClient(IHttpClientFactory httpClientFactory)
     {
-        return new HttpClient
+        var client = httpClientFactory.CreateClient("Apitally");
+        client.Timeout = TimeSpan.FromSeconds(RequestTimeoutSeconds);
+        if (client.BaseAddress == null)
         {
-            BaseAddress = new Uri(HubBaseUrl),
-            Timeout = TimeSpan.FromSeconds(RequestTimeoutSeconds),
-        };
+            client.BaseAddress = new Uri(HubBaseUrl);
+        }
+        return client;
     }
 
     private static IAsyncPolicy<HttpResponseMessage> CreateRetryPolicy()
