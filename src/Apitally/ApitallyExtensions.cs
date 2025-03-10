@@ -35,6 +35,19 @@ public static class ApitallyExtensions
             services.PostConfigure(configureOptions);
         }
 
+        // Register IHttpClientFactory which is required by ApitallyClient
+        services.AddHttpClient(
+            "Apitally",
+            client =>
+            {
+                client.BaseAddress = new Uri(
+                    Environment.GetEnvironmentVariable("APITALLY_HUB_BASE_URL")
+                        ?? "https://hub.apitally.io"
+                );
+                client.Timeout = TimeSpan.FromSeconds(10);
+            }
+        );
+
         // Ensure MVC services are registered and add global filter
         services.AddSingleton<ValidationErrorFilter>();
         services.AddControllers(options =>

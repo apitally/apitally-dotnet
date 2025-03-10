@@ -154,12 +154,17 @@ public class ApitallyClientTests
         );
         var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
         var requestLogger = new RequestLogger(options, loggerFactory.CreateLogger<RequestLogger>());
+
+        // Create a mock IHttpClientFactory that returns a client with the specified handler
         var httpClient = new HttpClient(httpHandler) { BaseAddress = new Uri("http://test") };
+        var mockHttpClientFactory = new Mock<IHttpClientFactory>();
+        mockHttpClientFactory.Setup(f => f.CreateClient("Apitally")).Returns(httpClient);
+
         var client = new ApitallyClient(
             options,
             requestLogger,
             loggerFactory.CreateLogger<ApitallyClient>(),
-            httpClient
+            mockHttpClientFactory.Object
         );
         return client;
     }
