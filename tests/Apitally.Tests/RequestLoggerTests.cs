@@ -45,7 +45,7 @@ public class RequestLoggerTests
         };
 
         // Act
-        requestLogger.LogRequest(request, response);
+        requestLogger.LogRequest(request, response, new Exception("test"));
         requestLogger.Maintain();
         requestLogger.RotateFile();
 
@@ -89,6 +89,10 @@ public class RequestLoggerTests
         Assert.Equal(1, responseHeadersNode.GetArrayLength());
         Assert.Equal("Content-Type", responseHeadersNode[0][0].GetString());
         Assert.Equal("application/json", responseHeadersNode[0][1].GetString());
+
+        var exceptionNode = jsonNode.GetProperty("exception");
+        Assert.Equal("Exception", exceptionNode.GetProperty("type").GetString());
+        Assert.Equal("test", exceptionNode.GetProperty("message").GetString());
 
         requestLogger.Clear();
         Assert.Null(requestLogger.GetFile());

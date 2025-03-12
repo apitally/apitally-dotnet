@@ -51,6 +51,18 @@ public class Response : RequestResponseBase
     public double ResponseTime { get; set; }
 }
 
+public class ExceptionInfo
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = string.Empty;
+
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = string.Empty;
+
+    [JsonPropertyName("stacktrace")]
+    public string StackTrace { get; set; } = string.Empty;
+}
+
 class RequestLogItem
 {
     [JsonPropertyName("uuid")]
@@ -61,4 +73,7 @@ class RequestLogItem
 
     [JsonPropertyName("response")]
     public Response Response { get; set; } = new();
+
+    [JsonPropertyName("exception")]
+    public ExceptionInfo? Exception { get; set; }
 }

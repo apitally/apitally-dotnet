@@ -108,7 +108,7 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
         ];
     }
 
-    public void LogRequest(Request request, Response response)
+    public void LogRequest(Request request, Response response, Exception? exception = null)
     {
         if (!Enabled || Suspended)
         {
@@ -203,8 +203,26 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
                 ? MaskHeaders(response.Headers)
                 : [];
 
+            // Create exception info
+            var exceptionInfo =
+                exception != null && requestLoggingOptions.IncludeException
+                    ? new ExceptionInfo
+                    {
+                        Type = exception.GetType().Name,
+                        Message = ServerErrorCounter.TruncateMessage(exception.Message),
+                        StackTrace = ServerErrorCounter.TruncateStackTrace(
+                            exception.StackTrace ?? string.Empty
+                        ),
+                    }
+                    : null;
+
             // Create log item
-            var item = new RequestLogItem { Request = request, Response = response };
+            var item = new RequestLogItem
+            {
+                Request = request,
+                Response = response,
+                Exception = exceptionInfo,
+            };
             var serializedItem = JsonSerializer.Serialize(item, _serializerOptions);
             _pendingWrites.Enqueue(serializedItem);
 

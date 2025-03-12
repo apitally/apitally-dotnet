@@ -89,7 +89,7 @@ class ServerErrorCounter
         return Convert.ToHexString(hashBytes).ToLower();
     }
 
-    private static string TruncateMessage(string message)
+    public static string TruncateMessage(string message)
     {
         message = message.Trim();
         if (message.Length <= MaxMessageLength)
@@ -102,7 +102,7 @@ class ServerErrorCounter
         return message[..cutoff] + suffix;
     }
 
-    private static string TruncateStackTrace(string stackTrace)
+    public static string TruncateStackTrace(string stackTrace)
     {
         stackTrace = stackTrace.Trim();
         if (stackTrace.Length <= MaxStackTraceLength)
