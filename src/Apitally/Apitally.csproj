@@ -8,7 +8,7 @@
     <Version>0.1.0</Version>
     <Authors>Simon Gurcke</Authors>
     <Company>Apitally</Company>
-    <Description>Client library for Apitally, a simple API monitoring and analytics tool for REST
+    <Description>SDK for Apitally, a simple API monitoring and analytics tool for REST
       APIs built with ASP.NET Core.</Description>
     <PackageProjectUrl>https://apitally.io</PackageProjectUrl>
     <RepositoryUrl>https://github.com/apitally/apitally-dotnet</RepositoryUrl>

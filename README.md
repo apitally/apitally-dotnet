@@ -17,13 +17,12 @@
 
 ---
 
-# Apitally client library for .NET
+# Apitally SDK for .NET
 
 [![Tests](https://github.com/apitally/apitally-dotnet/actions/workflows/tests.yaml/badge.svg?event=push)](https://github.com/apitally/apitally-dotnet/actions)
 [![Codecov](https://codecov.io/gh/apitally/apitally-dotnet/graph/badge.svg?token=NJzC7yKV6V)](https://codecov.io/gh/apitally/apitally-dotnet)
 
-This client library for Apitally currently supports the following .NET web
-frameworks:
+This SDK for Apitally currently supports the following .NET web frameworks:
 
 - [ASP.NET Core](https://docs.apitally.io/frameworks/aspnet-core) (≥ 6.0)
 
