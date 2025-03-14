@@ -189,7 +189,7 @@ class ApitallyMiddleware(
                         Size = context.Response.ContentLength ?? responseSize,
                         Body = responseBody,
                     };
-                    client.RequestLogger.LogRequest(request, response);
+                    client.RequestLogger.LogRequest(request, response, exception);
                 }
             }
             catch (Exception ex)
