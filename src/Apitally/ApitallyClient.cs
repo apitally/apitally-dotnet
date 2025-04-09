@@ -183,6 +183,7 @@ class ApitallyClient(
             }
             else if (status == HubRequestStatus.PaymentRequired)
             {
+                logFile.Delete();
                 RequestLogger.Clear();
                 RequestLogger.SuspendFor(TimeSpan.FromHours(1));
                 break;
