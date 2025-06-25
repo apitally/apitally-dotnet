@@ -473,7 +473,7 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
     {
         var contentType = GetHeaderValue(headers, "content-type");
         return contentType != null
-            && contentType.Contains("json", StringComparison.OrdinalIgnoreCase);
+            && Regex.IsMatch(contentType, @"\bjson\b", RegexOptions.IgnoreCase);
     }
 
     private static string? GetHeaderValue(Header[] headers, string name)
