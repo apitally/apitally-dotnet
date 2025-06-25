@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Apitally.Models;
 using Microsoft.AspNetCore.Mvc.Abstractions;
-using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Routing;
 
 static class ApitallyUtils
@@ -47,6 +46,10 @@ static class ApitallyUtils
             {
                 "aspnetcore",
                 typeof(ActionDescriptor).Assembly.GetName().Version?.ToString() ?? "unknown"
+            },
+            {
+                "apitally",
+                typeof(ApitallyUtils).Assembly.GetName().Version?.ToString() ?? "unknown"
             },
         };
 }

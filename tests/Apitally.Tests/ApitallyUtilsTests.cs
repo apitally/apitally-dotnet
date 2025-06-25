@@ -42,5 +42,6 @@ public class ApitallyUtilsTests : IClassFixture<WebApplicationFactory<Program>>
         // Assert
         Assert.Matches(@"^\d+\.\d+\.\d+$", versions["dotnet"]);
         Assert.Matches(@"^\d+\.\d+\.\d+(?:\.\d+)?$", versions["aspnetcore"]);
+        Assert.Matches(@"^\d+\.\d+\.\d+", versions["apitally"]);
     }
 }
