@@ -49,7 +49,7 @@ static class ApitallyUtils
             },
             {
                 "apitally",
-                typeof(ApitallyUtils).Assembly.GetName().Version?.ToString(3) ?? "unknown"
+                typeof(ApitallyUtils).Assembly.GetName().Version?.ToString() ?? "unknown"
             },
         };
 }
