@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Net.Mime;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Apitally.Models;
 using Microsoft.Extensions.Hosting;
@@ -55,6 +56,17 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
         "token",
         "cookie",
     ];
+    private static readonly string[] MaskBodyFieldPatterns =
+    [
+        "password",
+        "pwd",
+        "token",
+        "secret",
+        "auth",
+        "card[-_ ]?number",
+        "ccv",
+        "ssn",
+    ];
 
     public static readonly string[] AllowedContentTypes =
     [
@@ -63,7 +75,7 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
     ];
 
     private readonly object _lock = new();
-    private readonly ConcurrentQueue<string> _pendingWrites = new();
+    private readonly ConcurrentQueue<RequestLogItem> _pendingWrites = new();
     private readonly ConcurrentQueue<TempGzipFile> _files = new();
     private readonly List<Regex> _compiledPathExcludePatterns = CompilePatterns(
         ExcludePathPatterns,
@@ -80,6 +92,10 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
     private readonly List<Regex> _compiledHeaderMaskPatterns = CompilePatterns(
         MaskHeaderPatterns,
         options.Value.RequestLogging.HeaderMaskPatterns
+    );
+    private readonly List<Regex> _compiledBodyFieldMaskPatterns = CompilePatterns(
+        MaskBodyFieldPatterns,
+        options.Value.RequestLogging.BodyFieldMaskPatterns
     );
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
@@ -129,24 +145,6 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
                 return;
             }
 
-            // Process query params and URL
-            if (!string.IsNullOrEmpty(request.Url))
-            {
-                var uri = new Uri(request.Url);
-                var query = uri.Query.TrimStart('?');
-                if (!requestLoggingOptions.IncludeQueryParams)
-                {
-                    query = string.Empty;
-                }
-                else if (!string.IsNullOrEmpty(query))
-                {
-                    query = MaskQueryParams(query);
-                }
-                var uriBuilder = new UriBuilder(uri) { Query = query };
-                request.Url = uriBuilder.Uri.ToString();
-            }
-
-            // Process request body
             if (
                 !requestLoggingOptions.IncludeRequestBody
                 || !HasSupportedContentType(request.Headers)
@@ -154,23 +152,6 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
             {
                 request.Body = null;
             }
-            else if (request.Body != null)
-            {
-                if (request.Body.Length > MaxBodySize)
-                {
-                    request.Body = BodyTooLarge;
-                }
-                else
-                {
-                    request.Body = requestLoggingOptions.MaskRequestBody(request) ?? BodyMasked;
-                    if (request.Body.Length > MaxBodySize)
-                    {
-                        request.Body = BodyTooLarge;
-                    }
-                }
-            }
-
-            // Process response body
             if (
                 !requestLoggingOptions.IncludeResponseBody
                 || !HasSupportedContentType(response.Headers)
@@ -178,32 +159,7 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
             {
                 response.Body = null;
             }
-            else if (response.Body != null)
-            {
-                if (response.Body.Length > MaxBodySize)
-                {
-                    response.Body = BodyTooLarge;
-                }
-                else
-                {
-                    response.Body =
-                        requestLoggingOptions.MaskResponseBody(request, response) ?? BodyMasked;
-                    if (response.Body.Length > MaxBodySize)
-                    {
-                        response.Body = BodyTooLarge;
-                    }
-                }
-            }
 
-            // Process headers
-            request.Headers = requestLoggingOptions.IncludeRequestHeaders
-                ? MaskHeaders(request.Headers)
-                : [];
-            response.Headers = requestLoggingOptions.IncludeResponseHeaders
-                ? MaskHeaders(response.Headers)
-                : [];
-
-            // Create exception info
             var exceptionInfo =
                 exception != null && requestLoggingOptions.IncludeException
                     ? new ExceptionInfo
@@ -216,15 +172,14 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
                     }
                     : null;
 
-            // Create log item
+            // Create log item and enqueue
             var item = new RequestLogItem
             {
                 Request = request,
                 Response = response,
                 Exception = exceptionInfo,
             };
-            var serializedItem = JsonSerializer.Serialize(item, _serializerOptions);
-            _pendingWrites.Enqueue(serializedItem);
+            _pendingWrites.Enqueue(item);
 
             if (_pendingWrites.Count > MaxPendingWrites)
             {
@@ -249,7 +204,9 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
             _currentFile ??= new TempGzipFile();
             while (_pendingWrites.TryDequeue(out var item))
             {
-                _currentFile.WriteLine(Encoding.UTF8.GetBytes(item));
+                ApplyMasking(item);
+                var serializedItem = JsonSerializer.Serialize(item, _serializerOptions);
+                _currentFile.WriteLine(Encoding.UTF8.GetBytes(serializedItem));
             }
         }
     }
@@ -315,6 +272,80 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
         }
     }
 
+    private void ApplyMasking(RequestLogItem item)
+    {
+        var requestLoggingOptions = options.Value.RequestLogging;
+        var request = item.Request;
+        var response = item.Response;
+
+        if (request.Body != null)
+        {
+            // Apply user-provided masking callback for request body
+            request.Body = requestLoggingOptions.MaskRequestBody(request) ?? BodyMasked;
+
+            if (request.Body.Length > MaxBodySize)
+            {
+                request.Body = BodyTooLarge;
+            }
+
+            // Mask request body fields (if JSON)
+            if (
+                !request.Body.SequenceEqual(BodyTooLarge)
+                && !request.Body.SequenceEqual(BodyMasked)
+                && RequestLogger.HasJsonContentType(request.Headers)
+            )
+            {
+                request.Body = MaskJsonBody(request.Body);
+            }
+        }
+
+        if (response.Body != null)
+        {
+            // Apply user-provided masking callback for response body
+            response.Body = requestLoggingOptions.MaskResponseBody(request, response) ?? BodyMasked;
+
+            if (response.Body.Length > MaxBodySize)
+            {
+                response.Body = BodyTooLarge;
+            }
+
+            // Mask response body fields (if JSON)
+            if (
+                !response.Body.SequenceEqual(BodyTooLarge)
+                && !response.Body.SequenceEqual(BodyMasked)
+                && RequestLogger.HasJsonContentType(response.Headers)
+            )
+            {
+                response.Body = MaskJsonBody(response.Body);
+            }
+        }
+
+        // Mask headers
+        request.Headers = requestLoggingOptions.IncludeRequestHeaders
+            ? MaskHeaders(request.Headers)
+            : [];
+        response.Headers = requestLoggingOptions.IncludeResponseHeaders
+            ? MaskHeaders(response.Headers)
+            : [];
+
+        // Mask query params
+        if (!string.IsNullOrEmpty(request.Url))
+        {
+            var uri = new Uri(request.Url);
+            var query = uri.Query.TrimStart('?');
+            if (!requestLoggingOptions.IncludeQueryParams)
+            {
+                query = string.Empty;
+            }
+            else if (!string.IsNullOrEmpty(query))
+            {
+                query = MaskQueryParams(query);
+            }
+            var uriBuilder = new UriBuilder(uri) { Query = query };
+            request.Url = uriBuilder.Uri.ToString();
+        }
+    }
+
     private bool ShouldExcludePath(string? path)
     {
         return !string.IsNullOrEmpty(path)
@@ -335,6 +366,69 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
     private bool ShouldMaskHeader(string name)
     {
         return _compiledHeaderMaskPatterns.Any(p => p.IsMatch(name));
+    }
+
+    private bool ShouldMaskBodyField(string name)
+    {
+        return _compiledBodyFieldMaskPatterns.Any(p => p.IsMatch(name));
+    }
+
+    private byte[] MaskJsonBody(byte[] body)
+    {
+        try
+        {
+            var json = Encoding.UTF8.GetString(body);
+            var node = JsonNode.Parse(json);
+            if (node != null)
+            {
+                MaskJsonNode(node);
+                return Encoding.UTF8.GetBytes(node.ToJsonString(_serializerOptions));
+            }
+            return body;
+        }
+        catch
+        {
+            return body;
+        }
+    }
+
+    private void MaskJsonNode(JsonNode node)
+    {
+        switch (node)
+        {
+            case JsonObject jsonObject:
+                var propertiesToMask = new List<string>();
+                foreach (var property in jsonObject)
+                {
+                    if (
+                        property.Value is JsonValue jsonValue
+                        && jsonValue.TryGetValue<string>(out _)
+                        && ShouldMaskBodyField(property.Key)
+                    )
+                    {
+                        propertiesToMask.Add(property.Key);
+                    }
+                    else if (property.Value != null)
+                    {
+                        MaskJsonNode(property.Value);
+                    }
+                }
+                foreach (var propertyKey in propertiesToMask)
+                {
+                    jsonObject[propertyKey] = JsonValue.Create(Masked);
+                }
+                break;
+
+            case JsonArray jsonArray:
+                foreach (var item in jsonArray)
+                {
+                    if (item != null)
+                    {
+                        MaskJsonNode(item);
+                    }
+                }
+                break;
+        }
     }
 
     private string MaskQueryParams(string query)
@@ -373,6 +467,13 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
             && AllowedContentTypes.Any(ct =>
                 contentType.StartsWith(ct, StringComparison.OrdinalIgnoreCase)
             );
+    }
+
+    private static bool HasJsonContentType(Header[] headers)
+    {
+        var contentType = GetHeaderValue(headers, "content-type");
+        return contentType != null
+            && Regex.IsMatch(contentType, @"\bjson\b", RegexOptions.IgnoreCase);
     }
 
     private static string? GetHeaderValue(Header[] headers, string name)
