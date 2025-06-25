@@ -20,7 +20,7 @@ repos:
           - post-rewrite
       - id: csharpier
         name: Run CSharpier on C# files
-        entry: dotnet tool run dotnet-csharpier
+        entry: dotnet tool run csharpier check
         language: system
         types:
           - c#
