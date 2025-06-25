@@ -32,6 +32,7 @@ public class RequestLoggingOptions
     public bool IncludeException { get; set; } = true;
     public List<string> QueryParamMaskPatterns { get; set; } = [];
     public List<string> HeaderMaskPatterns { get; set; } = [];
+    public List<string> BodyFieldMaskPatterns { get; set; } = [];
     public List<string> PathExcludePatterns { get; set; } = [];
 
     /// <summary>
