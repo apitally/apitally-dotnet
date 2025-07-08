@@ -30,7 +30,11 @@ static class ApitallyUtils
                                 : $"/{endpoint.RoutePattern.RawText}",
                         })
                 )
-                .Where(path => !string.IsNullOrEmpty(path.PathValue)),
+                .Where(path =>
+                    !string.IsNullOrEmpty(path.PathValue)
+                    && path.Method != "OPTIONS"
+                    && path.Method != "HEAD"
+                ),
         ];
     }
 
