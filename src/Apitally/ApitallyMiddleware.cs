@@ -18,7 +18,7 @@ class ApitallyMiddleware(
 {
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!client.Enabled)
+        if (!client.Enabled || context.Request.Method == "OPTIONS")
         {
             await next(context);
             return;
