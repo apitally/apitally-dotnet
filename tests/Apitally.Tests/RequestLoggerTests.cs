@@ -52,8 +52,6 @@ public class RequestLoggerTests
                 Logger = "Test.Logger",
                 Level = "Information",
                 Message = "Test log message",
-                File = "/path/to/file.cs",
-                Line = 42,
             },
         };
 

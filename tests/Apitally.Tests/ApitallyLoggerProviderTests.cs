@@ -24,9 +24,10 @@ public class ApitallyLoggerProviderTests : IDisposable
         ApitallyLoggerProvider.InitializeLogBuffer();
 
         // Assert
-        var buffer = ApitallyLoggerProvider.LogBuffer.Value;
+        var buffer = ApitallyLoggerProvider.LogBufferLocal.Value;
         Assert.NotNull(buffer);
-        Assert.Empty(buffer);
+        Assert.Equal(0, buffer.Count);
+        Assert.Empty(buffer.GetLogRecords());
     }
 
     [Fact]

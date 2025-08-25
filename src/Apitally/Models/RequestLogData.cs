@@ -76,12 +76,6 @@ public class LogRecord
 
     [JsonPropertyName("message")]
     public string Message { get; set; } = string.Empty;
-
-    [JsonPropertyName("file")]
-    public string File { get; set; } = string.Empty;
-
-    [JsonPropertyName("line")]
-    public int Line { get; set; }
 }
 
 class RequestLogItem

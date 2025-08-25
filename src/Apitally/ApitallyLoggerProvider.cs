@@ -1,13 +1,13 @@
 namespace Apitally;
 
 using System.Collections.Concurrent;
-using System.Linq;
+using System.Threading;
 using Apitally.Models;
 using Microsoft.Extensions.Logging;
 
 class ApitallyLoggerProvider : ILoggerProvider
 {
-    internal static readonly AsyncLocal<ConcurrentQueue<LogRecord>?> LogBuffer = new();
+    internal static readonly AsyncLocal<LogBuffer?> LogBufferLocal = new();
     private const int MaxBufferSize = 1000;
     private const int MaxLogMessageLength = 2048;
 
@@ -21,12 +21,12 @@ class ApitallyLoggerProvider : ILoggerProvider
 
     public static void InitializeLogBuffer()
     {
-        LogBuffer.Value = new ConcurrentQueue<LogRecord>();
+        LogBufferLocal.Value = new LogBuffer();
     }
 
     public static List<LogRecord>? GetLogs()
     {
-        return LogBuffer.Value?.ToList();
+        return LogBufferLocal.Value?.GetLogRecords();
     }
 
     public void Dispose()
@@ -38,12 +38,30 @@ class ApitallyLoggerProvider : ILoggerProvider
         }
     }
 
+    internal class LogBuffer
+    {
+        private readonly ConcurrentQueue<LogRecord> _queue = new();
+        private int _count = 0;
+
+        public int Count => _count;
+
+        public void Enqueue(LogRecord record)
+        {
+            _queue.Enqueue(record);
+            Interlocked.Increment(ref _count);
+        }
+
+        public List<LogRecord> GetLogRecords()
+        {
+            return [.. _queue];
+        }
+    }
+
     private class ApitallyLogger(string categoryName) : ILogger
     {
         private readonly string _categoryName = categoryName;
 
-        public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull => new NoOpDisposable();
+        IDisposable ILogger.BeginScope<TState>(TState state) => new NoOpDisposable();
 
         private class NoOpDisposable : IDisposable
         {
@@ -63,7 +81,7 @@ class ApitallyLoggerProvider : ILoggerProvider
             if (!IsEnabled(logLevel))
                 return;
 
-            var buffer = LogBuffer.Value;
+            var buffer = LogBufferLocal.Value;
             if (buffer == null || buffer.Count >= MaxBufferSize)
                 return;
 
@@ -79,15 +97,12 @@ class ApitallyLoggerProvider : ILoggerProvider
                     message = message[..(MaxLogMessageLength - suffix.Length)] + suffix;
                 }
 
-                var (fileName, lineNumber) = GetCallerInfo();
                 var logRecord = new LogRecord
                 {
-                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000d,
                     Logger = _categoryName,
                     Level = logLevel.ToString(),
                     Message = message,
-                    File = fileName,
-                    Line = lineNumber,
                 };
                 buffer.Enqueue(logRecord);
             }
@@ -95,30 +110,6 @@ class ApitallyLoggerProvider : ILoggerProvider
             {
                 // Silently ignore errors in log capture to avoid interfering with application
             }
-        }
-
-        private static (string fileName, int lineNumber) GetCallerInfo()
-        {
-            try
-            {
-                var stackTrace = new System.Diagnostics.StackTrace(
-                    skipFrames: 4,
-                    fNeedFileInfo: true
-                );
-                var frame = stackTrace.GetFrame(0);
-                if (frame != null)
-                {
-                    var fileName = frame.GetFileName() ?? string.Empty;
-                    var lineNumber = frame.GetFileLineNumber();
-                    return (fileName, lineNumber);
-                }
-            }
-            catch
-            {
-                // Ignore errors getting caller info
-            }
-
-            return (string.Empty, 0);
         }
     }
 }
