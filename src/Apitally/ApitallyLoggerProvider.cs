@@ -1,12 +1,13 @@
 namespace Apitally;
 
 using System.Collections.Concurrent;
+using System.Linq;
 using Apitally.Models;
 using Microsoft.Extensions.Logging;
 
 class ApitallyLoggerProvider : ILoggerProvider
 {
-    internal static readonly AsyncLocal<List<LogRecord>> LogBuffer = new();
+    internal static readonly AsyncLocal<ConcurrentQueue<LogRecord>?> LogBuffer = new();
     private const int MaxBufferSize = 1000;
     private const int MaxLogMessageLength = 2048;
 
@@ -20,12 +21,12 @@ class ApitallyLoggerProvider : ILoggerProvider
 
     public static void InitializeLogBuffer()
     {
-        LogBuffer.Value = [];
+        LogBuffer.Value = new ConcurrentQueue<LogRecord>();
     }
 
     public static List<LogRecord>? GetLogs()
     {
-        return LogBuffer.Value;
+        return LogBuffer.Value?.ToList();
     }
 
     public void Dispose()
@@ -88,7 +89,7 @@ class ApitallyLoggerProvider : ILoggerProvider
                     File = fileName,
                     Line = lineNumber,
                 };
-                buffer.Add(logRecord);
+                buffer.Enqueue(logRecord);
             }
             catch
             {
