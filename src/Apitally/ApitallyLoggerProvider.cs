@@ -61,10 +61,12 @@ class ApitallyLoggerProvider : ILoggerProvider
     {
         private readonly string _categoryName = categoryName;
 
-        IDisposable ILogger.BeginScope<TState>(TState state) => new NoOpDisposable();
+        IDisposable ILogger.BeginScope<TState>(TState state) => NoOpDisposable.Instance;
 
-        private class NoOpDisposable : IDisposable
+        private sealed class NoOpDisposable : IDisposable
         {
+            public static readonly NoOpDisposable Instance = new();
+
             public void Dispose() { }
         }
 
