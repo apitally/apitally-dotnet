@@ -22,6 +22,7 @@ public class RequestLoggerTests
                 IncludeRequestBody = true,
                 IncludeResponseHeaders = true,
                 IncludeResponseBody = true,
+                CaptureLogs = true,
             }
         );
         var request = new Request
@@ -43,9 +44,21 @@ public class RequestLoggerTests
             Size = 13,
             Body = Encoding.UTF8.GetBytes("{\"items\": []}"),
         };
+        var logs = new List<LogRecord>
+        {
+            new()
+            {
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                Logger = "Test.Logger",
+                Level = "Information",
+                Message = "Test log message",
+                File = "/path/to/file.cs",
+                Line = 42,
+            },
+        };
 
         // Act
-        requestLogger.LogRequest(request, response, new Exception("test"));
+        requestLogger.LogRequest(request, response, new Exception("test"), logs);
 
         // Assert
         var items = GetLoggedItems(requestLogger);
@@ -87,6 +100,14 @@ public class RequestLoggerTests
         var exceptionNode = item.GetProperty("exception");
         Assert.Equal("Exception", exceptionNode.GetProperty("type").GetString());
         Assert.Equal("test", exceptionNode.GetProperty("message").GetString());
+
+        // Verify logs are captured
+        Assert.True(item.TryGetProperty("logs", out var logsProperty));
+        Assert.Single(logsProperty.EnumerateArray());
+        var logItem = logsProperty[0];
+        Assert.Equal("Test.Logger", logItem.GetProperty("logger").GetString());
+        Assert.Equal("Information", logItem.GetProperty("level").GetString());
+        Assert.Equal("Test log message", logItem.GetProperty("message").GetString());
 
         requestLogger.Clear();
         Assert.Null(requestLogger.GetFile());

@@ -63,6 +63,27 @@ public class ExceptionInfo
     public string StackTrace { get; set; } = string.Empty;
 }
 
+public class LogRecord
+{
+    [JsonPropertyName("timestamp")]
+    public double Timestamp { get; set; }
+
+    [JsonPropertyName("logger")]
+    public string Logger { get; set; } = string.Empty;
+
+    [JsonPropertyName("level")]
+    public string Level { get; set; } = string.Empty;
+
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = string.Empty;
+
+    [JsonPropertyName("file")]
+    public string File { get; set; } = string.Empty;
+
+    [JsonPropertyName("line")]
+    public int Line { get; set; }
+}
+
 class RequestLogItem
 {
     [JsonPropertyName("uuid")]
@@ -76,4 +97,7 @@ class RequestLogItem
 
     [JsonPropertyName("exception")]
     public ExceptionInfo? Exception { get; set; }
+
+    [JsonPropertyName("logs")]
+    public List<LogRecord>? Logs { get; set; }
 }

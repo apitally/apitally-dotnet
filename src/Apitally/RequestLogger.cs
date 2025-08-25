@@ -124,7 +124,12 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
         ];
     }
 
-    public void LogRequest(Request request, Response response, Exception? exception = null)
+    public void LogRequest(
+        Request request,
+        Response response,
+        Exception? exception = null,
+        List<LogRecord>? logs = null
+    )
     {
         if (!Enabled || Suspended)
         {
@@ -172,12 +177,18 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
                     }
                     : null;
 
+            if (!requestLoggingOptions.CaptureLogs)
+            {
+                logs = null;
+            }
+
             // Create log item and enqueue
             var item = new RequestLogItem
             {
                 Request = request,
                 Response = response,
                 Exception = exceptionInfo,
+                Logs = logs,
             };
             _pendingWrites.Enqueue(item);
 

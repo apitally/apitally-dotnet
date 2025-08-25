@@ -233,5 +233,60 @@ public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<Progr
                 )
             )
         );
+
+        logFile.Delete();
+    }
+
+    [Fact]
+    public async Task RequestLogger_ShouldCaptureApplicationLogs()
+    {
+        // Arrange
+        _apitallyOptions.RequestLogging.Enabled = true;
+        _apitallyOptions.RequestLogging.CaptureLogs = true;
+        _apitallyClient.RequestLogger.Clear();
+
+        // Act - Make request to endpoint that has logging
+        var response = await _httpClient.GetAsync("/items?name=test");
+        response.EnsureSuccessStatusCode();
+
+        // Assert
+        _apitallyClient.RequestLogger.Maintain();
+        _apitallyClient.RequestLogger.RotateFile();
+        var logFile = _apitallyClient.RequestLogger.GetFile();
+        Assert.NotNull(logFile);
+        Assert.True(logFile.Size > 0);
+
+        var lines = logFile.ReadDecompressedLines();
+        Assert.Single(lines);
+
+        var jsonNode = JsonDocument.Parse(lines[0]).RootElement;
+
+        // Check that logs property exists and contains captured logs
+        Assert.True(jsonNode.TryGetProperty("logs", out var logsProperty));
+        Assert.True(logsProperty.GetArrayLength() > 0);
+
+        // Verify log structure
+        var firstLog = logsProperty[0];
+        Assert.True(firstLog.TryGetProperty("timestamp", out _));
+        Assert.True(firstLog.TryGetProperty("logger", out _));
+        Assert.True(firstLog.TryGetProperty("level", out _));
+        Assert.True(firstLog.TryGetProperty("message", out _));
+
+        // The logs should contain our application logs from the endpoint
+        bool hasRetrievingItemsLog = false;
+        for (int i = 0; i < logsProperty.GetArrayLength(); i++)
+        {
+            var log = logsProperty[i];
+            var message = log.GetProperty("message").GetString();
+            if (message != null && message.Contains("Retrieving items"))
+            {
+                hasRetrievingItemsLog = true;
+                Assert.Equal("Information", log.GetProperty("level").GetString());
+                break;
+            }
+        }
+        Assert.True(hasRetrievingItemsLog, "Expected to find the 'Retrieving items' log message");
+
+        logFile.Delete();
     }
 }

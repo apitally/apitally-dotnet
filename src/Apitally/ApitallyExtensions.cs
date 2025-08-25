@@ -48,6 +48,12 @@ public static class ApitallyExtensions
             }
         );
 
+        // Register custom logger provider for log capture
+        services.AddSingleton<ApitallyLoggerProvider>();
+        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(sp =>
+            sp.GetRequiredService<ApitallyLoggerProvider>()
+        );
+
         // Ensure MVC services are registered and add global filter
         services.AddSingleton<ValidationErrorFilter>();
         services.AddControllers(options =>

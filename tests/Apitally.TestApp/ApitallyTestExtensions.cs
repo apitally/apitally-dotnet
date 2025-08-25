@@ -23,6 +23,12 @@ public static class ApitallyTestExtensions
                 client.Timeout = TimeSpan.FromSeconds(1);
             }
         );
+
+        services.AddSingleton<ApitallyLoggerProvider>();
+        services.AddSingleton<ILoggerProvider>(sp =>
+            sp.GetRequiredService<ApitallyLoggerProvider>()
+        );
+
         services.AddSingleton<ValidationErrorFilter>();
         services.AddControllers(options =>
         {
