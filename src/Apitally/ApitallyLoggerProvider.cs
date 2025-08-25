@@ -70,7 +70,8 @@ class ApitallyLoggerProvider : ILoggerProvider
             public void Dispose() { }
         }
 
-        public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
+        public bool IsEnabled(LogLevel logLevel) =>
+            logLevel != LogLevel.None && !_categoryName.StartsWith("Microsoft.AspNetCore.");
 
         public void Log<TState>(
             LogLevel logLevel,
