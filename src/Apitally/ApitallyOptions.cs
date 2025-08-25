@@ -30,6 +30,7 @@ public class RequestLoggingOptions
     public bool IncludeResponseHeaders { get; set; } = true;
     public bool IncludeResponseBody { get; set; } = false;
     public bool IncludeException { get; set; } = true;
+    public bool CaptureLogs { get; set; } = false;
     public List<string> QueryParamMaskPatterns { get; set; } = [];
     public List<string> HeaderMaskPatterns { get; set; } = [];
     public List<string> BodyFieldMaskPatterns { get; set; } = [];

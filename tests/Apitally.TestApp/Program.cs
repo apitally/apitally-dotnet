@@ -11,6 +11,7 @@ builder.Services.Configure<ApitallyOptions>(options =>
     options.ClientId = "00000000-0000-0000-0000-000000000000";
     options.Env = "test";
     options.RequestLogging.Enabled = true;
+    options.RequestLogging.CaptureLogs = true;
     options.RequestLogging.ShouldExclude = (request, response) =>
     {
         return false;
@@ -32,8 +33,14 @@ app.UseApitally();
 
 app.MapGet(
         "/items",
-        (HttpContext context, [FromQuery] [StringLength(10, MinimumLength = 2)] string? name) =>
+        (
+            HttpContext context,
+            ILogger<Program> logger,
+            [FromQuery] [StringLength(10, MinimumLength = 2)] string? name
+        ) =>
         {
+            logger.LogInformation("Retrieving items with filter: {Name}", name ?? "none");
+
             context.Items["ApitallyConsumer"] = new ApitallyConsumer
             {
                 Identifier = "tester",
@@ -41,7 +48,9 @@ app.MapGet(
                 Group = "Test Group",
             };
 
+            logger.LogDebug("Consumer set for request");
             var items = new[] { new Item(1, "bob"), new Item(2, "alice") };
+            logger.LogInformation("Returning {Count} items", items.Length);
             return items;
         }
     )

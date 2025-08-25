@@ -41,6 +41,12 @@ class ApitallyMiddleware(
         var stopwatch = Stopwatch.StartNew();
         long responseSize = -1;
 
+        // Initialize log buffer for capturing application logs if enabled
+        if (options.Value.RequestLogging.Enabled && options.Value.RequestLogging.CaptureLogs)
+        {
+            ApitallyLoggerProvider.InitializeLogBuffer();
+        }
+
         try
         {
             // Cache request body if needed
@@ -189,7 +195,8 @@ class ApitallyMiddleware(
                         Size = context.Response.ContentLength ?? responseSize,
                         Body = responseBody,
                     };
-                    client.RequestLogger.LogRequest(request, response, exception);
+                    var logs = ApitallyLoggerProvider.GetLogs();
+                    client.RequestLogger.LogRequest(request, response, exception, logs);
                 }
             }
             catch (Exception ex)
