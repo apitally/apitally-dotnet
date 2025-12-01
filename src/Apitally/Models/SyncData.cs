@@ -4,6 +4,15 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
+public class ResourceUsage
+{
+    [JsonPropertyName("cpu_percent")]
+    public double CpuPercent { get; set; }
+
+    [JsonPropertyName("memory_rss")]
+    public long MemoryRss { get; set; }
+}
+
 class Requests
 {
     [JsonPropertyName("consumer")]
@@ -138,6 +147,9 @@ class SyncData
 
     [JsonPropertyName("consumers")]
     public List<Consumer> Consumers { get; set; } = new();
+
+    [JsonPropertyName("resources")]
+    public ResourceUsage? Resources { get; set; }
 
     [JsonIgnore]
     public double AgeInSeconds => DateTimeOffset.UtcNow.ToUnixTimeSeconds() - Timestamp;
