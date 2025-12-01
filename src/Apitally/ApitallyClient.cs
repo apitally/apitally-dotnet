@@ -54,6 +54,7 @@ class ApitallyClient(
     public readonly ServerErrorCounter ServerErrorCounter = new();
     public readonly ConsumerRegistry ConsumerRegistry = new();
     public readonly RequestLogger RequestLogger = requestLogger;
+    public readonly ResourceMonitor ResourceMonitor = new();
 
     private static IAsyncPolicy<HttpResponseMessage> CreateRetryPolicy()
     {
@@ -123,6 +124,7 @@ class ApitallyClient(
             ValidationErrors = ValidationErrorCounter.GetAndResetValidationErrors(),
             ServerErrors = ServerErrorCounter.GetAndResetServerErrors(),
             Consumers = ConsumerRegistry.GetAndResetConsumers(),
+            Resources = ResourceMonitor.GetCpuMemoryUsage(),
         };
         _syncDataQueue.Enqueue(data);
 
