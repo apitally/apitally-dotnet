@@ -149,9 +149,10 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
 
         try
         {
-            var path = !string.IsNullOrEmpty(request.Path)
-                ? request.Path
-                : new Uri(request.Url).AbsolutePath;
+            var path =
+                !string.IsNullOrEmpty(request.Path) ? request.Path
+                : !string.IsNullOrEmpty(request.Url) ? new Uri(request.Url).AbsolutePath
+                : string.Empty;
             var userAgent = GetHeaderValue(request.Headers, "user-agent");
             if (
                 ShouldExcludePath(path)
