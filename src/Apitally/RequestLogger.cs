@@ -31,6 +31,15 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
         "/ping$",
         "/ready$",
         "/live$",
+        "/favicon(?:-[\\w-]+)?\\.(ico|png|svg)$",
+        "/apple-touch-icon(?:-[\\w-]+)?\\.png$",
+        "/robots\\.txt$",
+        "/sitemap\\.xml$",
+        "/manifest\\.json$",
+        "/site\\.webmanifest$",
+        "/service-worker\\.js$",
+        "/sw\\.js$",
+        "/\\.well-known/",
     ];
     private static readonly string[] ExcludeUserAgentPatterns =
     [
@@ -140,9 +149,13 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
 
         try
         {
+            var path =
+                !string.IsNullOrEmpty(request.Path) ? request.Path
+                : !string.IsNullOrEmpty(request.Url) ? new Uri(request.Url).AbsolutePath
+                : string.Empty;
             var userAgent = GetHeaderValue(request.Headers, "user-agent");
             if (
-                ShouldExcludePath(request.Path)
+                ShouldExcludePath(path)
                 || ShouldExcludeUserAgent(userAgent)
                 || requestLoggingOptions.ShouldExclude(request, response)
             )
