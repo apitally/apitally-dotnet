@@ -221,6 +221,9 @@ class ApitallyMiddleware(
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error in Apitally middleware");
+
+                // Prevent memory leak
+                activityHandle.EndCollection();
             }
             finally
             {
