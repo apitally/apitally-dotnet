@@ -29,8 +29,21 @@ class ActivityCollector : IDisposable
         _listener = new ActivityListener
         {
             ShouldListenTo = _ => true,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) =>
-                ActivitySamplingResult.AllDataAndRecorded,
+            Sample = (ref ActivityCreationOptions<ActivityContext> options) =>
+            {
+                // Sample our root activity and descendants of traces we're collecting
+                if (
+                    options.Source.Name == "Apitally"
+                    || (
+                        options.Parent.TraceId != default
+                        && _includedActivityIds.ContainsKey(options.Parent.TraceId)
+                    )
+                )
+                {
+                    return ActivitySamplingResult.AllDataAndRecorded;
+                }
+                return ActivitySamplingResult.None;
+            },
             ActivityStarted = OnActivityStarted,
             ActivityStopped = OnActivityStopped,
         };
