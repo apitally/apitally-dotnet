@@ -250,16 +250,10 @@ public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<Progr
         response.EnsureSuccessStatusCode();
 
         // Assert
-        _apitallyClient.RequestLogger.Maintain();
-        _apitallyClient.RequestLogger.RotateFile();
-        var logFile = _apitallyClient.RequestLogger.GetFile();
-        Assert.NotNull(logFile);
-        Assert.True(logFile.Size > 0);
+        var items = TestHelpers.GetLoggedItems(_apitallyClient.RequestLogger);
+        Assert.Single(items);
 
-        var lines = logFile.ReadDecompressedLines();
-        Assert.Single(lines);
-
-        var jsonNode = JsonDocument.Parse(lines[0]).RootElement;
+        var jsonNode = items[0];
 
         // Check that logs property exists and contains captured logs
         Assert.True(jsonNode.TryGetProperty("logs", out var logsProperty));
@@ -273,20 +267,76 @@ public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<Progr
         Assert.True(firstLog.TryGetProperty("message", out _));
 
         // The logs should contain our application logs from the endpoint
-        bool hasRetrievingItemsLog = false;
+        bool hasExpectedLogMessage = false;
         for (int i = 0; i < logsProperty.GetArrayLength(); i++)
         {
             var log = logsProperty[i];
             var message = log.GetProperty("message").GetString();
             if (message != null && message.Contains("Retrieving items"))
             {
-                hasRetrievingItemsLog = true;
+                hasExpectedLogMessage = true;
                 Assert.Equal("Information", log.GetProperty("level").GetString());
                 break;
             }
         }
-        Assert.True(hasRetrievingItemsLog, "Expected to find the 'Retrieving items' log message");
+        Assert.True(hasExpectedLogMessage, "Expected to find the 'Retrieving items' log message");
+    }
 
-        logFile.Delete();
+    [Fact]
+    public async Task RequestLogger_ShouldCaptureActivities()
+    {
+        // Arrange
+        _apitallyOptions.RequestLogging.Enabled = true;
+        _apitallyOptions.RequestLogging.CaptureTraces = true;
+        _apitallyClient.RequestLogger.Clear();
+
+        // Act - Make request to endpoint that creates a child activity
+        var response = await _httpClient.GetAsync("/items/1");
+        response.EnsureSuccessStatusCode();
+
+        // Assert
+        var items = TestHelpers.GetLoggedItems(_apitallyClient.RequestLogger);
+        Assert.Single(items);
+
+        var jsonNode = items[0];
+
+        // Check that trace_id exists
+        Assert.True(jsonNode.TryGetProperty("trace_id", out var traceIdProperty));
+        Assert.NotNull(traceIdProperty.GetString());
+        Assert.Matches("^[a-f0-9]{32}$", traceIdProperty.GetString()!);
+
+        // Check that spans property exists and contains activities
+        Assert.True(jsonNode.TryGetProperty("spans", out var spansProperty));
+        Assert.True(spansProperty.GetArrayLength() == 2);
+
+        // Find root span and child span
+        bool hasRootSpan = false;
+        bool hasChildSpan = false;
+        for (int i = 0; i < spansProperty.GetArrayLength(); i++)
+        {
+            var span = spansProperty[i];
+            var name = span.GetProperty("name").GetString();
+
+            if (name == "GetItem")
+            {
+                hasRootSpan = true;
+            }
+
+            if (name == "FetchItemFromDatabase")
+            {
+                hasChildSpan = true;
+
+                // Verify it has a parent span id
+                Assert.True(span.TryGetProperty("parent_span_id", out var parentSpanId));
+                Assert.NotEqual(JsonValueKind.Null, parentSpanId.ValueKind);
+
+                // Verify attributes contain the item.id tag
+                Assert.True(span.TryGetProperty("attributes", out var attributes));
+                Assert.Equal(1, attributes.GetProperty("item.id").GetInt32());
+            }
+        }
+
+        Assert.True(hasRootSpan, "Expected to find the 'GetItem' root span");
+        Assert.True(hasChildSpan, "Expected to find the 'FetchItemFromDatabase' child span");
     }
 }

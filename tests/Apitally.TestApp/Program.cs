@@ -1,7 +1,10 @@
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics;
 using Apitally;
 using Apitally.TestApp;
 using Microsoft.AspNetCore.Mvc;
+
+var testActivitySource = new ActivitySource("TestApp");
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
@@ -12,6 +15,7 @@ builder.Services.Configure<ApitallyOptions>(options =>
     options.Env = "test";
     options.RequestLogging.Enabled = true;
     options.RequestLogging.CaptureLogs = true;
+    options.RequestLogging.CaptureTraces = true;
     options.RequestLogging.ShouldExclude = (request, response) =>
     {
         return false;
@@ -60,6 +64,8 @@ app.MapGet(
         "/items/{id:min(1)}",
         (int id) =>
         {
+            using var activity = testActivitySource.StartActivity("FetchItemFromDatabase");
+            activity?.SetTag("item.id", id);
             return new Item(id, "bob");
         }
     )

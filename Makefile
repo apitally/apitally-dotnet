@@ -1,7 +1,7 @@
 .PHONY: format test test-coverage test-matrix
 
 format:
-	dotnet csharpier .
+	dotnet csharpier format .
 
 test:
 	dotnet test --framework net9.0 --logger "console;verbosity=normal"

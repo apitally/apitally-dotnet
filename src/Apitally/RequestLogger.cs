@@ -137,7 +137,9 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
         Request request,
         Response response,
         Exception? exception = null,
-        List<LogRecord>? logs = null
+        List<LogRecord>? logs = null,
+        List<ActivityData>? activities = null,
+        string? traceId = null
     )
     {
         if (!Enabled || Suspended)
@@ -202,6 +204,8 @@ class RequestLogger(IOptions<ApitallyOptions> options, ILogger<RequestLogger> lo
                 Response = response,
                 Exception = exceptionInfo,
                 Logs = logs,
+                Spans = activities,
+                TraceId = traceId,
             };
             _pendingWrites.Enqueue(item);
 

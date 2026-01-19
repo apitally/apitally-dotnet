@@ -94,4 +94,10 @@ class RequestLogItem
 
     [JsonPropertyName("logs")]
     public List<LogRecord>? Logs { get; set; }
+
+    [JsonPropertyName("spans")]
+    public List<ActivityData>? Spans { get; set; }
+
+    [JsonPropertyName("trace_id")]
+    public string? TraceId { get; set; }
 }
