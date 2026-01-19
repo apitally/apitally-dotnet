@@ -122,7 +122,11 @@ class ActivityCollector : IDisposable
             data.Status = activity.Status.ToString().ToUpperInvariant();
         }
 
-        var tags = activity.TagObjects.ToDictionary(t => t.Key, t => t.Value);
+        var tags = new Dictionary<string, object?>();
+        foreach (var tag in activity.TagObjects)
+        {
+            tags[tag.Key] = tag.Value;
+        }
         if (tags.Count > 0)
         {
             data.Attributes = tags;
