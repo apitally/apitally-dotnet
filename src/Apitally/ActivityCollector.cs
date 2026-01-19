@@ -137,7 +137,7 @@ class ActivityCollector : IDisposable
 
     private static long ToUnixTimeNanoseconds(DateTime dateTime)
     {
-        return new DateTimeOffset(dateTime).ToUnixTimeMilliseconds() * 1_000_000;
+        return (dateTime.ToUniversalTime().Ticks - DateTime.UnixEpoch.Ticks) * 100L;
     }
 
     public void Dispose()
