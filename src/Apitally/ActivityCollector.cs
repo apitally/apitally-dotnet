@@ -10,11 +10,11 @@ class ActivityCollector : IDisposable
     private readonly ActivityListener? _listener;
 
     private readonly ConcurrentDictionary<
-        string,
-        ConcurrentDictionary<string, byte>
+        ActivityTraceId,
+        ConcurrentDictionary<ActivitySpanId, byte>
     > _includedActivityIds = new();
     private readonly ConcurrentDictionary<
-        string,
+        ActivityTraceId,
         ConcurrentBag<ActivityData>
     > _collectedActivities = new();
 
@@ -46,55 +46,48 @@ class ActivityCollector : IDisposable
         if (activity == null)
             return new Handle(null, null, this);
 
-        var traceId = activity.TraceId.ToString();
-        _includedActivityIds[traceId] = new ConcurrentDictionary<string, byte>();
-        _includedActivityIds[traceId].TryAdd(activity.SpanId.ToString(), 0);
-        _collectedActivities[traceId] = [];
+        _includedActivityIds[activity.TraceId] = new ConcurrentDictionary<ActivitySpanId, byte>();
+        _includedActivityIds[activity.TraceId].TryAdd(activity.SpanId, 0);
+        _collectedActivities[activity.TraceId] = [];
 
-        return new Handle(traceId, activity, this);
+        return new Handle(activity.TraceId, activity, this);
     }
 
     internal void OnActivityStarted(Activity activity)
     {
-        var traceId = activity.TraceId.ToString();
-        if (!_includedActivityIds.TryGetValue(traceId, out var included))
+        if (!_includedActivityIds.TryGetValue(activity.TraceId, out var included))
             return;
 
-        if (
-            activity.ParentSpanId != default
-            && included.ContainsKey(activity.ParentSpanId.ToString())
-        )
+        if (activity.ParentSpanId != default && included.ContainsKey(activity.ParentSpanId))
         {
-            included.TryAdd(activity.SpanId.ToString(), 0);
+            included.TryAdd(activity.SpanId, 0);
         }
     }
 
     internal void OnActivityStopped(Activity activity)
     {
-        var traceId = activity.TraceId.ToString();
-        var spanId = activity.SpanId.ToString();
-
-        if (!_includedActivityIds.TryGetValue(traceId, out var included))
+        if (!_includedActivityIds.TryGetValue(activity.TraceId, out var included))
             return;
-        if (!included.ContainsKey(spanId))
+        if (!included.ContainsKey(activity.SpanId))
             return;
 
-        if (_collectedActivities.TryGetValue(traceId, out var activities))
+        if (_collectedActivities.TryGetValue(activity.TraceId, out var activities))
         {
             activities.Add(SerializeActivity(activity));
         }
     }
 
-    public List<ActivityData>? GetAndClearActivities(string? traceId)
+    internal List<ActivityData>? GetAndClearActivities(ActivityTraceId? traceId)
     {
         if (traceId == null)
             return null;
 
-        _includedActivityIds.TryRemove(traceId, out _);
-        if (_collectedActivities.TryRemove(traceId, out var activities))
+        _includedActivityIds.TryRemove(traceId.Value, out _);
+        if (_collectedActivities.TryRemove(traceId.Value, out var activities))
         {
             return [.. activities];
         }
+
         return null;
     }
 
@@ -137,9 +130,15 @@ class ActivityCollector : IDisposable
         _collectedActivities.Clear();
     }
 
-    public class Handle(string? traceId, Activity? rootActivity, ActivityCollector collector)
+    public class Handle(
+        ActivityTraceId? traceId,
+        Activity? rootActivity,
+        ActivityCollector collector
+    )
     {
-        public string? TraceId { get; } = traceId;
+        private readonly ActivityTraceId? _traceId = traceId;
+
+        public string? TraceId => _traceId?.ToString();
 
         public void SetName(string name)
         {
@@ -152,7 +151,7 @@ class ActivityCollector : IDisposable
         public List<ActivityData>? EndCollection()
         {
             rootActivity?.Stop();
-            return collector.GetAndClearActivities(TraceId);
+            return collector.GetAndClearActivities(_traceId);
         }
     }
 }

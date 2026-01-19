@@ -125,7 +125,7 @@ public class ActivityCollectorTests
 
         collector.Dispose();
 
-        var activities = collector.GetAndClearActivities(handle.TraceId);
+        var activities = handle.EndCollection();
         Assert.Null(activities);
     }
 }
