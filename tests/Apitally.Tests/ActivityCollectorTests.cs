@@ -33,7 +33,7 @@ public class ActivityCollectorTests
     }
 
     [Fact]
-    public void EndCollection_ShouldCollectActivities()
+    public void EndCollection_ShouldReturnCollectedActivities()
     {
         var collector = new ActivityCollector(enabled: true);
         var source = new ActivitySource("TestSource");
@@ -69,41 +69,15 @@ public class ActivityCollectorTests
     }
 
     [Fact]
-    public void EndCollection_ShouldNotCollectUnrelatedActivities()
-    {
-        var collector = new ActivityCollector(enabled: true);
-        var source = new ActivitySource("TestSource");
-
-        var handle = collector.StartCollection();
-        var traceId = handle.TraceId;
-
-        handle.EndCollection();
-
-        var handle2 = collector.StartCollection();
-
-        using (var unrelatedActivity = source.StartActivity("Unrelated"))
-        {
-            // This activity is started after the first collection ended
-        }
-
-        var activities = handle2.EndCollection();
-
-        Assert.NotNull(activities);
-        Assert.All(activities, a => Assert.NotEqual(traceId, handle2.TraceId));
-
-        collector.Dispose();
-        source.Dispose();
-    }
-
-    [Fact]
-    public void ActivityData_ShouldHaveCorrectTimestampFormat()
+    public void ActivityData_ShouldHaveCorrectTimestamps()
     {
         var collector = new ActivityCollector(enabled: true);
 
-        var beforeStart = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000;
+        var beforeStart = (DateTimeOffset.UtcNow.Ticks - DateTime.UnixEpoch.Ticks) * 100L;
         var handle = collector.StartCollection();
+        Thread.Sleep(100);
         var activities = handle.EndCollection();
-        var afterEnd = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1_000_000;
+        var afterEnd = (DateTimeOffset.UtcNow.Ticks - DateTime.UnixEpoch.Ticks) * 100L;
 
         Assert.NotNull(activities);
         Assert.Single(activities);
