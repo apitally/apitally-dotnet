@@ -307,7 +307,7 @@ public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<Progr
 
         // Check that spans property exists and contains activities
         Assert.True(jsonNode.TryGetProperty("spans", out var spansProperty));
-        Assert.True(spansProperty.GetArrayLength() == 2);
+        Assert.Equal(2, spansProperty.GetArrayLength());
 
         // Find root span and child span
         bool hasRootSpan = false;
