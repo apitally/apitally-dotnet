@@ -55,6 +55,9 @@ class ApitallyClient(
     public readonly ConsumerRegistry ConsumerRegistry = new();
     public readonly RequestLogger RequestLogger = requestLogger;
     public readonly ResourceMonitor ResourceMonitor = new();
+    public readonly ActivityCollector ActivityCollector = new(
+        options.Value.RequestLogging.Enabled && options.Value.RequestLogging.CaptureTraces
+    );
 
     private static IAsyncPolicy<HttpResponseMessage> CreateRetryPolicy()
     {
@@ -287,6 +290,7 @@ class ApitallyClient(
         {
             base.Dispose();
             _httpClient.Dispose();
+            ActivityCollector.Dispose();
         }
     }
 

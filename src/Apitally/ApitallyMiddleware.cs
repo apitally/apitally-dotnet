@@ -2,6 +2,7 @@ namespace Apitally;
 
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using Apitally.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
@@ -23,6 +24,8 @@ class ApitallyMiddleware(
             await next(context);
             return;
         }
+
+        var activityHandle = client.ActivityCollector.StartCollection();
 
         Exception? exception = null;
         var shouldCacheRequestBody =
@@ -108,6 +111,15 @@ class ApitallyMiddleware(
                 {
                     routePattern = ApitallyUtils.NormalizePath(routePattern);
                 }
+
+                // Get activities and trace id
+                var endpointName = GetEndpointName(endpoint);
+                if (endpointName != null)
+                {
+                    activityHandle.SetName(endpointName);
+                }
+                var activities = activityHandle.EndCollection();
+                var traceId = activityHandle.TraceId;
 
                 // Handle consumer registration
                 var consumer = context.Items.TryGetValue("ApitallyConsumer", out var consumerObj)
@@ -196,18 +208,58 @@ class ApitallyMiddleware(
                         Body = responseBody,
                     };
                     var logs = ApitallyLoggerProvider.GetLogs();
-                    client.RequestLogger.LogRequest(request, response, exception, logs);
+                    client.RequestLogger.LogRequest(
+                        request,
+                        response,
+                        exception,
+                        logs,
+                        activities,
+                        traceId
+                    );
                 }
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error in Apitally middleware");
+
+                // Prevent memory leak
+                activityHandle.EndCollection();
             }
             finally
             {
                 context.Response.Body = originalResponseBody;
             }
         }
+    }
+
+    private static string? GetEndpointName(Endpoint? endpoint)
+    {
+        if (endpoint == null)
+            return null;
+
+        // For controller actions: use the action method name
+        var actionDescriptor =
+            endpoint.Metadata.GetMetadata<Microsoft.AspNetCore.Mvc.Controllers.ControllerActionDescriptor>();
+        if (actionDescriptor != null)
+        {
+            return actionDescriptor.ActionName;
+        }
+
+        // For minimal APIs: prefer the name set via .WithName()
+        var endpointName = endpoint.Metadata.GetMetadata<IEndpointNameMetadata>();
+        if (endpointName != null)
+        {
+            return endpointName.EndpointName;
+        }
+
+        // Fallback to method name if it's not a compiler-generated lambda
+        var methodInfo = endpoint.Metadata.GetMetadata<MethodInfo>();
+        if (methodInfo != null && !methodInfo.Name.Contains('<'))
+        {
+            return methodInfo.Name;
+        }
+
+        return endpoint.DisplayName;
     }
 
     /// <summary>

@@ -23,6 +23,7 @@ public class RequestLoggerTests
                 IncludeResponseHeaders = true,
                 IncludeResponseBody = true,
                 CaptureLogs = true,
+                CaptureTraces = true,
             }
         );
         var request = new Request
@@ -54,12 +55,31 @@ public class RequestLoggerTests
                 Message = "Test log message",
             },
         };
+        var activities = new List<ActivityData>
+        {
+            new()
+            {
+                SpanId = "abc123",
+                Name = "TestSpan",
+                Kind = "INTERNAL",
+                StartTime = 1000000,
+                EndTime = 2000000,
+            },
+        };
+        var traceId = "0123456789abcdef0123456789abcdef";
 
         // Act
-        requestLogger.LogRequest(request, response, new Exception("test"), logs);
+        requestLogger.LogRequest(
+            request,
+            response,
+            new Exception("test"),
+            logs,
+            activities,
+            traceId
+        );
 
         // Assert
-        var items = GetLoggedItems(requestLogger);
+        var items = TestHelpers.GetLoggedItems(requestLogger);
         Assert.Single(items);
 
         var item = items[0];
@@ -106,6 +126,12 @@ public class RequestLoggerTests
         Assert.Equal("Test.Logger", logItem.GetProperty("logger").GetString());
         Assert.Equal("Information", logItem.GetProperty("level").GetString());
         Assert.Equal("Test log message", logItem.GetProperty("message").GetString());
+
+        // Verify spans are captured
+        Assert.True(item.TryGetProperty("spans", out var spansProperty));
+        Assert.Single(spansProperty.EnumerateArray());
+        Assert.Equal("TestSpan", spansProperty[0].GetProperty("name").GetString());
+        Assert.Equal("0123456789abcdef0123456789abcdef", item.GetProperty("trace_id").GetString());
 
         requestLogger.Clear();
         Assert.Null(requestLogger.GetFile());
@@ -154,7 +180,7 @@ public class RequestLoggerTests
         requestLogger.LogRequest(request, response);
 
         // Assert
-        var items = GetLoggedItems(requestLogger);
+        var items = TestHelpers.GetLoggedItems(requestLogger);
         Assert.Single(items);
 
         var item = items[0];
@@ -204,7 +230,7 @@ public class RequestLoggerTests
         requestLogger.LogRequest(request, response);
 
         // Assert
-        var items = GetLoggedItems(requestLogger);
+        var items = TestHelpers.GetLoggedItems(requestLogger);
         Assert.Empty(items);
     }
 
@@ -236,7 +262,7 @@ public class RequestLoggerTests
         requestLogger.LogRequest(request, response);
 
         // Assert
-        var items = GetLoggedItems(requestLogger);
+        var items = TestHelpers.GetLoggedItems(requestLogger);
         Assert.Empty(items);
     }
 
@@ -268,7 +294,7 @@ public class RequestLoggerTests
         requestLogger.LogRequest(request, response);
 
         // Assert
-        var items = GetLoggedItems(requestLogger);
+        var items = TestHelpers.GetLoggedItems(requestLogger);
         Assert.Empty(items);
     }
 
@@ -304,7 +330,7 @@ public class RequestLoggerTests
         requestLogger.LogRequest(request, response);
 
         // Assert
-        var items = GetLoggedItems(requestLogger);
+        var items = TestHelpers.GetLoggedItems(requestLogger);
         Assert.Single(items);
         var requestHeaders = items[0].GetProperty("request").GetProperty("headers");
 
@@ -346,7 +372,7 @@ public class RequestLoggerTests
         requestLogger.LogRequest(request, response);
 
         // Assert
-        var items = GetLoggedItems(requestLogger);
+        var items = TestHelpers.GetLoggedItems(requestLogger);
         Assert.Single(items);
         var url = items[0].GetProperty("request").GetProperty("url").GetString();
         Assert.Contains("secret=******", url);
@@ -397,7 +423,7 @@ public class RequestLoggerTests
         requestLogger.LogRequest(request, response);
 
         // Assert
-        var items = GetLoggedItems(requestLogger);
+        var items = TestHelpers.GetLoggedItems(requestLogger);
         Assert.Single(items);
         var requestBody = Encoding.UTF8.GetString(
             Convert.FromBase64String(
@@ -454,7 +480,7 @@ public class RequestLoggerTests
         requestLogger.LogRequest(request, response);
 
         // Assert
-        var items = GetLoggedItems(requestLogger);
+        var items = TestHelpers.GetLoggedItems(requestLogger);
         Assert.Single(items);
 
         var reqBodyBase64 = items[0].GetProperty("request").GetProperty("body").GetString();
@@ -490,29 +516,6 @@ public class RequestLoggerTests
         Assert.Equal(1, reqBody.GetProperty("array")[0].GetProperty("id").GetInt32());
         Assert.Equal("text", reqBody.GetProperty("array")[1].GetProperty("normal").GetString());
         Assert.Equal("success", respBody.GetProperty("status").GetString());
-    }
-
-    private static JsonElement[] GetLoggedItems(RequestLogger requestLogger)
-    {
-        requestLogger.Maintain();
-        requestLogger.RotateFile();
-
-        var logFile = requestLogger.GetFile();
-        if (logFile == null)
-        {
-            return Array.Empty<JsonElement>();
-        }
-
-        var lines = logFile.ReadDecompressedLines();
-        var items = new JsonElement[lines.Count];
-
-        for (int i = 0; i < lines.Count; i++)
-        {
-            items[i] = JsonDocument.Parse(lines[i]).RootElement;
-        }
-
-        logFile.Delete();
-        return items;
     }
 
     private static RequestLogger CreateRequestLogger(RequestLoggingOptions requestLoggingOptions)
