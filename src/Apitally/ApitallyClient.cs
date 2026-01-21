@@ -35,7 +35,10 @@ class ApitallyClient(
     private const int InitialPeriodSeconds = 3600;
     private const int MaxQueueTimeSeconds = 3600;
 
-    private readonly Guid _instanceUuid = Guid.NewGuid();
+    private readonly InstanceLock _instanceLock = InstanceLock.Create(
+        options.Value.ClientId,
+        options.Value.Env
+    );
     private readonly HttpClient _httpClient = httpClientFactory.CreateClient("Apitally");
     private readonly IAsyncPolicy<HttpResponseMessage> _retryPolicy = CreateRetryPolicy();
     private readonly ConcurrentQueue<SyncData> _syncDataQueue = new();
@@ -84,7 +87,7 @@ class ApitallyClient(
     {
         _startupData = new StartupData
         {
-            InstanceUuid = _instanceUuid,
+            InstanceUuid = _instanceLock.InstanceUuid,
             Paths = paths,
             Versions = versions,
             Client = client,
@@ -122,7 +125,7 @@ class ApitallyClient(
     {
         var data = new SyncData
         {
-            InstanceUuid = _instanceUuid,
+            InstanceUuid = _instanceLock.InstanceUuid,
             Requests = RequestCounter.GetAndResetRequests(),
             ValidationErrors = ValidationErrorCounter.GetAndResetValidationErrors(),
             ServerErrors = ServerErrorCounter.GetAndResetServerErrors(),
@@ -291,6 +294,7 @@ class ApitallyClient(
             base.Dispose();
             _httpClient.Dispose();
             ActivityCollector.Dispose();
+            _instanceLock.Dispose();
         }
     }
 
