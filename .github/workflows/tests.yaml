@@ -5,19 +5,19 @@ on:
       - .gitignore
       - LICENSE
       - README.md
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
-  check-pre-commit:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-dotnet@v5
         with:
-          python-version: "3.14"
-      - uses: pre-commit/action@v3.0.1
+          dotnet-version: 9.0.x
+      - name: Restore tools
+        run: dotnet tool restore
+      - name: Check formatting
+        run: dotnet csharpier check .
 
   test:
     runs-on: ubuntu-latest
