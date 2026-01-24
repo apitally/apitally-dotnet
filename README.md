@@ -74,6 +74,14 @@ builder.Services.AddApitally(options =>
 {
     options.ClientId = "your-client-id";
     options.Env = "dev"; // or "prod" etc.
+
+    // Optional: Configure request logging
+    options.RequestLogging.Enabled = true;
+    options.RequestLogging.IncludeRequestHeaders = true;
+    options.RequestLogging.IncludeRequestBody = true;
+    options.RequestLogging.IncludeResponseBody = true;
+    options.RequestLogging.CaptureLogs = true;
+    options.RequestLogging.CaptureTraces = true;
 });
 
 var app = builder.Build();
