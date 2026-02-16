@@ -50,7 +50,15 @@ Get notified immediately if something isn't right using custom alerts, synthetic
 uptime checks and heartbeat monitoring. Alert notifications can be delivered via
 email, Slack and Microsoft Teams.
 
+## Supported frameworks
+
+This SDK supports [**ASP.NET Core**](https://github.com/dotnet/aspnetcore) on .NET 6, 7, 8, and 9.
+
+Apitally also supports many other web frameworks in [JavaScript](https://github.com/apitally/apitally-js), [Python](https://github.com/apitally/apitally-py), [Go](https://github.com/apitally/apitally-go), [.NET](https://github.com/apitally/apitally-dotnet) and [Java](https://github.com/apitally/apitally-java) via our other SDKs.
+
 ## Getting started
+
+If you don't have an Apitally account yet, first [sign up here](https://app.apitally.io/?signup). Create an app in the Apitally dashboard and select **ASP.NET Core** as your framework. You'll see detailed setup instructions with code snippets you can copy and paste. These also include your client ID.
 
 Install the NuGet package:
 
@@ -91,6 +99,8 @@ app.UseApitally();
 
 For further instructions, see our
 [setup guide for ASP.NET Core](https://docs.apitally.io/frameworks/aspnet-core).
+
+See the [SDK reference](https://docs.apitally.io/sdk-reference/dotnet) for all available configuration options, including how to mask sensitive data, customize request logging, and more.
 
 ## Getting help
 
