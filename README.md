@@ -54,7 +54,7 @@ email, Slack and Microsoft Teams.
 
 This SDK supports [**ASP.NET Core**](https://github.com/dotnet/aspnetcore) on .NET 6, 7, 8, and 9.
 
-Apitally also supports many other web frameworks in [JavaScript](https://github.com/apitally/apitally-js), [Python](https://github.com/apitally/apitally-py), [Go](https://github.com/apitally/apitally-go), [.NET](https://github.com/apitally/apitally-dotnet) and [Java](https://github.com/apitally/apitally-java) via our other SDKs.
+Apitally also supports many other web frameworks in [JavaScript](https://github.com/apitally/apitally-js), [Python](https://github.com/apitally/apitally-py), [Go](https://github.com/apitally/apitally-go), and [Java](https://github.com/apitally/apitally-java) via our other SDKs.
 
 ## Getting started
 
