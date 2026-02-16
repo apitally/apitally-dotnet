@@ -3,12 +3,12 @@
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://assets.apitally.io/logos/logo-horizontal-new-dark.png">
       <source media="(prefers-color-scheme: light)" srcset="https://assets.apitally.io/logos/logo-horizontal-new-light.png">
-      <img alt="Apitally logo" src="https://assets.apitally.io/logos/logo-vertical-light.png" width="220">
+      <img alt="Apitally logo" src="https://assets.apitally.io/logos/logo-horizontal-new-light.png" width="220">
     </picture>
   </a>
 </p>
 <p align="center"><b>API monitoring & analytics made simple</b></p>
-<p align="center" style="color: #ccc;">Real-time metrics, request logs, and alerts for your APIs — with just a few lines of code.</p>
+<p align="center" style="color: #ccc;">Metrics, logs, traces, and alerts for your APIs — with just a few lines of code.</p>
 <br>
 <img alt="Apitally screenshots" src="https://assets.apitally.io/screenshots/overview.png">
 <br>
@@ -18,9 +18,8 @@
 [![Tests](https://github.com/apitally/apitally-dotnet/actions/workflows/tests.yaml/badge.svg?event=push)](https://github.com/apitally/apitally-dotnet/actions)
 [![Codecov](https://codecov.io/gh/apitally/apitally-dotnet/graph/badge.svg?token=NJzC7yKV6V)](https://codecov.io/gh/apitally/apitally-dotnet)
 
-This SDK for Apitally currently supports the following .NET web frameworks:
-
-- [ASP.NET Core](https://docs.apitally.io/frameworks/aspnet-core) (≥ 6.0)
+Apitally is a simple API monitoring and analytics tool that makes it easy to understand how your APIs are used
+and helps you troubleshoot API issues faster. Setup is easy and takes less than 5 minutes.
 
 Learn more about Apitally on our 🌎 [website](https://apitally.io) or check out
 the 📚 [documentation](https://docs.apitally.io).
@@ -33,25 +32,25 @@ Track traffic, error and performance metrics for your API, each endpoint and
 individual API consumers, allowing you to make informed, data-driven engineering
 and product decisions.
 
+### Request logs
+
+Drill down from insights to individual API requests or use powerful search and filters to
+find specific requests. View correlated application logs and traces for a complete picture
+of each request, making troubleshooting faster and easier.
+
 ### Error tracking
 
 Understand which validation rules in your endpoints cause client errors. Capture
 error details and stack traces for 500 error responses, and have them linked to
 Sentry issues automatically.
 
-### Request logging
-
-Drill down from insights to individual requests or use powerful filtering to
-understand how consumers have interacted with your API. Configure exactly what
-is included in the logs to meet your requirements.
-
-### API monitoring & alerting
+### API monitoring & alerts
 
 Get notified immediately if something isn't right using custom alerts, synthetic
-uptime checks and heartbeat monitoring. Notifications can be delivered via
-email, Slack or Microsoft Teams.
+uptime checks and heartbeat monitoring. Alert notifications can be delivered via
+email, Slack and Microsoft Teams.
 
-## Install
+## Getting started
 
 Install the NuGet package:
 
@@ -59,9 +58,7 @@ Install the NuGet package:
 dotnet add package Apitally
 ```
 
-## Usage
-
-Add Apitally to your ASP.NET Core application by registering the required
+Then add Apitally to your ASP.NET Core application by registering the required
 services and middleware in your `Program.cs` file:
 
 ```csharp
@@ -99,9 +96,8 @@ For further instructions, see our
 
 If you need help please
 [create a new discussion](https://github.com/orgs/apitally/discussions/categories/q-a)
-on GitHub or
-[join our Slack workspace](https://join.slack.com/t/apitally-community/shared_invite/zt-2b3xxqhdu-9RMq2HyZbR79wtzNLoGHrg).
+on GitHub or email us at [support@apitally.io](mailto:support@apitally.io). We'll get back to you as soon as possible.
 
 ## License
 
-This library is licensed under the terms of the MIT license.
+This library is licensed under the terms of the [MIT license](LICENSE).
