@@ -238,6 +238,28 @@ public class ApitallyMiddlewareTests : IClassFixture<WebApplicationFactory<Progr
     }
 
     [Fact]
+    public async Task RequestLogger_ShouldDetectHttps()
+    {
+        // Arrange
+        _apitallyOptions.RequestLogging.Enabled = true;
+        _apitallyClient.RequestLogger.Clear();
+
+        // Act
+        var request = new HttpRequestMessage(HttpMethod.Get, "/items");
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        var response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        // Assert
+        var items = TestHelpers.GetLoggedItems(_apitallyClient.RequestLogger);
+        Assert.Single(items);
+        Assert.StartsWith(
+            "https://",
+            items[0].GetProperty("request").GetProperty("url").GetString()!
+        );
+    }
+
+    [Fact]
     public async Task RequestLogger_ShouldCaptureApplicationLogs()
     {
         // Arrange

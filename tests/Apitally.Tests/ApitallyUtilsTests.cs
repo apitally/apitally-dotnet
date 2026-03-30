@@ -1,5 +1,6 @@
 namespace Apitally.Tests;
 
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
@@ -43,5 +44,28 @@ public class ApitallyUtilsTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Matches(@"^\d+\.\d+\.\d+$", versions["dotnet"]);
         Assert.Matches(@"^\d+\.\d+\.\d+(?:\.\d+)?$", versions["aspnetcore"]);
         Assert.Matches(@"^\d+\.\d+\.\d+", versions["apitally"]);
+    }
+
+    [Theory]
+    [InlineData("X-Forwarded-Proto", "https", true)]
+    [InlineData("X-Forwarded-Proto", "https, http", true)]
+    [InlineData("X-Forwarded-Proto", "http", false)]
+    [InlineData("X-Forwarded-Protocol", "https", true)]
+    [InlineData("X-Forwarded-Scheme", "https", true)]
+    [InlineData("X-Url-Scheme", "https", true)]
+    [InlineData("X-Scheme", "https", true)]
+    [InlineData("Forwarded", "for=192.0.2.1;proto=https;host=example.com", true)]
+    [InlineData("Forwarded", "proto=\"https\"", true)]
+    [InlineData("Forwarded", "for=192.0.2.1;proto=http", false)]
+    [InlineData("Forwarded", "for=192.0.2.1;proto=http, for=192.0.2.2;proto=https", false)]
+    [InlineData("Front-End-Https", "on", true)]
+    [InlineData("X-Forwarded-Ssl", "on", true)]
+    [InlineData(null, null, false)]
+    public void IsHttps_DetectsProxyHeaders(string? header, string? value, bool expected)
+    {
+        var headers = new HeaderDictionary();
+        if (header is not null)
+            headers[header] = value;
+        Assert.Equal(expected, ApitallyUtils.IsHttps(headers));
     }
 }
