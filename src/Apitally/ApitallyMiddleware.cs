@@ -5,7 +5,6 @@ using System.IO;
 using System.Reflection;
 using Apitally.Models;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -182,7 +181,7 @@ class ApitallyMiddleware(
                         Consumer = consumerIdentifier,
                         Method = context.Request.Method,
                         Path = routePattern,
-                        Url = context.Request.GetDisplayUrl(),
+                        Url = ApitallyUtils.GetRequestUrl(context.Request),
                         Headers =
                         [
                             .. context.Request.Headers.Select(h => new Header(
