@@ -57,6 +57,7 @@ public class ApitallyUtilsTests : IClassFixture<WebApplicationFactory<Program>>
     [InlineData("Forwarded", "for=192.0.2.1;proto=https;host=example.com", true)]
     [InlineData("Forwarded", "proto=\"https\"", true)]
     [InlineData("Forwarded", "for=192.0.2.1;proto=http", false)]
+    [InlineData("Forwarded", "for=192.0.2.1;proto=http, for=192.0.2.2;proto=https", false)]
     [InlineData("Front-End-Https", "on", true)]
     [InlineData("X-Forwarded-Ssl", "on", true)]
     [InlineData(null, null, false)]

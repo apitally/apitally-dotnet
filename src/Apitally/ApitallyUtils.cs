@@ -82,7 +82,8 @@ static class ApitallyUtils
         var forwarded = headers["Forwarded"].FirstOrDefault();
         if (forwarded is not null)
         {
-            foreach (var param in forwarded.Split([',', ';']))
+            var firstElement = forwarded.Split(',', 2)[0];
+            foreach (var param in firstElement.Split(';'))
             {
                 var trimmed = param.Trim();
                 if (trimmed.StartsWith("proto=", StringComparison.OrdinalIgnoreCase))
