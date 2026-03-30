@@ -82,20 +82,13 @@ static class ApitallyUtils
         var forwarded = headers["Forwarded"].FirstOrDefault();
         if (forwarded is not null)
         {
-            foreach (var element in forwarded.Split(','))
+            foreach (var param in forwarded.Split([',', ';']))
             {
-                foreach (var param in element.Split(';'))
+                var trimmed = param.Trim();
+                if (trimmed.StartsWith("proto=", StringComparison.OrdinalIgnoreCase))
                 {
-                    var trimmed = param.Trim();
-                    var eqIndex = trimmed.IndexOf('=');
-                    if (eqIndex < 0)
-                        continue;
-                    var k = trimmed[..eqIndex].Trim();
-                    var v = trimmed[(eqIndex + 1)..].Trim().Trim('"');
-                    if (
-                        k.Equals("proto", StringComparison.OrdinalIgnoreCase)
-                        && v.Equals("https", StringComparison.OrdinalIgnoreCase)
-                    )
+                    var v = trimmed[6..].Trim().Trim('"');
+                    if (v.Equals("https", StringComparison.OrdinalIgnoreCase))
                         return true;
                 }
             }
