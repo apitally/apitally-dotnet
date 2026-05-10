@@ -1,6 +1,7 @@
 namespace Apitally.TestApp;
 
 using Apitally;
+using Microsoft.AspNetCore.Mvc;
 
 public static class ApitallyTestExtensions
 {
@@ -29,13 +30,11 @@ public static class ApitallyTestExtensions
             sp.GetRequiredService<ApitallyLoggerProvider>()
         );
 
-        services.AddSingleton<ValidationErrorFilter>();
-        services.AddControllers(options =>
+        services.Configure<MvcOptions>(options =>
         {
-            var filter = services
-                .BuildServiceProvider()
-                .GetRequiredService<ValidationErrorFilter>();
-            options.Filters.Add(filter);
+            var filter = (TypeFilterAttribute)
+                options.Filters.Add<ValidationErrorFilter>(ValidationErrorFilter.FilterOrder);
+            filter.IsReusable = true;
         });
         services.AddSingleton<RequestLogger>();
         services.AddSingleton<ApitallyClient>();

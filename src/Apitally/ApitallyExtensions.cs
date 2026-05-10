@@ -1,6 +1,7 @@
 namespace Apitally;
 
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,14 +55,12 @@ public static class ApitallyExtensions
             sp.GetRequiredService<ApitallyLoggerProvider>()
         );
 
-        // Ensure MVC services are registered and add global filter
-        services.AddSingleton<ValidationErrorFilter>();
-        services.AddControllers(options =>
+        // Inert unless the user calls AddControllers() — keeps minimal-API apps free of MVC services.
+        services.Configure<MvcOptions>(options =>
         {
-            var filter = services
-                .BuildServiceProvider()
-                .GetRequiredService<ValidationErrorFilter>();
-            options.Filters.Add(filter);
+            var filter = (TypeFilterAttribute)
+                options.Filters.Add<ValidationErrorFilter>(ValidationErrorFilter.FilterOrder);
+            filter.IsReusable = true;
         });
 
         // Register RequestLogger and ApitallyClient

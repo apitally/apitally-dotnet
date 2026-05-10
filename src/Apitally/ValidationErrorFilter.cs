@@ -3,11 +3,10 @@ namespace Apitally;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Logging;
 
-public class ValidationErrorFilter(ILogger<ValidationErrorFilter> logger)
-    : IActionFilter,
-        IOrderedFilter
+public class ValidationErrorFilter(ILogger<ValidationErrorFilter> logger) : IActionFilter
 {
-    public int Order => int.MinValue + 100;
+    // Must run before MVC's ModelStateInvalidFilter (Order = -2000), which short-circuits with a 400.
+    public const int FilterOrder = int.MinValue + 100;
 
     public void OnActionExecuting(ActionExecutingContext context)
     {
