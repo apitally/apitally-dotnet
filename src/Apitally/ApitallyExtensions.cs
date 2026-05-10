@@ -58,7 +58,9 @@ public static class ApitallyExtensions
         // Inert unless the user calls AddControllers() — keeps minimal-API apps free of MVC services.
         services.Configure<MvcOptions>(options =>
         {
-            options.Filters.Add<ValidationErrorFilter>(ValidationErrorFilter.FilterOrder);
+            var filter = (TypeFilterAttribute)
+                options.Filters.Add<ValidationErrorFilter>(ValidationErrorFilter.FilterOrder);
+            filter.IsReusable = true;
         });
 
         // Register RequestLogger and ApitallyClient

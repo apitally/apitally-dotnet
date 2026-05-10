@@ -32,7 +32,9 @@ public static class ApitallyTestExtensions
 
         services.Configure<MvcOptions>(options =>
         {
-            options.Filters.Add<ValidationErrorFilter>(ValidationErrorFilter.FilterOrder);
+            var filter = (TypeFilterAttribute)
+                options.Filters.Add<ValidationErrorFilter>(ValidationErrorFilter.FilterOrder);
+            filter.IsReusable = true;
         });
         services.AddSingleton<RequestLogger>();
         services.AddSingleton<ApitallyClient>();
