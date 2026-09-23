@@ -37,6 +37,7 @@ An approved product/API direction does not establish that its proposed implement
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
 | Metric capacity | Use a generous, internally selected fixed capacity through native OTel views and reclamation. Select the number after memory and collection-cost measurements; no public capacity setting or runtime resizing. |
 | Span-based callbacks | All request/response sampling and body-masking callbacks receive the same complete, read-only span snapshot type, populated for the callback's stage. |
+| Sampling callback result | Both sampling callbacks return `double?`: a keep probability in `[0, 1]`, or `null` to abstain. |
 | Log-mask callback | Use standard `OpenTelemetry.Logs.LogRecord` synchronously in the private logger pipeline, with isolated inputs and an owned copy afterward. The native callback record must not be retained. |
 | Manual tracing | `IApitally.StartActivity(...)` returns the native .NET `Activity` type for a `using` scope. |
 | Monitored scope | The whole HTTP application, subject to shared eligibility, sampling, and exclusion rules. |
@@ -226,6 +227,8 @@ Suppress framework per-message spans at the source where supported and filter th
 Request-stage drops skip trace-detail capture work. Excluded requests never invoke sampling callbacks. Metrics and eligible error aggregates remain independent of all trace-detail decisions.
 
 Response sampling runs once with final route, status, sizes, consumer, and custom request attributes. Abstention preserves the request-stage decision rather than sampling again at the static rate.
+
+**Confirmed .NET result type:** both sampling callbacks return `double?`. Zero means drop, one means keep, and a value between them is the keep probability. `null` at request stage falls back to the configured static rate; `null` at response stage preserves the earlier decision. Express boolean conditions as numeric probabilities, such as `condition ? 1.0 : 0.0`, rather than introducing a custom result type or a weakly typed boolean/numeric union. This adapts the shared API's return shape to C# without changing probability, abstention or invalid-result behavior. A response-stage keep cannot recover detail already dropped at request stage.
 
 Hold ended descendants and application logs until both transport observation and the SERVER activity complete. Keep at most 1,000 spans and 1,000 application log records per request, retaining the earliest arrivals. Release descendants, then the SERVER span, then the request's logs once. A drop discards buffered detail and raw payloads and ensures late detail also drops. Late descendants/logs for a released request remain eligible for export.
 
@@ -470,7 +473,7 @@ The provider's instrumentation and source subscriptions must be configured befor
 
 ### Span-based callbacks
 
-**Confirmed:** `SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody` and `MaskResponseBody` use one complete, read-only span snapshot type, with `SpanSnapshot` as its working name. The body callbacks additionally receive the body to mask. The snapshot's shape is consistent across callbacks while its available data follows the stages described in section 6. Final member names and delegate signatures remain open. Log masking uses the standard OTel `LogRecord` because it processes a different signal.
+**Confirmed:** `SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody` and `MaskResponseBody` use one complete, read-only span snapshot type, with `SpanSnapshot` as its working name. The body callbacks additionally receive the body to mask. The snapshot's shape is consistent across callbacks while its available data follows the stages described in section 6. Both sampling callbacks return `double?`, with probabilities and stage-specific abstention as described there. Final snapshot members and body-masking delegate signatures remain open. Log masking uses the standard OTel `LogRecord` because it processes a different signal.
 
 ### Log masking
 
@@ -526,6 +529,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Ordinary final drain | Host lifetime and cancellation-budget integration. | Proposed; exact policy open. |
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
 | Span callback type | One complete, read-only span snapshot type for all sampling and body-masking callbacks, preserving stage-appropriate private data. | Confirmed .NET adaptation; detailed API and value semantics remain open. |
+| Sampling result type | `double?` represents the keep probability or abstention for both callbacks; boolean choices use zero or one. | Confirmed typed C# adaptation; shared sampling semantics preserved. |
 | Log callback type | Standard OTel `LogRecord` in a synchronous private-provider callback, with isolated inputs and copying before native record recycling. | Confirmed direction; native-callback isolation and masking require validation. |
 | Encoding | Official OTLP schemas/protobuf encoding with SDK-owned mapping. | Proposed .NET mechanism; no change to HTTP/protobuf delivery. |
 | Metric capacity | Internally selected fixed capacity through native OTel views and reclamation, with visible overflow degradation. | Confirmed policy; numeric capacity requires measurement. |
