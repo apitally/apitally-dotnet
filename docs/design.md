@@ -37,6 +37,7 @@ An approved product/API direction does not establish that its proposed implement
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
 | Metric capacity | Use a generous, internally selected fixed capacity through native OTel views and reclamation. Select the number after memory and collection-cost measurements; no public capacity setting or runtime resizing. |
 | Span-based callbacks | All request/response sampling and body-masking callbacks receive the same complete, read-only span snapshot type, populated for the callback's stage. |
+| Log-mask callback | Use standard `OpenTelemetry.Logs.LogRecord` synchronously in the private logger pipeline, with isolated inputs and an owned copy afterward. The native callback record must not be retained. |
 | Manual tracing | `IApitally.StartActivity(...)` returns the native .NET `Activity` type for a `using` scope. |
 | Monitored scope | The whole HTTP application, subject to shared eligibility, sampling, and exclusion rules. |
 
@@ -244,7 +245,7 @@ Each invocation receives an owned view appropriate to its stage, not a shared li
 
 Python constructs a new instance of its standard OTel `ReadableSpan` class; JavaScript constructs a plain object implementing the standard `ReadableSpan` interface. Both preserve full span metadata while supplying private attributes. The .NET-owned snapshot is an explicit adaptation to preserve that behavior and consistency across .NET callbacks when the standard SDK lacks an equivalent abstraction.
 
-**Open:** the final type/member names, delegate signatures, detailed value normalization and ownership, and complete scope/resource copying. The existing POC does not establish the complete public callback implementation. Log masking operates on a different signal and retains a separate log-record API, whose type remains open.
+**Open:** the final type/member names, delegate signatures, detailed value normalization and ownership, and complete scope/resource copying. The existing POC does not establish the complete public callback implementation. Log masking operates on a different signal and uses the separate native `LogRecord` API described in section 9.
 
 **Open:** unfinished-request shutdown policy. It must preserve complete-body guarantees, apply response sampling before any release, and leave user-owned activities untouched. The different Python and JavaScript shutdown policies are examples, not defaults to copy.
 
@@ -321,7 +322,11 @@ Run `MaskLogRecord` synchronously on the private captured record before bufferin
 
 **POC evidence:** retaining a raw `LogRecord` across calls observes pool reuse and changed content. The logging experiment copies tested structured attributes/scopes synchronously, masks a private owned object, detaches retained callback state, and forwards only accepted snapshots to request buffers and stock generic batching. User output and delayed copies remain unchanged after later mutations in the tested shapes. Returning from a processor does not cancel subsequent processors; explicit forwarding provides exact drops. Child context remains separate from SERVER linkage, and the request map is a fixture rather than proven middleware integration.
 
-**Open:** the public callback type, normalization of other CLR values and duplicate keys, scope flattening/collisions, production request association, and integration with other logging factories. The POC's Unicode-scalar truncation policy is experimental, not a new shared-contract decision. Owned snapshots are a demonstrated mechanism, not an approved public logging API.
+**Confirmed callback direction:** `MaskLogRecord` receives the standard `OpenTelemetry.Logs.LogRecord` created by Apitally's private logger provider. Invoke the callback synchronously after isolating mutable input data, then copy accepted data into an SDK-owned record before the native record is recycled. The callback must not retain the native record or use it asynchronously. Preserve the supplied-record-or-drop behavior above.
+
+The private provider creates the native record through public APIs, so a public `LogRecord` constructor or clone method is not required for this path. Its inputs can still reference application-owned state; a separate provider alone does not establish isolation. The existing POC masks an owned custom object, not a native record over pre-isolated inputs, so the selected callback path requires focused validation.
+
+**Open:** rendered-body/formatted-message behavior, exception representation, normalization of other CLR values and duplicate keys, scope flattening/collisions, production request association, and integration with other logging factories. Verify callback changes reach export, mutable values do not affect other providers, and accepted buffered data is detached from subsequent callback/native-record mutations. The POC's Unicode-scalar truncation policy is experimental, not a new shared-contract decision. If the native callback cannot satisfy the isolation contract through supported APIs, return the issue for review rather than silently changing the public type.
 
 ### Startup event
 
@@ -465,7 +470,11 @@ The provider's instrumentation and source subscriptions must be configured befor
 
 ### Span-based callbacks
 
-**Confirmed:** `SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody` and `MaskResponseBody` use one complete, read-only span snapshot type, with `SpanSnapshot` as its working name. The body callbacks additionally receive the body to mask. The snapshot's shape is consistent across callbacks while its available data follows the stages described in section 6. Final member names and delegate signatures remain open. Log masking uses a separate log-record type because it processes a different signal.
+**Confirmed:** `SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody` and `MaskResponseBody` use one complete, read-only span snapshot type, with `SpanSnapshot` as its working name. The body callbacks additionally receive the body to mask. The snapshot's shape is consistent across callbacks while its available data follows the stages described in section 6. Final member names and delegate signatures remain open. Log masking uses the standard OTel `LogRecord` because it processes a different signal.
+
+### Log masking
+
+**Confirmed direction:** `MaskLogRecord` receives a private native `OpenTelemetry.Logs.LogRecord` synchronously and may return that record or drop it. The reference is valid only during the callback; callers must not retain it. Apitally isolates input values before the callback and copies accepted data afterward. This native-record path still requires the validation described in section 9.
 
 ### Request helpers
 
@@ -517,6 +526,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Ordinary final drain | Host lifetime and cancellation-budget integration. | Proposed; exact policy open. |
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
 | Span callback type | One complete, read-only span snapshot type for all sampling and body-masking callbacks, preserving stage-appropriate private data. | Confirmed .NET adaptation; detailed API and value semantics remain open. |
+| Log callback type | Standard OTel `LogRecord` in a synchronous private-provider callback, with isolated inputs and copying before native record recycling. | Confirmed direction; native-callback isolation and masking require validation. |
 | Encoding | Official OTLP schemas/protobuf encoding with SDK-owned mapping. | Proposed .NET mechanism; no change to HTTP/protobuf delivery. |
 | Metric capacity | Internally selected fixed capacity through native OTel views and reclamation, with visible overflow degradation. | Confirmed policy; numeric capacity requires measurement. |
 | Runtime-specific fork and signal mechanics | Use .NET host lifecycle instead. | Platform adaptation. |
@@ -596,7 +606,7 @@ The interview has settled support scope and the main user-facing direction. The 
 
 1. Provider-selection/attachment timing and external-processor lifetime validation for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
-3. Detailed span-snapshot members and value semantics, the log-mask callback type, option representation and configuration-resolution timing.
+3. Detailed span-snapshot members and value semantics, native log-mask callback isolation/normalization, option representation and configuration-resolution timing.
 4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
 5. Sentry dependency/activation strategy, OpenAPI provider boundaries and dependency floors.
 
@@ -639,3 +649,4 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [OTel fixed metric-capacity allocation](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Metrics/AggregatorStore.cs#L71-L179)
 - [Python callback declarations](../../apitally-py/apitally/__init__.py) and [standard ReadableSpan copy construction](../../apitally-py/apitally/shared/span_processor.py)
 - [JavaScript callback declarations](../../apitally-js/src/config.ts) and [structural ReadableSpan copies](../../apitally-js/src/spanProcessor.ts)
+- [OTel private logger's synchronous processing and record recycling](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Logs/ILogger/OpenTelemetryLogger.cs#L44-L106)
