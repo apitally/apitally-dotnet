@@ -1,0 +1,7 @@
+Sentry runtime=10.0.9 Sentry.AspNetCore=6.11.1 Sentry=6.11.1
+{"viaOptions":false,"registerFirst":false,"beforeEnd":2,"afterEndLinked":false,"Linked":2,"fakeEvents":4,"concurrentDistinct":true,"serverActivityKind":"Server"}
+{"viaOptions":false,"registerFirst":true,"beforeEnd":2,"afterEndLinked":false,"Linked":2,"fakeEvents":4,"concurrentDistinct":true,"serverActivityKind":"Server"}
+{"viaOptions":true,"registerFirst":false,"beforeEnd":2,"afterEndLinked":true,"Linked":3,"fakeEvents":4,"concurrentDistinct":true,"serverActivityKind":"Server"}
+{"viaOptions":true,"registerFirst":true,"beforeEnd":2,"afterEndLinked":true,"Linked":3,"fakeEvents":4,"concurrentDistinct":true,"serverActivityKind":"Server"}
+NEGATIVE processor observed an ID for an event dropped later by BeforeSend; fake transport events=0
+PASS Sentry (fake transport only)

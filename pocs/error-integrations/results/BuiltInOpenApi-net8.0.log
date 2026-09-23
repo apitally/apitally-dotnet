@@ -1,0 +1,4 @@
+Built-in OpenAPI runtime=8.0.13
+[{"method":"GET","path":"/api/v1/items/{id:int}"},{"method":"PUT","path":"/api/v1/items/{id:int}"},{"method":"PATCH","path":"/api/v1/items/{id:int}"},{"method":"GET","path":"/health"}]
+net8 WithOpenApi exposes operation metadata, not a built-in document generator
+PASS built-in OpenAPI (no schema endpoint mapped or requested)

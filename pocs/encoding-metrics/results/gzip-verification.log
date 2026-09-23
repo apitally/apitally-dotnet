@@ -1,0 +1,22 @@
+artifacts/net10.0/logs-continuous.gz: one gzip member, raw=1048, stored=465
+artifacts/net10.0/metrics-continuous.gz: one gzip member, raw=2308, stored=598
+artifacts/net10.0/rotation-0.gz: one gzip member, raw=2656278, stored=868060
+artifacts/net10.0/rotation-1.gz: one gzip member, raw=2656288, stored=868070
+artifacts/net10.0/rotation-2.gz: one gzip member, raw=2656288, stored=868070
+artifacts/net10.0/rotation-3.gz: one gzip member, raw=2822514, stored=922499
+artifacts/net10.0/traces-continuous.gz: one gzip member, raw=201328, stored=107546
+artifacts/net8.0/logs-continuous.gz: one gzip member, raw=1048, stored=425
+artifacts/net8.0/metrics-continuous.gz: one gzip member, raw=2308, stored=556
+artifacts/net8.0/rotation-0.gz: one gzip member, raw=2656278, stored=821316
+artifacts/net8.0/rotation-1.gz: one gzip member, raw=2656288, stored=821327
+artifacts/net8.0/rotation-2.gz: one gzip member, raw=2656288, stored=821327
+artifacts/net8.0/rotation-3.gz: one gzip member, raw=2822514, stored=872673
+artifacts/net8.0/traces-continuous.gz: one gzip member, raw=201328, stored=101985
+artifacts/net9.0/logs-continuous.gz: one gzip member, raw=1048, stored=465
+artifacts/net9.0/metrics-continuous.gz: one gzip member, raw=2308, stored=600
+artifacts/net9.0/rotation-0.gz: one gzip member, raw=2656278, stored=868060
+artifacts/net9.0/rotation-1.gz: one gzip member, raw=2656288, stored=868070
+artifacts/net9.0/rotation-2.gz: one gzip member, raw=2656288, stored=868070
+artifacts/net9.0/rotation-3.gz: one gzip member, raw=2822514, stored=922499
+artifacts/net9.0/traces-continuous.gz: one gzip member, raw=201328, stored=107546
+PASS: checksums, SDK/runtime matrix and independent single-member gzip validation

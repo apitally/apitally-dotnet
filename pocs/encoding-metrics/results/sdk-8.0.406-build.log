@@ -1,0 +1,8 @@
+$ dotnet /usr/local/share/dotnet/sdk/8.0.406/dotnet.dll build EncodingMetrics.csproj -f net8.0 --no-restore --no-incremental
+  EncodingMetrics -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/encoding-metrics/bin/Debug/net8.0/EncodingMetrics.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:03.75

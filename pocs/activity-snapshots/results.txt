@@ -1,0 +1,111 @@
+SDK: 10.0.301
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ActivitySnapshots -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/activity-snapshots/bin/Release/net8.0/ActivitySnapshots.dll
+  ActivitySnapshots -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/activity-snapshots/bin/Release/net10.0/ActivitySnapshots.dll
+  ActivitySnapshots -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/activity-snapshots/bin/Release/net9.0/ActivitySnapshots.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:04.37
+Project 'ActivitySnapshots' has the following package references
+   [net10.0]:
+   Top-level Package      Requested   Resolved
+   > OpenTelemetry        [1.19.0]    1.19.0
+
+   Transitive Package                                             Resolved
+   > Microsoft.Extensions.Configuration                           10.0.0
+   > Microsoft.Extensions.Configuration.Abstractions              10.0.0
+   > Microsoft.Extensions.Configuration.Binder                    10.0.0
+   > Microsoft.Extensions.Configuration.EnvironmentVariables      10.0.0
+   > Microsoft.Extensions.DependencyInjection                     10.0.0
+   > Microsoft.Extensions.DependencyInjection.Abstractions        10.0.0
+   > Microsoft.Extensions.Diagnostics.Abstractions                10.0.0
+   > Microsoft.Extensions.Logging                                 10.0.0
+   > Microsoft.Extensions.Logging.Abstractions                    10.0.0
+   > Microsoft.Extensions.Logging.Configuration                   10.0.0
+   > Microsoft.Extensions.Options                                 10.0.0
+   > Microsoft.Extensions.Options.ConfigurationExtensions         10.0.0
+   > Microsoft.Extensions.Primitives                              10.0.0
+   > OpenTelemetry.Api                                            1.19.0
+   > OpenTelemetry.Api.ProviderBuilderExtensions                  1.19.0
+
+   [net8.0]:
+   Top-level Package      Requested   Resolved
+   > OpenTelemetry        [1.19.0]    1.19.0
+
+   Transitive Package                                             Resolved
+   > Microsoft.Extensions.Configuration                           8.0.0
+   > Microsoft.Extensions.Configuration.Abstractions              8.0.0
+   > Microsoft.Extensions.Configuration.Binder                    8.0.0
+   > Microsoft.Extensions.Configuration.EnvironmentVariables      8.0.0
+   > Microsoft.Extensions.DependencyInjection                     8.0.0
+   > Microsoft.Extensions.DependencyInjection.Abstractions        8.0.0
+   > Microsoft.Extensions.Diagnostics.Abstractions                8.0.0
+   > Microsoft.Extensions.Logging                                 8.0.0
+   > Microsoft.Extensions.Logging.Abstractions                    8.0.0
+   > Microsoft.Extensions.Logging.Configuration                   8.0.0
+   > Microsoft.Extensions.Options                                 8.0.0
+   > Microsoft.Extensions.Options.ConfigurationExtensions         8.0.0
+   > Microsoft.Extensions.Primitives                              8.0.0
+   > OpenTelemetry.Api                                            1.19.0
+   > OpenTelemetry.Api.ProviderBuilderExtensions                  1.19.0
+   > System.Diagnostics.DiagnosticSource                          10.0.0
+
+   [net9.0]:
+   Top-level Package      Requested   Resolved
+   > OpenTelemetry        [1.19.0]    1.19.0
+
+   Transitive Package                                             Resolved
+   > Microsoft.Extensions.Configuration                           9.0.0
+   > Microsoft.Extensions.Configuration.Abstractions              9.0.0
+   > Microsoft.Extensions.Configuration.Binder                    9.0.0
+   > Microsoft.Extensions.Configuration.EnvironmentVariables      9.0.0
+   > Microsoft.Extensions.DependencyInjection                     9.0.0
+   > Microsoft.Extensions.DependencyInjection.Abstractions        9.0.0
+   > Microsoft.Extensions.Diagnostics.Abstractions                9.0.0
+   > Microsoft.Extensions.Logging                                 9.0.0
+   > Microsoft.Extensions.Logging.Abstractions                    9.0.0
+   > Microsoft.Extensions.Logging.Configuration                   9.0.0
+   > Microsoft.Extensions.Options                                 9.0.0
+   > Microsoft.Extensions.Options.ConfigurationExtensions         9.0.0
+   > Microsoft.Extensions.Primitives                              9.0.0
+   > OpenTelemetry.Api                                            1.19.0
+   > OpenTelemetry.Api.ProviderBuilderExtensions                  1.19.0
+   > System.Diagnostics.DiagnosticSource                          10.0.0
+
+
+=== net8.0 ===
+Runtime: .NET 8.0.13; Arm64
+OpenTelemetry: 1.19.0+dac1573ece52e8c275c3db5282bc57e3d5eff5cf; DiagnosticSource: 10.0.0+b0f34d51fccc69fd334253924abd8d6853fad7aa
+PASS snapshot isolation (userFirst=True): request thread=1, private worker=4, user worker=5, body=50000 bytes
+PASS snapshot isolation (userFirst=False): request thread=1, private worker=10, user worker=11, body=50000 bytes
+PASS sampling: OnEnd=2, specialized=1, generic unfiltered=2, generic Recorded guard=1; Drop=0
+PASS batching: scheduled=1003ms, bounded queue=2, Shutdown drains/joins; NEGATIVE ForceFlush can return before Export completes; generic accepts after shutdown; timeout does not cancel Export
+PASS disposal probe: NEGATIVE Dispose alone does not drain/join/shutdown; pending second item lost
+PASS coordination MODEL ONLY: both completion orders x keep/drop, earliest cap=2, late items, one release
+PASS: all 6 groups; 109 assertions
+
+=== net9.0 ===
+Runtime: .NET 9.0.2; Arm64
+OpenTelemetry: 1.19.0+dac1573ece52e8c275c3db5282bc57e3d5eff5cf; DiagnosticSource: 10.0.0+b0f34d51fccc69fd334253924abd8d6853fad7aa
+PASS snapshot isolation (userFirst=True): request thread=1, private worker=4, user worker=5, body=50000 bytes
+PASS snapshot isolation (userFirst=False): request thread=1, private worker=9, user worker=10, body=50000 bytes
+PASS sampling: OnEnd=2, specialized=1, generic unfiltered=2, generic Recorded guard=1; Drop=0
+PASS batching: scheduled=1002ms, bounded queue=2, Shutdown drains/joins; NEGATIVE ForceFlush can return before Export completes; generic accepts after shutdown; timeout does not cancel Export
+PASS disposal probe: NEGATIVE Dispose alone does not drain/join/shutdown; pending second item lost
+PASS coordination MODEL ONLY: both completion orders x keep/drop, earliest cap=2, late items, one release
+PASS: all 6 groups; 109 assertions
+
+=== net10.0 ===
+Runtime: .NET 10.0.9; Arm64
+OpenTelemetry: 1.19.0+dac1573ece52e8c275c3db5282bc57e3d5eff5cf; DiagnosticSource: 10.0.9+901ca941248413c79832d2fdbd709da0c4386353
+PASS snapshot isolation (userFirst=True): request thread=1, private worker=4, user worker=5, body=50000 bytes
+PASS snapshot isolation (userFirst=False): request thread=1, private worker=10, user worker=11, body=50000 bytes
+PASS sampling: OnEnd=2, specialized=1, generic unfiltered=2, generic Recorded guard=1; Drop=0
+PASS batching: scheduled=1002ms, bounded queue=2, Shutdown drains/joins; NEGATIVE ForceFlush can return before Export completes; generic accepts after shutdown; timeout does not cancel Export
+PASS disposal probe: NEGATIVE Dispose alone does not drain/join/shutdown; pending second item lost
+PASS coordination MODEL ONLY: both completion orders x keep/drop, earliest cap=2, late items, one release
+PASS: all 6 groups; 109 assertions

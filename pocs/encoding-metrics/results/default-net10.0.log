@@ -1,0 +1,20 @@
+$ dotnet run --project EncodingMetrics.csproj -f net10.0 --no-build --no-restore
+Runtime: .NET 10.0.9; Arm64
+PASS delta: counts=3,1; units=s,By,By; scale=3; offset=-25; snapshots copied before exporter return
+PASS scale: public MaxScale=3, MaxSize=160; untouched exponential view defaults=20/160; no public minimum-scale clamp used
+PASS adaptive scale: 1ns..1year duration and 1..Int64.MaxValue bytes produce scales=1,1
+PASS cardinality probe=2: a,b retained; c overflow; late a retained/d overflow; idle collection frees capacity for e,f. Overflow is invalid for ingestion, not a product limit
+PASS negative isolation: two private providers and name-subscribed user provider each observe 11 from distinct same-name meters (1+10)
+PASS explicit MeterOptions.Scope + AddView(Drop foreign scope): private=1,10; user AddMeter remains process-wide=11
+PASS IMeterFactory scope filter: private=1,10; cumulative user=11; after A disposal B delta=20/user cumulative=31. Factories alone do not restrict name subscribers
+PASS idle gauges cycle=1: cpu/memory timestamp skew=30000ns, uptime present
+PASS idle gauges cycle=2: cpu/memory timestamp skew=15000ns, uptime present
+PASS idle gauges with CPU/memory disabled: uptime only
+PASS protobuf: all three requests round-trip; 50,000-byte binary and string bodies; header arrays; IDs/events/links/status; native log event_name and structured uint32 count
+PASS traces concatenation: 2 requests in one GZipStream; encoded=100664 each, stored=107546
+PASS logs concatenation: 2 requests in one GZipStream; encoded=524 each, stored=465
+PASS metrics concatenation: 2 requests in one GZipStream; encoded=1154 each, stored=598
+PASS rotation: 32-record estimate=5312342 > 4000000; recursive exact-size splits=2; files=4; decoded records=65; single oversized record explicitly rejected
+PASS proxy configuration only: explicit HTTP_PROXY URI snapshot stays bound after environment change; no physical proxy request
+PASS local HTTP: baseline/suppressed/suppressed/restored spans=1/0/0/1; all 4 POST bodies byte-identical to disk; SHA256=7C511392DE0D95F49DFBCC206257A7C5FDE77E20F878CA2F5BC16AA999F71617
+PASS: all encoding/metrics probes completed
