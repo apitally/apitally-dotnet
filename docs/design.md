@@ -41,6 +41,7 @@ An approved product/API direction does not establish that its proposed implement
 | Log-mask callback | Use standard `OpenTelemetry.Logs.LogRecord` synchronously in the private logger pipeline, with isolated inputs and an owned copy afterward. The native callback record must not be retained. |
 | Manual tracing | `IApitally.StartActivity(...)` returns the native .NET `Activity` type for a `using` scope. |
 | Monitored scope | The whole HTTP application, subject to shared eligibility, sampling, and exclusion rules. |
+| Sentry integration | Deferred beyond .NET SDK v1. Ordinary exception/error capture remains in scope; retain the Sentry POC as future research. |
 
 The older `Startup` approach has not been removed. Microsoft still supports it with Generic Host in .NET 10. This is distinct from the legacy `WebHostBuilder` and `WebHost` APIs, which became obsolete in .NET 10. Separate support for every obsolete hosting API is not part of the agreed scope. See the [hosting guidance](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/host/generic-host?view=aspnetcore-10.0) and [deprecation notice](https://learn.microsoft.com/en-us/aspnet/core/breaking-changes/10/webhostbuilder-deprecated?view=aspnetcore-10.0).
 
@@ -210,7 +211,7 @@ Apply shared exclusions before request sampling: `OPTIONS`, websocket requests, 
 
 - The request's SERVER activity handle and identity, independent of `Activity.Current` becoming a child.
 - Consumer identity and request attributes.
-- First captured exception, validation details, and Sentry event ID.
+- First captured exception and validation details.
 - Sampling/exclusion decisions and bounded trace/log buffers.
 - Transport completion, body-capture state, and final response measurements.
 
@@ -349,7 +350,7 @@ The shared contract says once per serving process. Emitting once per serving hos
 
 ### Error aggregates
 
-Use the shared validation/server aggregation identities, truncation rules, positive `UInt32` count range, and latest-nonempty Sentry enrichment rule. Limits are 100 validation and 100 server groups between drains in the shared process model; their multi-host scope remains open as noted in section 2.
+Use the shared validation/server aggregation identities, truncation rules and positive `UInt32` count range. Sentry event-ID enrichment is deferred from v1 as described in section 14. Limits are 100 validation and 100 server groups between drains in the shared process model; their multi-host scope remains open as noted in section 2.
 
 Drain atomically, then emit outside the synchronization boundary immediately before the logs pipeline flushes in ordinary and final cycles. Each aggregate has the native event name and a structured OTLP object body, not the startup event's JSON-string body. It carries no request trace context and bypasses application-log masking/truncation.
 
@@ -502,15 +503,15 @@ Document the write-token replacement, enabled-by-default logging, capture option
 
 ## 14. Sentry integration
 
-**Inherited target:** automatically detect a usable Sentry integration and attach an event-pipeline hook without an Apitally enable flag. Only the Sentry exception event ID crosses the integration boundary.
+**Confirmed scope deviation:** Sentry integration is deferred beyond .NET SDK v1. Ordinary exception capture and error aggregation remain in scope independently of Sentry. Sentry-specific dependencies, companion packaging, activation hooks and event-ID correlation belong to future work rather than the v1 implementation or release criteria.
 
-The ID must be attachable to the SERVER export snapshot and eligible undrained server-error aggregate, including when Sentry processes the exception after activity end. Already-exported telemetry is not updated retroactively.
+The shared target remains a reference for future integration: automatically detect a usable Sentry integration without an Apitally enable flag and attach its exception event ID to the SERVER export snapshot and eligible undrained server-error aggregate. This includes events processed after activity end; already-exported telemetry is not updated retroactively. Preserve the latest-nonempty enrichment rule if the integration is revisited.
 
 **POC evidence:** Sentry.AspNetCore 6.11.1 supports typed `ISentryEventProcessor` registration through DI or through `PostConfigure<SentryAspNetCoreOptions>` with `AddEventProcessor`, in either builder registration order. Both hooks correlate the tested concurrent handled exceptions during request scope. The options hook also correlates an explicitly captured exception after SERVER activity end; the DI-only hook does not run for that out-of-request capture. Association uses the retained exception, not a process-wide last-event-ID lookup.
 
 Event processors run before `BeforeSend`, so an observed event ID does not prove the event was ultimately sent. All tests use a fake transport. No package-neutral discovery/registration hook was found: a typed companion is feasible, but automatic activation merely because Sentry is installed is not demonstrated.
 
-**Open:** the dependency/package strategy, automatic activation mechanism, supported version range, simultaneous-host behavior and later Sentry initialization/replacement. The POC does not choose reflection, a hard dependency or a separate package, and does not implement bounded association retention or SDK export enrichment.
+**Deferred research:** dependency/package strategy, activation, supported versions, simultaneous-host behavior and later Sentry initialization/replacement. Retain the POC findings without selecting reflection, a hard dependency or a companion package. Bounded association retention and SDK export enrichment also remain unimplemented future work.
 
 ## 15. Cross-language posture and explicit adaptations
 
@@ -534,6 +535,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Encoding | Official OTLP schemas/protobuf encoding with SDK-owned mapping. | Proposed .NET mechanism; no change to HTTP/protobuf delivery. |
 | Metric capacity | Internally selected fixed capacity through native OTel views and reclamation, with visible overflow degradation. | Confirmed policy; numeric capacity requires measurement. |
 | Runtime-specific fork and signal mechanics | Use .NET host lifecycle instead. | Platform adaptation. |
+| Sentry event-ID correlation | Defer the integration beyond v1 while retaining ordinary exception/error capture. | Confirmed v1 scope deviation; POC retained as future research. |
 
 The wire attributes, scope names, default redaction/exclusion rules, sampling convention, complete-body/privacy guarantees, error identities, and transport behavior remain shared requirements. A proposed .NET mechanism does not override them by implication.
 
@@ -601,7 +603,7 @@ The first feasibility round is complete and independently checked across the ins
 | Private export snapshots and batching | Preserve span identity/events/links/resource; late enrichment without original mutation; no captured payloads in user exports; maximum-size complete bodies; bounded release/drop and late descendants; public stock batching over the selected representation. |
 | Private logging and internal events | Additive `ILogger` capture; category filtering, scopes, mutable state isolation, masking/drop; pooled-record lifetime; request linkage through child activities; startup JSON string versus structured error bodies; event names and context-free internal records. |
 | Encoding, metrics, and delivery | Official protobuf round trips for all signals; binary bodies and exponential histograms; concatenated request decoding; actual encoded-byte rotation limits; delta collection/reclamation and capacity behavior; idle liveness; immutable retries, proxy binding, and instrumentation suppression. |
-| Error and optional integration hooks | Conservative MVC/Minimal API validation; first exception and final-500 rule; .NET 10 handled-exception diagnostics; request cancellation; Sentry ordering and late enrichment; finalized route/OpenAPI discovery. |
+| Error and optional integration hooks | Conservative MVC/Minimal API validation; first exception and final-500 rule; .NET 10 handled-exception diagnostics; request cancellation; finalized route/OpenAPI discovery. Sentry ordering and late-enrichment evidence is retained for future work outside v1. |
 | Host shutdown | Server/request draining relative to SDK/provider disposal; ordinary final cycle; host cancellation budget; unfinished request policy; no duplicate release or retained host state after disposal. |
 
 ## 19. Next design decisions
@@ -612,7 +614,7 @@ The interview has settled support scope and the main user-facing direction. The 
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
 3. Detailed span-snapshot members and value semantics, native log-mask callback isolation/normalization, option representation and configuration-resolution timing.
 4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
-5. Sentry dependency/activation strategy, OpenAPI provider boundaries and dependency floors.
+5. OpenAPI provider boundaries and dependency floors.
 
 After those decisions, focused integration probes should compose the verified mechanisms, especially early activation, final responses, private pipeline ownership and shutdown. Physical proxy/retry/storage-failure behavior and shared backend/harness acceptance also remain to be validated.
 
