@@ -34,6 +34,7 @@ An approved product/API direction does not establish that its proposed implement
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
+| Metric capacity | Use a generous, internally selected fixed capacity through native OTel views and reclamation. Select the number after memory and collection-cost measurements; no public capacity setting or runtime resizing. |
 | Manual tracing | `IApitally.StartActivity(...)` returns the native .NET `Activity` type for a `using` scope. |
 | Monitored scope | The whole HTTP application, subject to shared eligibility, sampling, and exclusion rules. |
 
@@ -402,7 +403,13 @@ Observe normalized process CPU utilization, RSS-equivalent bytes, and uptime usi
 
 **POC evidence:** delta collection reclaims inactive dimension capacity after an idle collection. Before reclamation, new dimensions can overflow even while an existing dimension remains active. The overflow point has only `otel.metric.overflow=true`, losing the required request dimensions; it cannot preserve accepted endpoint/consumer counts. The deliberately low POC limit of two is a test setting, not a product limit. Idle collections also produce paired CPU/memory timestamps and uptime, including uptime alone with CPU/memory disabled.
 
-**Open:** production cardinality/capacity settings, memory bounds and behavior when capacity is reached. Reclamation does not establish unlimited cardinality or lossless request metrics. Process-gauge ownership across hosts remains unresolved.
+**Research finding:** the tested OTel SDK defaults to 2,000 distinct attribute combinations per metric stream, with separate reserved slots for zero-attribute and overflow points. The public view's `CardinalityLimit` configures this at stream creation. Storage is partly allocated upfront and existing streams cannot be resized through public APIs. Delta collection resets measurements, not every dimension slot; active combinations retain slots until a later collection can reclaim them.
+
+**Confirmed capacity policy:** use one generous, internally selected fixed limit for each of the three request histograms, configured through OTel's native views. Keep native aggregation and inactive-point reclamation. There is no user-facing capacity setting, runtime resizing, adaptive provider replacement or custom aggregation. Select a capacity intended to accommodate most applications by measuring startup/active memory and collection costs with representative consumer, route and status combinations across supported runtimes. Neither the SDK default of 2,000 nor the POC limit of two is an approved production value.
+
+At capacity, retain native behavior for accepted combinations. Detect overflow during collection, omit the invalid overflow point from Apitally export and issue a deduplicated warning explaining that some request metrics are missing, with capacity documentation and support guidance. Preserve the required dimensions on valid points rather than reducing attribution to hide the limit. This remains a finite bound, not a promise of lossless metrics under arbitrary cardinality.
+
+**Open:** the exact fixed capacity and its measured memory/collection costs. Process-gauge ownership across hosts remains unresolved.
 
 ## 12. Error handling and logging posture
 
@@ -498,6 +505,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Ordinary final drain | Host lifetime and cancellation-budget integration. | Proposed; exact policy open. |
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; public APIs and production lifecycle integration remain open. |
 | Encoding | Official OTLP schemas/protobuf encoding with SDK-owned mapping. | Proposed .NET mechanism; no change to HTTP/protobuf delivery. |
+| Metric capacity | Internally selected fixed capacity through native OTel views and reclamation, with visible overflow degradation. | Confirmed policy; numeric capacity requires measurement. |
 | Runtime-specific fork and signal mechanics | Use .NET host lifecycle instead. | Platform adaptation. |
 
 The wire attributes, scope names, default redaction/exclusion rules, sampling convention, complete-body/privacy guarantees, error identities, and transport behavior remain shared requirements. A proposed .NET mechanism does not override them by implication.
@@ -574,7 +582,7 @@ The first feasibility round is complete and independently checked across the ins
 The interview has settled support scope and the main user-facing direction. The next review should resolve:
 
 1. Provider-selection/attachment timing and external-processor lifetime validation for the confirmed standard DI integration paths.
-2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus metric capacity/overflow behavior.
+2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
 3. Public callback snapshots, value normalization and configuration/re-registration semantics.
 4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
 5. Sentry dependency/activation strategy, OpenAPI provider boundaries and dependency floors.
@@ -614,3 +622,5 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [Azure Monitor report involving concurrent WebApplicationFactory tests](https://github.com/Azure/azure-sdk-for-net/issues/58951#issuecomment-4387389627)
 - [Azure Monitor two-provider reproduction](https://github.com/Azure/azure-sdk-for-net/issues/58951#issuecomment-4445112258)
 - [.NET DI ownership of externally created singleton instances](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection-guidelines#services-not-created-by-the-service-container)
+- [OTel 1.19.0 per-view cardinality limit and default](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Metrics/View/MetricStreamConfiguration.cs#L69-L95)
+- [OTel fixed metric-capacity allocation](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Metrics/AggregatorStore.cs#L71-L179)
