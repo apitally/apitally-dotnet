@@ -27,7 +27,7 @@ An approved product/API direction does not establish that its proposed implement
 | Native AOT | Outside the initial support guarantee. Prefer compatibility-friendly choices when they add no complexity. |
 | Hosting | Support modern `WebApplicationBuilder` hosting and Generic Host with `Startup`. Modern hosting is the primary documented path. |
 | Setup | One builder-level call with automatic middleware registration, subject to integrated-pipeline validation. |
-| Existing tracing | Automatic integration with DI-registered tracing, plus an explicit path for separately constructed providers. |
+| Existing tracing | Automatic integration with DI-registered tracing; register separately constructed providers as existing `TracerProvider` instances in DI. |
 | Tracing support boundary | Normal single-host integration is the initial supported baseline. Additional hosts are not prohibited; independent sampling across overlapping providers and broader multi-host guarantees are outside initial scope. |
 | Configuration | Automatically read the `Apitally` configuration section, support typed code overrides, and retain shared environment-variable fallbacks. |
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
@@ -67,7 +67,7 @@ Log capture becoming enabled by default must be called out in the migration guid
 
 ### Tracing registration
 
-**Confirmed:** use the host's normal tracing registration when available. Offer explicit integration for a provider constructed outside DI. Preserve user-owned providers, processors, exporters, resources, samplers, and instrumentation configuration.
+**Confirmed:** use the host's normal tracing registration when available. Register a separately constructed provider as an existing `TracerProvider` instance in the host's DI container. Preserve user-owned providers, processors, exporters, resources, samplers, and instrumentation configuration.
 
 **Proposed:** participate in provider construction through the supported .NET builder/DI APIs. Prefer one additive registration path over creating a competing provider. The OTel library registration API, `ConfigureOpenTelemetryTracerProvider`, can add configuration without independently creating a provider.
 
@@ -92,9 +92,11 @@ When the application owns tracing:
 
 **Confirmed customization boundary:** `AddApitally()` provides default tracing when the application has not enabled its own provider. To add database instrumentation, application activity sources or other tracing customization, enable and configure the application's provider through standard `AddOpenTelemetry().WithTracing(...)` registration. Apitally joins that provider and preserves its sampler and instrumentation configuration. Configure-only callbacks without an enabled provider do not customize Apitally's private default pipeline. Document complete customization examples, including the application's responsibility for its sampler and optional instrumentation. An Apitally-specific tracing-configuration callback is outside the initial API.
 
+**Confirmed external-provider path:** use `builder.Services.AddSingleton<TracerProvider>(existingProvider)` before building the host, followed by the normal `AddApitally()` setup. Existing-instance registration leaves disposal with the original owner; Apitally does not take ownership. The supplied official SDK provider must already have the required instrumentation and source subscriptions configured before it is built. This uses standard DI discovery rather than a dedicated Apitally provider parameter or attachment API.
+
 Public post-build `AddProcessor` works for an official SDK provider that already subscribes to the required sources. It cannot add missing source subscriptions, and there is no public processor-detachment counterpart. Disabling the attached path preserves the external provider's lifetime, but does not remove its retained processor.
 
-**Open:** the advanced integration API, minimum instrumentation versions, and the handling of a provider configured after the supported registration boundary. The accepted customization boundary does not by itself validate the full provider-selection and activation implementation.
+**Open:** minimum instrumentation versions and the provider-selection/attachment timing boundary. The external-provider POC used an explicit experimental parameter; the exact existing-instance DI path still needs integration verification, including shutdown and retained-processor state. The confirmed public configuration paths do not by themselves validate the full activation implementation.
 
 ### Multiple hosts
 
@@ -435,7 +437,16 @@ app.MapGet("/orders/{id}", (string id, IApitally apitally) =>
 app.Run();
 ```
 
-Generic Host with `Startup` receives an appropriate builder registration entry point backed by the same implementation. The hosting POC demonstrates an `IHostBuilder` entry point alongside `WebApplicationBuilder`; final public overloads remain proposed. The explicit user-provider integration also remains open; do not publish a signature before validating its registration and ownership semantics.
+Generic Host with `Startup` receives an appropriate builder registration entry point backed by the same implementation. The hosting POC demonstrates an `IHostBuilder` entry point alongside `WebApplicationBuilder`; final public overloads remain proposed.
+
+**Confirmed external-provider setup:** register the existing instance with standard DI, preserving its original ownership:
+
+```csharp
+builder.Services.AddSingleton<TracerProvider>(existingProvider);
+builder.AddApitally();
+```
+
+The provider's instrumentation and source subscriptions must be configured before it is built, as described in section 2. The exact combined integration remains to be verified.
 
 ### Request helpers
 
@@ -477,7 +488,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Process-global configuration/runtime | Host-owned DI runtime with independently owned shutdown. | Confirmed adaptation. |
 | Code options and environment fallbacks | Add the standard `Apitally` configuration section as setup options below explicit code values. | Confirmed adaptation. |
 | Unified setup | Native builder registration for both supported hosting styles; automatic transport integration. | Confirmed API direction; focused hosting POC passed, combined pipeline remains open. |
-| Provider activation/attachment | Prefer supported DI construction-time registration; explicit advanced path for separately built providers. | Confirmed direction; exact mechanism open. |
+| Provider activation/attachment | Standard DI provider registration; externally built providers use existing-instance registration and retain original ownership. | Confirmed API path; combined activation and lifetime validation remain open. |
 | Tracing customization | Standard OTel provider registration selects application-owned tracing; configure-only hooks do not customize the private default provider. | Confirmed boundary. |
 | Multi-host tracing | Single-host support baseline; document cross-provider sampling interference without prohibiting additional hosts or adding special coordination. | Confirmed support boundary; broader multi-host guarantees deferred. |
 | Manual block and function forms | Native `Activity` scope via `IApitally.StartActivity`. | Confirmed adaptation of the shared SHOULD. |
@@ -562,7 +573,7 @@ The first feasibility round is complete and independently checked across the ins
 
 The interview has settled support scope and the main user-facing direction. The next review should resolve:
 
-1. External-provider API/lifetime requirements and the provider-registration timing boundary within the confirmed single-host support baseline and standard OTel customization path.
+1. Provider-selection/attachment timing and external-processor lifetime validation for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus metric capacity/overflow behavior.
 3. Public callback snapshots, value normalization and configuration/re-registration semantics.
 4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
@@ -602,3 +613,4 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [OTel guidance on separately constructed providers and the usual single-provider lifetime](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/docs/trace/customizing-the-sdk/README.md#L45-L59)
 - [Azure Monitor report involving concurrent WebApplicationFactory tests](https://github.com/Azure/azure-sdk-for-net/issues/58951#issuecomment-4387389627)
 - [Azure Monitor two-provider reproduction](https://github.com/Azure/azure-sdk-for-net/issues/58951#issuecomment-4445112258)
+- [.NET DI ownership of externally created singleton instances](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection-guidelines#services-not-created-by-the-service-container)
