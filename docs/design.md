@@ -36,6 +36,7 @@ An approved product/API direction does not establish that its proposed implement
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
 | Metric capacity | Use a generous, internally selected fixed capacity through native OTel views and reclamation. Select the number after memory and collection-cost measurements; no public capacity setting or runtime resizing. |
+| Span-based callbacks | All request/response sampling and body-masking callbacks receive the same complete, read-only span snapshot type, populated for the callback's stage. |
 | Manual tracing | `IApitally.StartActivity(...)` returns the native .NET `Activity` type for a `using` scope. |
 | Monitored scope | The whole HTTP application, subject to shared eligibility, sampling, and exclusion rules. |
 
@@ -229,15 +230,21 @@ Hold ended descendants and application logs until both transport observation and
 
 ### Export snapshots
 
-**Research finding:** .NET `Activity` is not a detached immutable span representation, and public APIs do not provide a faithful clone with the same IDs, source, and kind. The specialized `BatchActivityExportProcessor` accepts `Activity` objects, not an arbitrary export snapshot.
+**Research finding:** .NET `Activity` is not a detached immutable span representation, and public APIs do not provide a faithful clone with the same IDs, source, and kind. A retained, stopped activity remains usable; the problem is shared mutable state and the inability to represent a privately enriched export view without changing the original. The tested .NET SDK has no equivalent public `ReadableSpan` abstraction. The specialized `BatchActivityExportProcessor` accepts `Activity` objects, not an arbitrary export snapshot.
 
 **Proposed:** copy the data required for Apitally export into an SDK-owned snapshot. Preserve IDs, parents, times, status, events, links, scope, and resource. Apply late enrichment and privacy processing to that owned representation. Do not fabricate a second live activity to represent the original request or modify user-owned activities to finish export.
 
 **POC evidence:** the [snapshot experiment](../pocs/activity-snapshots/README.md) demonstrates public generic `BatchExportProcessor<T>` intake of owned records, tested metadata/value copying, and private 50,000-byte body processing without changing a simultaneous user export. Mutable array values are copied rather than shared. Worker construction suppresses execution-context flow so first-request activation does not carry request context into body processing. Arbitrary value types and full scope metadata remain unproven.
 
-Generic batching does not enforce span sampling semantics: an explicit `Activity.Recorded` check is needed to match the specialized activity processor's treatment of `RecordOnly`. The request-buffer checks are a sequential model, not proof of concurrent framework completion. Log ownership, production lifecycle guards, and the final snapshot/callback representation remain open.
+Generic batching does not enforce span sampling semantics: an explicit `Activity.Recorded` check is needed to match the specialized activity processor's treatment of `RecordOnly`. The request-buffer checks are a sequential model, not proof of concurrent framework completion. Log ownership, production lifecycle guards, and detailed snapshot ownership/value semantics remain open.
 
-**Open:** snapshot layout and public callback types. Sampling and body-mask callbacks need request/span data, including custom attributes. A callback that can run after completion cannot safely depend on a retained live `HttpContext` or a fabricated `Activity` clone. Prefer a minimal read-only snapshot if public .NET types cannot represent the required data safely; finalize the callback API only after ownership and value semantics are agreed.
+**Confirmed callback shape:** all four span-based callbacks (`SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody`, `MaskResponseBody`) receive the same complete, read-only span snapshot type. `SpanSnapshot` is the working name. Expose available identity/parent, name, kind, timestamps, status, attributes, events, links, resource and instrumentation-scope metadata, using standard .NET/OTel value types where appropriate. This is an inspection type, not another span-creation or mutation API.
+
+Each invocation receives an owned view appropriate to its stage, not a shared live `Activity` or `HttpContext`. Request sampling sees currently available information; response sampling includes final transport and custom attributes, including values learned after span end; body masking sees query/header redaction and captured headers before body attributes are attached. Information not yet available is represented as unset. Callback views must remain isolated from user telemetry and later private export mutations. The same public type is used throughout rather than mixing `Activity`, request-specific contexts and snapshots.
+
+Python constructs a new instance of its standard OTel `ReadableSpan` class; JavaScript constructs a plain object implementing the standard `ReadableSpan` interface. Both preserve full span metadata while supplying private attributes. The .NET-owned snapshot is an explicit adaptation to preserve that behavior and consistency across .NET callbacks when the standard SDK lacks an equivalent abstraction.
+
+**Open:** the final type/member names, delegate signatures, detailed value normalization and ownership, and complete scope/resource copying. The existing POC does not establish the complete public callback implementation. Log masking operates on a different signal and retains a separate log-record API, whose type remains open.
 
 **Open:** unfinished-request shutdown policy. It must preserve complete-body guarantees, apply response sampling before any release, and leave user-owned activities untouched. The different Python and JavaScript shutdown policies are examples, not defaults to copy.
 
@@ -456,6 +463,10 @@ builder.AddApitally();
 
 The provider's instrumentation and source subscriptions must be configured before it is built, as described in section 2. The exact combined integration remains to be verified.
 
+### Span-based callbacks
+
+**Confirmed:** `SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody` and `MaskResponseBody` use one complete, read-only span snapshot type, with `SpanSnapshot` as its working name. The body callbacks additionally receive the body to mask. The snapshot's shape is consistent across callbacks while its available data follows the stages described in section 6. Final member names and delegate signatures remain open. Log masking uses a separate log-record type because it processes a different signal.
+
 ### Request helpers
 
 **Confirmed primary surface:** inject `IApitally` rather than require a static SDK singleton or public `HttpContext` extension methods.
@@ -504,7 +515,8 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Configuration timing and repeated calls | Compose host-local code callbacks in registration order, register components once and freeze resolved configuration before activation. | Repeated-call behavior confirmed; exact resolution timing remains open. |
 | Process identity, startup frequency, limits, process gauges | Must be reconciled with multiple host runtimes. | Open; existing process-wide requirements still apply until explicitly resolved. |
 | Ordinary final drain | Host lifetime and cancellation-budget integration. | Proposed; exact policy open. |
-| SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; public APIs and production lifecycle integration remain open. |
+| SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
+| Span callback type | One complete, read-only span snapshot type for all sampling and body-masking callbacks, preserving stage-appropriate private data. | Confirmed .NET adaptation; detailed API and value semantics remain open. |
 | Encoding | Official OTLP schemas/protobuf encoding with SDK-owned mapping. | Proposed .NET mechanism; no change to HTTP/protobuf delivery. |
 | Metric capacity | Internally selected fixed capacity through native OTel views and reclamation, with visible overflow degradation. | Confirmed policy; numeric capacity requires measurement. |
 | Runtime-specific fork and signal mechanics | Use .NET host lifecycle instead. | Platform adaptation. |
@@ -584,7 +596,7 @@ The interview has settled support scope and the main user-facing direction. The 
 
 1. Provider-selection/attachment timing and external-processor lifetime validation for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
-3. Public callback snapshots, value normalization, option representation and configuration-resolution timing.
+3. Detailed span-snapshot members and value semantics, the log-mask callback type, option representation and configuration-resolution timing.
 4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
 5. Sentry dependency/activation strategy, OpenAPI provider boundaries and dependency floors.
 
@@ -625,3 +637,5 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [.NET DI ownership of externally created singleton instances](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection-guidelines#services-not-created-by-the-service-container)
 - [OTel 1.19.0 per-view cardinality limit and default](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Metrics/View/MetricStreamConfiguration.cs#L69-L95)
 - [OTel fixed metric-capacity allocation](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Metrics/AggregatorStore.cs#L71-L179)
+- [Python callback declarations](../../apitally-py/apitally/__init__.py) and [standard ReadableSpan copy construction](../../apitally-py/apitally/shared/span_processor.py)
+- [JavaScript callback declarations](../../apitally-js/src/config.ts) and [structural ReadableSpan copies](../../apitally-js/src/spanProcessor.ts)
