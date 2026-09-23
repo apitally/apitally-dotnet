@@ -26,3 +26,6 @@ bld/
 
 # macOS
 .DS_Store
+
+# Agents
+.pi/tasks/

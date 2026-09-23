@@ -1,0 +1,170 @@
+$ dotnet --list-sdks
+6.0.428 [/usr/local/share/dotnet/sdk]
+7.0.410 [/usr/local/share/dotnet/sdk]
+8.0.406 [/usr/local/share/dotnet/sdk]
+9.0.200 [/usr/local/share/dotnet/sdk]
+10.0.301 [/usr/local/share/dotnet/sdk]
+$ dotnet --list-runtimes
+Microsoft.AspNetCore.App 6.0.36 [/usr/local/share/dotnet/shared/Microsoft.AspNetCore.App]
+Microsoft.AspNetCore.App 7.0.20 [/usr/local/share/dotnet/shared/Microsoft.AspNetCore.App]
+Microsoft.AspNetCore.App 8.0.13 [/usr/local/share/dotnet/shared/Microsoft.AspNetCore.App]
+Microsoft.AspNetCore.App 9.0.2 [/usr/local/share/dotnet/shared/Microsoft.AspNetCore.App]
+Microsoft.AspNetCore.App 10.0.9 [/usr/local/share/dotnet/shared/Microsoft.AspNetCore.App]
+Microsoft.NETCore.App 6.0.36 [/usr/local/share/dotnet/shared/Microsoft.NETCore.App]
+Microsoft.NETCore.App 7.0.20 [/usr/local/share/dotnet/shared/Microsoft.NETCore.App]
+Microsoft.NETCore.App 8.0.13 [/usr/local/share/dotnet/shared/Microsoft.NETCore.App]
+Microsoft.NETCore.App 9.0.2 [/usr/local/share/dotnet/shared/Microsoft.NETCore.App]
+Microsoft.NETCore.App 10.0.9 [/usr/local/share/dotnet/shared/Microsoft.NETCore.App]
+$ dotnet --version
+10.0.301
+$ dotnet restore EncodingMetrics.csproj --locked-mode
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+$ dotnet build EncodingMetrics.csproj --no-restore --no-incremental
+  EncodingMetrics -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/encoding-metrics/bin/Debug/net10.0/EncodingMetrics.dll
+  EncodingMetrics -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/encoding-metrics/bin/Debug/net9.0/EncodingMetrics.dll
+  EncodingMetrics -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/encoding-metrics/bin/Debug/net8.0/EncodingMetrics.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:09.81
+$ dotnet run --project EncodingMetrics.csproj -f net8.0 --no-build --no-restore
+Runtime: .NET 8.0.13; Arm64
+PASS delta: counts=3,1; units=s,By,By; scale=3; offset=-25; snapshots copied before exporter return
+PASS scale: public MaxScale=3, MaxSize=160; untouched exponential view defaults=20/160; no public minimum-scale clamp used
+PASS adaptive scale: 1ns..1year duration and 1..Int64.MaxValue bytes produce scales=1,1
+PASS cardinality probe=2: a,b retained; c overflow; late a retained/d overflow; idle collection frees capacity for e,f. Overflow is invalid for ingestion, not a product limit
+PASS negative isolation: two private providers and name-subscribed user provider each observe 11 from distinct same-name meters (1+10)
+PASS explicit MeterOptions.Scope + AddView(Drop foreign scope): private=1,10; user AddMeter remains process-wide=11
+PASS IMeterFactory scope filter: private=1,10; cumulative user=11; after A disposal B delta=20/user cumulative=31. Factories alone do not restrict name subscribers
+PASS idle gauges cycle=1: cpu/memory timestamp skew=25000ns, uptime present
+PASS idle gauges cycle=2: cpu/memory timestamp skew=14000ns, uptime present
+PASS idle gauges with CPU/memory disabled: uptime only
+PASS protobuf: all three requests round-trip; 50,000-byte binary and string bodies; header arrays; IDs/events/links/status; native log event_name and structured uint32 count
+PASS traces concatenation: 2 requests in one GZipStream; encoded=100664 each, stored=101985
+PASS logs concatenation: 2 requests in one GZipStream; encoded=524 each, stored=423
+PASS metrics concatenation: 2 requests in one GZipStream; encoded=1154 each, stored=558
+PASS rotation: 32-record estimate=5312342 > 4000000; recursive exact-size splits=2; files=4; decoded records=65; single oversized record explicitly rejected
+PASS proxy configuration only: explicit HTTP_PROXY URI snapshot stays bound after environment change; no physical proxy request
+PASS local HTTP: baseline/suppressed/suppressed/restored spans=1/0/0/1; all 4 POST bodies byte-identical to disk; SHA256=5EB9ACC015B1965CE2DAA1DE66FE9809D3E2955D32336A910C9195391F55F8E9
+PASS: all encoding/metrics probes completed
+$ dotnet run --project EncodingMetrics.csproj -f net9.0 --no-build --no-restore
+Runtime: .NET 9.0.2; Arm64
+PASS delta: counts=3,1; units=s,By,By; scale=3; offset=-25; snapshots copied before exporter return
+PASS scale: public MaxScale=3, MaxSize=160; untouched exponential view defaults=20/160; no public minimum-scale clamp used
+PASS adaptive scale: 1ns..1year duration and 1..Int64.MaxValue bytes produce scales=1,1
+PASS cardinality probe=2: a,b retained; c overflow; late a retained/d overflow; idle collection frees capacity for e,f. Overflow is invalid for ingestion, not a product limit
+PASS negative isolation: two private providers and name-subscribed user provider each observe 11 from distinct same-name meters (1+10)
+PASS explicit MeterOptions.Scope + AddView(Drop foreign scope): private=1,10; user AddMeter remains process-wide=11
+PASS IMeterFactory scope filter: private=1,10; cumulative user=11; after A disposal B delta=20/user cumulative=31. Factories alone do not restrict name subscribers
+PASS idle gauges cycle=1: cpu/memory timestamp skew=22000ns, uptime present
+PASS idle gauges cycle=2: cpu/memory timestamp skew=12000ns, uptime present
+PASS idle gauges with CPU/memory disabled: uptime only
+PASS protobuf: all three requests round-trip; 50,000-byte binary and string bodies; header arrays; IDs/events/links/status; native log event_name and structured uint32 count
+PASS traces concatenation: 2 requests in one GZipStream; encoded=100664 each, stored=107546
+PASS logs concatenation: 2 requests in one GZipStream; encoded=524 each, stored=465
+PASS metrics concatenation: 2 requests in one GZipStream; encoded=1154 each, stored=598
+PASS rotation: 32-record estimate=5312342 > 4000000; recursive exact-size splits=2; files=4; decoded records=65; single oversized record explicitly rejected
+PASS proxy configuration only: explicit HTTP_PROXY URI snapshot stays bound after environment change; no physical proxy request
+PASS local HTTP: baseline/suppressed/suppressed/restored spans=1/0/0/1; all 4 POST bodies byte-identical to disk; SHA256=4AC063C998C7968CF9BB2353491C97D7A6DE52BB8D56C29E477E059E6CB9226D
+PASS: all encoding/metrics probes completed
+$ dotnet run --project EncodingMetrics.csproj -f net10.0 --no-build --no-restore
+Runtime: .NET 10.0.9; Arm64
+PASS delta: counts=3,1; units=s,By,By; scale=3; offset=-25; snapshots copied before exporter return
+PASS scale: public MaxScale=3, MaxSize=160; untouched exponential view defaults=20/160; no public minimum-scale clamp used
+PASS adaptive scale: 1ns..1year duration and 1..Int64.MaxValue bytes produce scales=1,1
+PASS cardinality probe=2: a,b retained; c overflow; late a retained/d overflow; idle collection frees capacity for e,f. Overflow is invalid for ingestion, not a product limit
+PASS negative isolation: two private providers and name-subscribed user provider each observe 11 from distinct same-name meters (1+10)
+PASS explicit MeterOptions.Scope + AddView(Drop foreign scope): private=1,10; user AddMeter remains process-wide=11
+PASS IMeterFactory scope filter: private=1,10; cumulative user=11; after A disposal B delta=20/user cumulative=31. Factories alone do not restrict name subscribers
+PASS idle gauges cycle=1: cpu/memory timestamp skew=30000ns, uptime present
+PASS idle gauges cycle=2: cpu/memory timestamp skew=15000ns, uptime present
+PASS idle gauges with CPU/memory disabled: uptime only
+PASS protobuf: all three requests round-trip; 50,000-byte binary and string bodies; header arrays; IDs/events/links/status; native log event_name and structured uint32 count
+PASS traces concatenation: 2 requests in one GZipStream; encoded=100664 each, stored=107546
+PASS logs concatenation: 2 requests in one GZipStream; encoded=524 each, stored=465
+PASS metrics concatenation: 2 requests in one GZipStream; encoded=1154 each, stored=598
+PASS rotation: 32-record estimate=5312342 > 4000000; recursive exact-size splits=2; files=4; decoded records=65; single oversized record explicitly rejected
+PASS proxy configuration only: explicit HTTP_PROXY URI snapshot stays bound after environment change; no physical proxy request
+PASS local HTTP: baseline/suppressed/suppressed/restored spans=1/0/0/1; all 4 POST bodies byte-identical to disk; SHA256=7C511392DE0D95F49DFBCC206257A7C5FDE77E20F878CA2F5BC16AA999F71617
+PASS: all encoding/metrics probes completed
+$ dotnet /usr/local/share/dotnet/sdk/8.0.406/dotnet.dll build EncodingMetrics.csproj -f net8.0 --no-restore --no-incremental
+  EncodingMetrics -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/encoding-metrics/bin/Debug/net8.0/EncodingMetrics.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:03.75
+$ dotnet /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/encoding-metrics/bin/Debug/net8.0/EncodingMetrics.dll
+Runtime: .NET 8.0.13; Arm64
+PASS delta: counts=3,1; units=s,By,By; scale=3; offset=-25; snapshots copied before exporter return
+PASS scale: public MaxScale=3, MaxSize=160; untouched exponential view defaults=20/160; no public minimum-scale clamp used
+PASS adaptive scale: 1ns..1year duration and 1..Int64.MaxValue bytes produce scales=1,1
+PASS cardinality probe=2: a,b retained; c overflow; late a retained/d overflow; idle collection frees capacity for e,f. Overflow is invalid for ingestion, not a product limit
+PASS negative isolation: two private providers and name-subscribed user provider each observe 11 from distinct same-name meters (1+10)
+PASS explicit MeterOptions.Scope + AddView(Drop foreign scope): private=1,10; user AddMeter remains process-wide=11
+PASS IMeterFactory scope filter: private=1,10; cumulative user=11; after A disposal B delta=20/user cumulative=31. Factories alone do not restrict name subscribers
+PASS idle gauges cycle=1: cpu/memory timestamp skew=23000ns, uptime present
+PASS idle gauges cycle=2: cpu/memory timestamp skew=12000ns, uptime present
+PASS idle gauges with CPU/memory disabled: uptime only
+PASS protobuf: all three requests round-trip; 50,000-byte binary and string bodies; header arrays; IDs/events/links/status; native log event_name and structured uint32 count
+PASS traces concatenation: 2 requests in one GZipStream; encoded=100664 each, stored=101985
+PASS logs concatenation: 2 requests in one GZipStream; encoded=524 each, stored=425
+PASS metrics concatenation: 2 requests in one GZipStream; encoded=1154 each, stored=556
+PASS rotation: 32-record estimate=5312342 > 4000000; recursive exact-size splits=2; files=4; decoded records=65; single oversized record explicitly rejected
+PASS proxy configuration only: explicit HTTP_PROXY URI snapshot stays bound after environment change; no physical proxy request
+PASS local HTTP: baseline/suppressed/suppressed/restored spans=1/0/0/1; all 4 POST bodies byte-identical to disk; SHA256=302F20AD63C2D7FC13632B7ABFE15914CCCB770395267F889703144EBF31244C
+PASS: all encoding/metrics probes completed
+$ dotnet /usr/local/share/dotnet/sdk/9.0.200/dotnet.dll build EncodingMetrics.csproj -f net9.0 --no-restore --no-incremental
+  EncodingMetrics -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/encoding-metrics/bin/Debug/net9.0/EncodingMetrics.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:04.11
+$ dotnet /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/encoding-metrics/bin/Debug/net9.0/EncodingMetrics.dll
+Runtime: .NET 9.0.2; Arm64
+PASS delta: counts=3,1; units=s,By,By; scale=3; offset=-25; snapshots copied before exporter return
+PASS scale: public MaxScale=3, MaxSize=160; untouched exponential view defaults=20/160; no public minimum-scale clamp used
+PASS adaptive scale: 1ns..1year duration and 1..Int64.MaxValue bytes produce scales=1,1
+PASS cardinality probe=2: a,b retained; c overflow; late a retained/d overflow; idle collection frees capacity for e,f. Overflow is invalid for ingestion, not a product limit
+PASS negative isolation: two private providers and name-subscribed user provider each observe 11 from distinct same-name meters (1+10)
+PASS explicit MeterOptions.Scope + AddView(Drop foreign scope): private=1,10; user AddMeter remains process-wide=11
+PASS IMeterFactory scope filter: private=1,10; cumulative user=11; after A disposal B delta=20/user cumulative=31. Factories alone do not restrict name subscribers
+PASS idle gauges cycle=1: cpu/memory timestamp skew=22000ns, uptime present
+PASS idle gauges cycle=2: cpu/memory timestamp skew=12000ns, uptime present
+PASS idle gauges with CPU/memory disabled: uptime only
+PASS protobuf: all three requests round-trip; 50,000-byte binary and string bodies; header arrays; IDs/events/links/status; native log event_name and structured uint32 count
+PASS traces concatenation: 2 requests in one GZipStream; encoded=100664 each, stored=107546
+PASS logs concatenation: 2 requests in one GZipStream; encoded=524 each, stored=465
+PASS metrics concatenation: 2 requests in one GZipStream; encoded=1154 each, stored=600
+PASS rotation: 32-record estimate=5312342 > 4000000; recursive exact-size splits=2; files=4; decoded records=65; single oversized record explicitly rejected
+PASS proxy configuration only: explicit HTTP_PROXY URI snapshot stays bound after environment change; no physical proxy request
+PASS local HTTP: baseline/suppressed/suppressed/restored spans=1/0/0/1; all 4 POST bodies byte-identical to disk; SHA256=105D53E7B7A0F133DAC5790C09FB0720E7004948FE3DBFFBA16B2ECF4020AE05
+PASS: all encoding/metrics probes completed
+artifacts/net10.0/logs-continuous.gz: one gzip member, raw=1048, stored=465
+artifacts/net10.0/metrics-continuous.gz: one gzip member, raw=2308, stored=598
+artifacts/net10.0/rotation-0.gz: one gzip member, raw=2656278, stored=868060
+artifacts/net10.0/rotation-1.gz: one gzip member, raw=2656288, stored=868070
+artifacts/net10.0/rotation-2.gz: one gzip member, raw=2656288, stored=868070
+artifacts/net10.0/rotation-3.gz: one gzip member, raw=2822514, stored=922499
+artifacts/net10.0/traces-continuous.gz: one gzip member, raw=201328, stored=107546
+artifacts/net8.0/logs-continuous.gz: one gzip member, raw=1048, stored=425
+artifacts/net8.0/metrics-continuous.gz: one gzip member, raw=2308, stored=556
+artifacts/net8.0/rotation-0.gz: one gzip member, raw=2656278, stored=821316
+artifacts/net8.0/rotation-1.gz: one gzip member, raw=2656288, stored=821327
+artifacts/net8.0/rotation-2.gz: one gzip member, raw=2656288, stored=821327
+artifacts/net8.0/rotation-3.gz: one gzip member, raw=2822514, stored=872673
+artifacts/net8.0/traces-continuous.gz: one gzip member, raw=201328, stored=101985
+artifacts/net9.0/logs-continuous.gz: one gzip member, raw=1048, stored=465
+artifacts/net9.0/metrics-continuous.gz: one gzip member, raw=2308, stored=600
+artifacts/net9.0/rotation-0.gz: one gzip member, raw=2656278, stored=868060
+artifacts/net9.0/rotation-1.gz: one gzip member, raw=2656288, stored=868070
+artifacts/net9.0/rotation-2.gz: one gzip member, raw=2656288, stored=868070
+artifacts/net9.0/rotation-3.gz: one gzip member, raw=2822514, stored=922499
+artifacts/net9.0/traces-continuous.gz: one gzip member, raw=201328, stored=107546
+PASS: checksums, SDK/runtime matrix and independent single-member gzip validation

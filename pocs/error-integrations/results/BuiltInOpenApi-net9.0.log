@@ -1,0 +1,4 @@
+Built-in OpenAPI runtime=9.0.2
+[{"method":"GET","path":"/api/v1/items/{id:int}"},{"method":"PUT","path":"/api/v1/items/{id:int}"},{"method":"PATCH","path":"/api/v1/items/{id:int}"},{"method":"GET","path":"/health"}]
+NEGATIVE net9: document generation services are internal; public transformers do not initiate generation
+PASS built-in OpenAPI (no schema endpoint mapped or requested)

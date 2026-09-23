@@ -1,0 +1,4 @@
+Built-in OpenAPI runtime=10.0.9
+[{"method":"GET","path":"/api/v1/items/{id:int}"},{"method":"PUT","path":"/api/v1/items/{id:int}"},{"method":"PATCH","path":"/api/v1/items/{id:int}"},{"method":"GET","path":"/health"}]
+public IOpenApiDocumentProvider: schema bytes=2960 paths=2
+PASS built-in OpenAPI (no schema endpoint mapped or requested)

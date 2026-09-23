@@ -1,0 +1,3 @@
+Swashbuckle runtime=10.0.9 package=10.2.3
+public ISwaggerProvider: schema bytes=1068 paths=1
+PASS Swashbuckle (no schema endpoint mapped or requested)
