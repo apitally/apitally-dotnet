@@ -30,6 +30,7 @@ An approved product/API direction does not establish that its proposed implement
 | Existing tracing | Automatic integration with DI-registered tracing; register separately constructed providers as existing `TracerProvider` instances in DI. |
 | Tracing support boundary | Normal single-host integration is the initial supported baseline. Additional hosts are not prohibited; independent sampling across overlapping providers and broader multi-host guarantees are outside initial scope. |
 | Configuration | Automatically read the `Apitally` configuration section, support typed code overrides, and retain shared environment-variable fallbacks. |
+| Repeated setup | Within one host, compose code callbacks in registration order; later explicit assignments win. Register SDK components once and freeze resolved configuration before activation. |
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
@@ -166,7 +167,7 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 **Open:** exact option property names and layout, unset-value representation, regex input types/flag semantics, and when resolution occurs relative to standard options registration and host construction. Configuration is immutable once resolved; dynamic reload is not introduced by using `IConfiguration`.
 
-**Open:** repeated registration within one host. The host-owned decision replaces process-global first-call-wins behavior, but does not settle whether repeated code configuration follows normal options composition or a host-local first-call rule. Registration must not duplicate middleware, processors, workers, or logging providers.
+**Confirmed:** repeated registration within one host composes code configuration callbacks in registration order. Later explicit assignments override earlier assignments; a later callback or setup call leaves settings it does not assign unchanged. Resolve the composed code overrides using the source precedence and additive disable rules above, then freeze runtime configuration before activation. Repeated setup must not duplicate middleware, processors, workers or logging providers.
 
 ## 4. Lifecycle: configure, activate, shut down
 
@@ -500,7 +501,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Multi-host tracing | Single-host support baseline; document cross-provider sampling interference without prohibiting additional hosts or adding special coordination. | Confirmed support boundary; broader multi-host guarantees deferred. |
 | Manual block and function forms | Native `Activity` scope via `IApitally.StartActivity`. | Confirmed adaptation of the shared SHOULD. |
 | Activation failure scope | One attempt per host runtime. | Proposed consequence of host ownership. |
-| Configuration timing and repeated calls | Resolve through host construction; host-local registration semantics. | Open; do not silently impose process-global first-call behavior. |
+| Configuration timing and repeated calls | Compose host-local code callbacks in registration order, register components once and freeze resolved configuration before activation. | Repeated-call behavior confirmed; exact resolution timing remains open. |
 | Process identity, startup frequency, limits, process gauges | Must be reconciled with multiple host runtimes. | Open; existing process-wide requirements still apply until explicitly resolved. |
 | Ordinary final drain | Host lifetime and cancellation-budget integration. | Proposed; exact policy open. |
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; public APIs and production lifecycle integration remain open. |
@@ -583,7 +584,7 @@ The interview has settled support scope and the main user-facing direction. The 
 
 1. Provider-selection/attachment timing and external-processor lifetime validation for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
-3. Public callback snapshots, value normalization and configuration/re-registration semantics.
+3. Public callback snapshots, value normalization, option representation and configuration-resolution timing.
 4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
 5. Sentry dependency/activation strategy, OpenAPI provider boundaries and dependency floors.
 
