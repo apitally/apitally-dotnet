@@ -33,6 +33,7 @@ An approved product/API direction does not establish that its proposed implement
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
+| Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
 | Manual tracing | `IApitally.StartActivity(...)` returns the native .NET `Activity` type for a `using` scope. |
 | Monitored scope | The whole HTTP application, subject to shared eligibility, sampling, and exclusion rules. |
 
@@ -77,7 +78,7 @@ When Apitally owns tracing:
 - Use an explicit sampler that records monitored requests and descendants regardless of upstream sampling. Apitally's own sampling remains a request/export decision.
 - Enable suitable stock ASP.NET Core and `HttpClient` instrumentation.
 - Subscribe to the manual tracing source `apitally.otel`.
-- Select how additional application/library `ActivitySource` instances are enabled without assuming that every source emits automatically.
+- Use the default source subscriptions; enabling additional application/library `ActivitySource` instances is part of application-owned tracing configuration.
 
 When the application owns tracing:
 
@@ -87,11 +88,13 @@ When the application owns tracing:
 - Inspect sampler and attribute-limit settings only through available supported APIs. A lack of introspection is not itself a warning condition.
 - Do not dispose the user's provider during Apitally shutdown.
 
-**POC evidence:** the [provider experiment](../pocs/provider-registration/README.md) preserves explicit and implicit user sampling in both DI registration orders by contributing configuration without enabling a host provider itself. At startup-filter construction it resolves an enabled user provider or constructs a private owned fallback. This also captures a request issued before `ApplicationStarted`. Repeated same-name ASP.NET instrumentation registration is deduplicated in the tested version. The fallback does not apply host tracing callbacks that were registered without enabling a provider; this limitation remains a design decision.
+**POC evidence:** the [provider experiment](../pocs/provider-registration/README.md) preserves explicit and implicit user sampling in both DI registration orders by contributing configuration without enabling a host provider itself. At startup-filter construction it resolves an enabled user provider or constructs a private owned fallback. This also captures a request issued before `ApplicationStarted`. Repeated same-name ASP.NET instrumentation registration is deduplicated in the tested version. The fallback does not apply host tracing callbacks that were registered without enabling a provider.
+
+**Confirmed customization boundary:** `AddApitally()` provides default tracing when the application has not enabled its own provider. To add database instrumentation, application activity sources or other tracing customization, enable and configure the application's provider through standard `AddOpenTelemetry().WithTracing(...)` registration. Apitally joins that provider and preserves its sampler and instrumentation configuration. Configure-only callbacks without an enabled provider do not customize Apitally's private default pipeline. Document complete customization examples, including the application's responsibility for its sampler and optional instrumentation. An Apitally-specific tracing-configuration callback is outside the initial API.
 
 Public post-build `AddProcessor` works for an official SDK provider that already subscribes to the required sources. It cannot add missing source subscriptions, and there is no public processor-detachment counterpart. Disabling the attached path preserves the external provider's lifetime, but does not remove its retained processor.
 
-**Open:** the advanced integration API, approval of the fallback's configuration boundary, minimum instrumentation versions, and the handling of a provider configured after the supported registration boundary.
+**Open:** the advanced integration API, minimum instrumentation versions, and the handling of a provider configured after the supported registration boundary. The accepted customization boundary does not by itself validate the full provider-selection and activation implementation.
 
 ### Multiple hosts
 
@@ -449,7 +452,7 @@ Generic Host with `Startup` receives an appropriate builder registration entry p
 
 **Confirmed adaptation:** native activity scopes are the manual-tracing surface. The shared function-wrapper recommendation is satisfied differently for C#: additional `Trace`/`TraceAsync` delegate wrappers are not part of the initial API direction. Users can use native activity tags; a second SDK span abstraction is unnecessary.
 
-Database instrumentation is explicit opt-in. **Proposed:** use normal OTel registration rather than invent per-database wrapper APIs where the ecosystem already provides a one-line registration method. The supported customization path and handling of app-defined activity sources still need design review.
+**Confirmed:** database instrumentation and additional application activity sources are explicit opt-ins through standard OTel provider registration. Use `AddOpenTelemetry().WithTracing(...)` with the relevant instrumentation extensions and `AddSource(...)`. This selects application-owned tracing rather than customizing Apitally's private default provider. Document complete examples with deliberate sampler and instrumentation choices; keep the default experience to `AddApitally()`.
 
 ### Migration contract
 
@@ -475,6 +478,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Code options and environment fallbacks | Add the standard `Apitally` configuration section as setup options below explicit code values. | Confirmed adaptation. |
 | Unified setup | Native builder registration for both supported hosting styles; automatic transport integration. | Confirmed API direction; focused hosting POC passed, combined pipeline remains open. |
 | Provider activation/attachment | Prefer supported DI construction-time registration; explicit advanced path for separately built providers. | Confirmed direction; exact mechanism open. |
+| Tracing customization | Standard OTel provider registration selects application-owned tracing; configure-only hooks do not customize the private default provider. | Confirmed boundary. |
 | Multi-host tracing | Single-host support baseline; document cross-provider sampling interference without prohibiting additional hosts or adding special coordination. | Confirmed support boundary; broader multi-host guarantees deferred. |
 | Manual block and function forms | Native `Activity` scope via `IApitally.StartActivity`. | Confirmed adaptation of the shared SHOULD. |
 | Activation failure scope | One attempt per host runtime. | Proposed consequence of host ownership. |
@@ -558,7 +562,7 @@ The first feasibility round is complete and independently checked across the ins
 
 The interview has settled support scope and the main user-facing direction. The next review should resolve:
 
-1. Provider ownership/configuration boundaries and external-provider API/lifetime requirements within the confirmed single-host support baseline.
+1. External-provider API/lifetime requirements and the provider-registration timing boundary within the confirmed single-host support baseline and standard OTel customization path.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus metric capacity/overflow behavior.
 3. Public callback snapshots, value normalization and configuration/re-registration semantics.
 4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
