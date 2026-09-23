@@ -28,6 +28,7 @@ An approved product/API direction does not establish that its proposed implement
 | Hosting | Support modern `WebApplicationBuilder` hosting and Generic Host with `Startup`. Modern hosting is the primary documented path. |
 | Setup | One builder-level call with automatic middleware registration, subject to integrated-pipeline validation. |
 | Existing tracing | Automatic integration with DI-registered tracing, plus an explicit path for separately constructed providers. |
+| Tracing support boundary | Normal single-host integration is the initial supported baseline. Additional hosts are not prohibited; independent sampling across overlapping providers and broader multi-host guarantees are outside initial scope. |
 | Configuration | Automatically read the `Apitally` configuration section, support typed code overrides, and retain shared environment-variable fallbacks. |
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
 | Request helpers | An injectable `IApitally` service is the primary API. |
@@ -98,7 +99,11 @@ Public post-build `AddProcessor` works for an official SDK provider that already
 
 .NET `ActivityListener` subscriptions operate process-wide. The provider POC reproduces sampling interference in both host startup orders: a user sampler still returns `Drop`, but another host's always-on listener causes that user's exporter to receive recorded SERVER activities. Host association correctly filters foreign requests and one owned host can stop while another keeps serving, but export filtering does not undo sampling promotion or its effect on user exporters. Independent multi-host sampling is not established by host-owned runtime state.
 
-**Open:** the supported multi-host tracing composition. The tested middleware association also does not establish ownership of descendants ending before middleware entry or children with only an explicit parent context. Do not treat the POC's association filter as a complete request algorithm.
+**Confirmed:** normal single-host integration is the initial supported baseline. Do not prohibit additional hosts or build special multi-host tracing coordination. Independent sampling across providers listening to the same sources is not guaranteed, even within a single host; broader multi-host guarantees remain outside initial scope. Retain host-owned configuration and lifecycle rather than introducing a process-global Apitally configuration singleton.
+
+This boundary follows the distinction in official OTel guidance: repeated hosting registration creates one provider per service collection, while separately constructed providers are supported without establishing host or sampling isolation. Real Azure Monitor reports describe overlapping test hosts and multiple providers; they establish actual usage, not its production prevalence. See the research references below.
+
+**Open:** the tested middleware association does not establish ownership of descendants ending before middleware entry or children with only an explicit parent context. These request-association questions also matter in a single host. Do not treat the POC's association filter as a complete request algorithm.
 
 If the public APIs cannot preserve the agreed ownership and tracing behavior in a particular composition, document the limitation and bring the decision back for review. Do not silently substitute a process-global configuration singleton.
 
@@ -470,6 +475,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Code options and environment fallbacks | Add the standard `Apitally` configuration section as setup options below explicit code values. | Confirmed adaptation. |
 | Unified setup | Native builder registration for both supported hosting styles; automatic transport integration. | Confirmed API direction; focused hosting POC passed, combined pipeline remains open. |
 | Provider activation/attachment | Prefer supported DI construction-time registration; explicit advanced path for separately built providers. | Confirmed direction; exact mechanism open. |
+| Multi-host tracing | Single-host support baseline; document cross-provider sampling interference without prohibiting additional hosts or adding special coordination. | Confirmed support boundary; broader multi-host guarantees deferred. |
 | Manual block and function forms | Native `Activity` scope via `IApitally.StartActivity`. | Confirmed adaptation of the shared SHOULD. |
 | Activation failure scope | One attempt per host runtime. | Proposed consequence of host ownership. |
 | Configuration timing and repeated calls | Resolve through host construction; host-local registration semantics. | Open; do not silently impose process-global first-call behavior. |
@@ -499,7 +505,7 @@ Do not replace Apitally classes with mocks. Assert exact exported counts and att
 
 - First request, remote unsampled parent, concurrent requests, and keep-alive reuse.
 - Existing user providers, both DI registration orders, explicit external-provider setup, and preserved user exports.
-- Multiple host lifetimes and correct request association without cross-host exports.
+- Correct request association and disposal of host-owned state without disposing user-owned tracing providers.
 - Normal, unmatched, excluded, sampled-out, websocket, and `OPTIONS` requests.
 - Streaming and aborted bodies, compression, size caps, body-reader/writer paths, and complete-body redaction.
 - Consumer/custom attribute helpers inside nested activities and error capture without recorded spans.
@@ -552,7 +558,7 @@ The first feasibility round is complete and independently checked across the ins
 
 The interview has settled support scope and the main user-facing direction. The next review should resolve:
 
-1. The supported tracing composition across hosts, provider ownership/configuration boundaries, and external-provider API/lifetime requirements.
+1. Provider ownership/configuration boundaries and external-provider API/lifetime requirements within the confirmed single-host support baseline.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus metric capacity/overflow behavior.
 3. Public callback snapshots, value normalization and configuration/re-registration semantics.
 4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
@@ -588,3 +594,7 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [Internal OTLP serializer](https://github.com/open-telemetry/opentelemetry-dotnet/blob/5fbeba3a3d8bbd4f4235170ddeb6329fe0b8b86e/src/OpenTelemetry.Exporter.OpenTelemetryProtocol/Implementation/Serializer/ProtobufOtlpTraceSerializer.cs#L9-L29)
 - [Official OTLP protobuf definitions and generation guidance](https://github.com/open-telemetry/opentelemetry-proto/blob/790608c4d51e6ffc12210b541e8514cbed9e91a4/README.md#L51-L73)
 - [OTel .NET metric cardinality behavior](https://github.com/open-telemetry/opentelemetry-dotnet/blob/5fbeba3a3d8bbd4f4235170ddeb6329fe0b8b86e/docs/metrics/README.md#cardinality-limits)
+- [OTel hosting registration and one provider per service collection](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry.Extensions.Hosting/README.md#L24-L47)
+- [OTel guidance on separately constructed providers and the usual single-provider lifetime](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/docs/trace/customizing-the-sdk/README.md#L45-L59)
+- [Azure Monitor report involving concurrent WebApplicationFactory tests](https://github.com/Azure/azure-sdk-for-net/issues/58951#issuecomment-4387389627)
+- [Azure Monitor two-provider reproduction](https://github.com/Azure/azure-sdk-for-net/issues/58951#issuecomment-4445112258)
