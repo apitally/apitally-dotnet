@@ -29,7 +29,7 @@ Every experiment group's .NET 8/9/10 matrix was independently rerun successfully
 - Automatic startup-filter placement works in both tested hosting styles and preserves client-visible streaming. Completion callbacks alone do not prove complete bodies. `StoppedAsync` is a candidate final-drain phase, but host cancellation can leave requests unfinished and actual export draining remains unproven.
 - Official protobuf encoding, continuous gzip concatenation, exact-size rotation and byte-identical local replay work for the tested data. The full spool/retry service and backend acceptance remain untested.
 - Private metric providers need explicit meter-scope filtering. Delta capacity is reclaimed, but overflow loses required request dimensions; production capacity behavior remains a design decision.
-- Public exception features remain available despite net10 diagnostic suppression. Typed Sentry hooks work, but automatic dependency-free integration is unresolved. OpenAPI generation has public paths for Swashbuckle and built-in net10; the tested built-in net9 providers are internal.
+- Public exception features remain available despite net10 diagnostic suppression. Typed Sentry hooks work, but automatic dependency-free integration was not established; [Sentry integration is deferred beyond v1](../docs/design.md#14-sentry-integration), with the POC retained as future research. OpenAPI generation has public paths for Swashbuckle and built-in net10; the tested built-in net9 providers are internal.
 
 Independent verification commands, from the repository root:
 
