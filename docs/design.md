@@ -32,6 +32,7 @@ An approved product/API direction does not establish that its proposed implement
 | Configuration | Populate typed options from defaults, environment fallbacks and the `Apitally` section before running code callbacks. Defer callbacks until startup configuration is resolved, then validate and freeze before activation. |
 | Repeated setup | Within one host, compose code callbacks in registration order; later explicit assignments win. Register SDK components once and freeze resolved configuration before activation. |
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
+| Options layout | Use flat properties on `ApitallyOptions` and directly under the `Apitally` configuration section. |
 | Unfinished requests at shutdown | At the final SDK cutoff, discard detail for requests still awaiting transport completion or SERVER activity end. Flush finalized requests normally; recorded metrics and eligible error aggregates remain independent. |
 | Shutdown budget | Use the host's remaining shutdown budget and honor its cancellation. Add no separate Apitally flush window; final delivery may remain incomplete when the budget expires. |
 | Test-host activation | Automatically suppress Apitally for the standard in-memory TestServer by recognizing the resolved server's exact type and assembly. Real Kestrel tests use the existing disable configuration. The candidate runtime passed .NET 8/9/10 validation; full SDK integration remains open. |
@@ -173,6 +174,8 @@ The write token must match `apt_` followed by 24 alphanumeric characters. Missin
 
 Collect callbacks during registration and execute them once when the host's startup configuration is resolved, not immediately inside `AddApitally()`. Apply the additive environment disable controls, validate the resulting settings and copy them into immutable runtime configuration before activation. Later mutations to the options object or configuration sources must not alter the running SDK.
 
+**Confirmed layout:** keep the configuration surface as flat properties on `ApitallyOptions`, such as `SampleRate` and `CaptureRequestBody`. The same keys appear directly under the `Apitally` configuration section. Sampling, capture and redaction do not introduce nested options groups.
+
 **Proposed names:** use PascalCase names corresponding to the shared settings: `WriteToken`, `Env`, `AppVersion`, `Disabled`, `CaptureLogs`, the four directional capture toggles, `SampleRate`, the sampling and masking callbacks, and the redaction/exclusion pattern collections.
 
 Callbacks are configured in code. The startup event serializes their presence as `true`, not their implementation. Pattern serialization includes their effective flags where relevant.
@@ -183,7 +186,7 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 **Confirmed custom-pattern matching:** use case-insensitive regex search by default for all four collections, consistently across code and configuration files. Respect standard .NET inline options: for example, `secret` matches `Secret` and `SECRET`, while `(?-i:secret)` makes that expression case-sensitive. Inline options override conflicting constructor options for their applicable scope. User patterns still extend the built-in defaults rather than changing their flags or removing them. Startup pattern serialization must retain the effective default and explicit inline options.
 
-**Open:** exact option property names and layout, genuinely optional values, and the DI resolution hook and interaction with standard options registrations. The selected deferred resolution and freezing behavior still requires integrated validation; using `IConfiguration` does not introduce dynamic reload.
+**Open:** exact option property names, genuinely optional values, and the DI resolution hook and interaction with standard options registrations. The selected deferred resolution and freezing behavior still requires integrated validation; using `IConfiguration` does not introduce dynamic reload.
 
 **Confirmed:** repeated registration within one host composes code configuration callbacks in registration order. Later explicit assignments override earlier assignments; a later callback or setup call leaves settings it does not assign unchanged. Resolve the composed code overrides using the source precedence and additive disable rules above, then freeze runtime configuration before activation. Repeated setup must not duplicate middleware, processors, workers or logging providers.
 
@@ -565,6 +568,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Manual block and function forms | Native `Activity` scope via `IApitally.StartActivity`. | Confirmed adaptation of the shared SHOULD. |
 | Activation failure scope | One attempt per host runtime. | Proposed consequence of host ownership. |
 | Test-host suppression | Recognize the resolved server's exact TestServer type/assembly without a test-framework dependency; real Kestrel tests use explicit disabling. | Confirmed scope; candidate runtime passed .NET 8/9/10 checks, full SDK integration remains open. |
+| Options layout | Flat `ApitallyOptions` properties, matching keys directly under the `Apitally` configuration section. | Confirmed .NET API layout. |
 | Configuration timing and repeated calls | Populate options before applying host-local code callbacks in registration order. Defer callback execution until startup configuration resolution, register components once and freeze before activation. | Confirmed behavior; DI resolution integration remains to be validated. |
 | Process identity, startup frequency, limits, process gauges | Must be reconciled with multiple host runtimes. | Open; existing process-wide requirements still apply until explicitly resolved. |
 | Ordinary final drain | Share the host's remaining shutdown budget and honor host cancellation, without an additional SDK flush window. | Confirmed budget policy; exporter/spool and disposal coordination remain to be validated. |
