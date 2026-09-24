@@ -413,7 +413,9 @@ A failing ordinary fallback conversion omits that attribute; a failing array-ele
 
 This is an explicit .NET qualification of the shared design's non-string pass-through wording: a CLR value converted to a log string before masking is subject to the existing 2,048-character string limit after masking. The same applies to a string produced while normalizing accepted callback output. Span attributes retain their separate limits. Concrete public collection/value types, Unicode and array-element truncation semantics still require resolution. The selected normalizer and both ownership boundaries require runtime validation beyond the finite native-callback POC.
 
-**Open:** full normalizer and ownership validation, duplicate keys within one input collection, collisions with generated metadata, callback reassignment of normalized-away native members, production request association and integration with other logging factories. Validate the tested ownership boundaries with the final value model and production mapper. The follow-up uses ASCII truncation fixtures only; the initial POC's Unicode-scalar policy remains experimental. Neither selects Unicode or array-element truncation semantics. If the native callback cannot satisfy the isolation contract through supported APIs, return the issue for review rather than silently changing the public type.
+**Confirmed duplicate-key rule:** within one attribute or key/value collection, the last occurrence of a key wins, including accepted callback output. The selected log-entry-over-inner-scope-over-outer-scope precedence remains unchanged.
+
+**Open:** full normalizer and ownership validation, collisions with generated metadata, callback reassignment of normalized-away native members, production request association and integration with other logging factories. Validate the tested ownership boundaries with the final value model and production mapper. The follow-up uses ASCII truncation fixtures only; the initial POC's Unicode-scalar policy remains experimental. Neither selects Unicode or array-element truncation semantics. If the native callback cannot satisfy the isolation contract through supported APIs, return the issue for review rather than silently changing the public type.
 
 ### Startup event
 
@@ -709,7 +711,7 @@ Follow-up probes independently validate [native endpoint metadata](../pocs/endpo
 
 ## 19. Next design decisions
 
-The interview has settled support scope and the main user-facing direction. The next review should resolve:
+The interview has settled support scope and the main user-facing direction. Further design discussion should focus on material architecture, application impact and release-support decisions. Routine implementation details should follow the selected contracts and established .NET conventions rather than becoming individual interview questions. Most remaining items below are engineering validation work:
 
 1. Provider-selection/attachment timing, external-processor lifetime and full SDK integration of the verified TestServer guard for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
