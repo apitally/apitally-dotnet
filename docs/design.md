@@ -24,6 +24,7 @@ An approved product/API direction does not establish that its proposed implement
 | Area | Decision |
 | --- | --- |
 | Runtime support | .NET 8 minimum; test .NET 8, 9, and 10. |
+| OpenTelemetry compatibility | Use the tested OTel SDK 1.19.0 baseline as the minimum for v1, subject to integrated qualification. Applications using older OTel dependencies may need to upgrade. |
 | Native AOT | Outside the initial support guarantee. Prefer compatibility-friendly choices when they add no complexity. |
 | Hosting | Support modern `WebApplicationBuilder` hosting and Generic Host with `Startup`. Modern hosting is the primary documented path. |
 | Setup | One builder-level call with automatic middleware registration, subject to integrated-pipeline validation. |
@@ -78,7 +79,9 @@ Log capture becoming enabled by default must be called out in the migration guid
 
 **Confirmed:** Native AOT is not a v1 release requirement. This is a support boundary, not a claim that an unsupported application will publish successfully or merely lose telemetry. An incompatible dependency can fail during publishing or execution. Conventional managed deployment is the initial supported mode.
 
-**Open:** exact NuGet target frameworks, C# language version, and minimum OTel package versions. Testing runtimes 8/9/10 does not by itself require three target frameworks in the package. Dependency floors must follow behavioral validation, not API availability alone.
+**Confirmed dependency policy:** use OTel SDK 1.19.0, the tested baseline, as the minimum for v1 and qualify it through integrated testing. Document that applications with older OpenTelemetry dependencies may need to upgrade them. The initial release will not introduce compatibility paths for older OTel SDK releases. This leaves the .NET 8/9/10 runtime support unchanged; a selected dependency baseline is not evidence that the complete SDK integration already works.
+
+**Open:** exact NuGet target frameworks, C# language version, the complete instrumentation/dependency graph and its integrated qualification. Testing runtimes 8/9/10 does not by itself require three target frameworks in the package.
 
 ## 2. Integration with existing OpenTelemetry setups
 
@@ -717,7 +720,7 @@ The interview has settled support scope and the main user-facing direction. Furt
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
 3. Detailed span-snapshot members and collection/value types, full normalizer/ownership validation and native log-mask writable-member semantics, remaining option types and validation of deferred configuration resolution.
 4. Body completeness, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
-5. Package target frameworks, C# language version and dependency floors.
+5. Package target frameworks, C# language version and integrated qualification of the selected OTel 1.19.0 baseline and instrumentation/dependency graph.
 
 After those decisions, focused integration probes should compose the verified mechanisms, especially early activation, final responses, private pipeline ownership and shutdown. Physical proxy/retry/storage-failure behavior and shared backend/harness acceptance also remain to be validated.
 
@@ -734,7 +737,7 @@ Local source snapshots used for the initial review:
 
 Upstream source research included OTel .NET 1.19.1, ASP.NET Core instrumentation 1.19.0 with an older-version comparison, and .NET runtime 8/10. These are research snapshots, not selected dependency floors.
 
-All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 using SDK 10.0.301. The provider, snapshot, logging and encoding/metrics experiments pin OTel 1.19.0. Encoding/metrics also passed independent builds/runs using SDKs 8.0.406 and 9.0.200. Stable 1.19.1 was unavailable from NuGet during the experiments. Their net8/net9 targets load the transitive DiagnosticSource 10.0.0 package, not their original in-box Activity implementation. The transport/lifecycle POC was rerun on the same runtimes without OTel/NuGet dependencies; its native listener evidence does not establish OTel processor ordering. Reports record exact dependencies, assertions and scope limits; these results do not select a production dependency floor.
+All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 using SDK 10.0.301. The provider, snapshot, logging and encoding/metrics experiments pin OTel 1.19.0. Encoding/metrics also passed independent builds/runs using SDKs 8.0.406 and 9.0.200. Stable 1.19.1 was unavailable from NuGet during the experiments. Their net8/net9 targets load the transitive DiagnosticSource 10.0.0 package, not their original in-box Activity implementation. The transport/lifecycle POC was rerun on the same runtimes without OTel/NuGet dependencies; its native listener evidence does not establish OTel processor ordering. Reports record exact dependencies, assertions and scope limits. OTel SDK 1.19.0 is now the selected v1 minimum baseline, subject to integrated qualification; other dependency versions are not automatically production floors.
 
 - [Library tracing registration](https://github.com/open-telemetry/opentelemetry-dotnet/blob/5fbeba3a3d8bbd4f4235170ddeb6329fe0b8b86e/src/OpenTelemetry.Api.ProviderBuilderExtensions/Trace/OpenTelemetryDependencyInjectionTracingServiceCollectionExtensions.cs#L15-L88)
 - [Public post-build processor attachment and its implementation restriction](https://github.com/open-telemetry/opentelemetry-dotnet/blob/5fbeba3a3d8bbd4f4235170ddeb6329fe0b8b86e/src/OpenTelemetry/Trace/TracerProviderExtensions.cs#L14-L33)
