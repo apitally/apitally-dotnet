@@ -40,6 +40,7 @@ An approved product/API direction does not establish that its proposed implement
 | Metric capacity | Use a generous, internally selected fixed capacity through native OTel views and reclamation. Select the number after memory and collection-cost measurements; no public capacity setting or runtime resizing. |
 | Span-based callbacks | All request/response sampling and body-masking callbacks receive the same complete, read-only span snapshot type, populated for the callback's stage. |
 | Sampling callback result | Both sampling callbacks return `double?`: a keep probability in `[0, 1]`, or `null` to abstain. |
+| Body-mask callbacks | Both use `Func<SpanSnapshot, byte[], byte[]?>`: snapshot first, decompressed body bytes second, replacement bytes returned. `null` produces `[REDACTED]`. |
 | Log-mask callback | Use standard `OpenTelemetry.Logs.LogRecord` synchronously in the private logger pipeline, with isolated inputs and an owned copy afterward. The native callback record must not be retained. |
 | Manual tracing | `IApitally.StartActivity(...)` returns the native .NET `Activity` type for a `using` scope. |
 | Monitored scope | The whole HTTP application, subject to shared eligibility, sampling, and exclusion rules. |
@@ -258,7 +259,7 @@ Each invocation receives an owned view appropriate to its stage, not a shared li
 
 Python constructs a new instance of its standard OTel `ReadableSpan` class; JavaScript constructs a plain object implementing the standard `ReadableSpan` interface. Both preserve full span metadata while supplying private attributes. The .NET-owned snapshot is an explicit adaptation to preserve that behavior and consistency across .NET callbacks when the standard SDK lacks an equivalent abstraction.
 
-**Open:** the final type/member names, delegate signatures, detailed value normalization and ownership, and complete scope/resource copying. The existing POC does not establish the complete public callback implementation. Log masking operates on a different signal and uses the separate native `LogRecord` API described in section 9.
+**Open:** the final type/member names, detailed value normalization and ownership, and complete scope/resource copying. The existing POC does not establish the complete public callback implementation. Log masking operates on a different signal and uses the separate native `LogRecord` API described in section 9.
 
 **Confirmed unfinished-request shutdown policy:** at the final SDK cutoff, discard trace and application-log detail for requests still awaiting either transport completion or SERVER activity end. Discard their buffered descendants/logs together, release captured payloads unprocessed and ensure later telemetry cannot revive those requests. Do not create partial SERVER exports or synthetic end times, and leave application-owned activities untouched.
 
@@ -271,6 +272,8 @@ Requests finalized before the cutoff follow the normal response-sampling, comple
 Apply the canonical content-type allowlist and 50,000-byte limit. Check headers before body I/O. A known oversized body yields `[BODY_TOO_LARGE]` without reading it; crossing the cap discards buffered bytes. Empty bodies are omitted. Partial bytes from an aborted stream are omitted, while an already-established oversized sentinel can still be exported.
 
 Process bodies in the shared order: bounded decompression, mask callback, parse, field redaction, and serialization. Parse to identify JSON regardless of content type once capture is allowed. Unsupported/failed decompression must not export the original bytes. A failed or dropping mask callback yields `[REDACTED]`; an oversized masked result yields `[BODY_TOO_LARGE]`. The oversized sentinel bypasses body processing.
+
+**Confirmed .NET body-mask signature:** `MaskRequestBody` and `MaskResponseBody` both use `Func<SpanSnapshot, byte[], byte[]?>`, with `SpanSnapshot` as the working name. The first argument is the complete read-only span snapshot; the second is the decompressed body bytes before JSON parsing. The returned array replaces those bytes, and `null` produces `[REDACTED]`. Ordinary byte arrays keep the two callbacks consistent without another buffer abstraction. Preserve private ownership of input and accepted output data.
 
 The body-mask callback sees the export snapshot after query/header redaction and captured-header attachment, but before body attributes are attached. Document that execution may happen later on another thread. A failure in the export redaction boundary drops the affected span rather than sending raw sensitive data.
 
@@ -490,7 +493,7 @@ The provider's instrumentation and source subscriptions must be configured befor
 
 ### Span-based callbacks
 
-**Confirmed:** `SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody` and `MaskResponseBody` use one complete, read-only span snapshot type, with `SpanSnapshot` as its working name. The body callbacks additionally receive the body to mask. The snapshot's shape is consistent across callbacks while its available data follows the stages described in section 6. Both sampling callbacks return `double?`, with probabilities and stage-specific abstention as described there. Final snapshot members and body-masking delegate signatures remain open. Log masking uses the standard OTel `LogRecord` because it processes a different signal.
+**Confirmed:** `SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody` and `MaskResponseBody` use one complete, read-only span snapshot type, with `SpanSnapshot` as its working name. The body callbacks additionally receive the body to mask. The snapshot's shape is consistent across callbacks while its available data follows the stages described in section 6. Both sampling callbacks return `double?`, with probabilities and stage-specific abstention as described there. Both body callbacks use `Func<SpanSnapshot, byte[], byte[]?>`, with the snapshot first and decompressed body bytes second; a returned array replaces the body and `null` produces `[REDACTED]`. Final snapshot type/member names and value semantics remain open. Log masking uses the standard OTel `LogRecord` because it processes a different signal.
 
 ### Log masking
 
