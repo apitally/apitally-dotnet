@@ -14,8 +14,9 @@ These standalone experiments investigate public API behavior and architectural f
 | [private-logging](private-logging/README.md) | Private OTel logging, capture isolation, record lifetime, callbacks and internal events | Reviewed; 229 assertions per runtime and expected API limitations reproduced |
 | [encoding-metrics](encoding-metrics/README.md) | Official protobuf encoding, gzip/replay, delta exponential metrics and meter isolation | Reviewed; runtime matrix, native SDK 8/9 builds and independent gzip checks passed |
 | [error-integrations](error-integrations/README.md) | Framework validation/exceptions, Sentry event hooks and route/OpenAPI discovery | Reviewed; all 12 project/runtime combinations passed |
+| [endpoint-metadata](endpoint-metadata/README.md) | Follow-up: native route summaries/descriptions without generator dependencies | Eight path/method cases passed on .NET 8/9/10 |
 
-All six experiment groups have been independently inspected and rerun. A successfully reproduced limitation is a valid POC outcome; passing checks do not establish untested behavior or a production-ready implementation.
+All six initial experiment groups have been independently inspected and rerun. The endpoint-metadata follow-up was also executed across the three supported runtimes. A successfully reproduced limitation is a valid POC outcome; passing checks do not establish untested behavior or a production-ready implementation.
 
 ## Verified findings
 
@@ -31,7 +32,9 @@ Every experiment group's .NET 8/9/10 matrix was independently rerun successfully
 - Private metric providers need explicit meter-scope filtering. Delta capacity is reclaimed, but overflow loses required request dimensions; production capacity behavior remains a design decision.
 - Public exception features remain available despite net10 diagnostic suppression. Typed Sentry hooks work, but automatic dependency-free integration was not established; [Sentry integration is deferred beyond v1](../docs/design.md#14-sentry-integration), with the POC retained as future research. OpenAPI generation has public paths for Swashbuckle and built-in net10; the tested built-in net9 providers are internal.
 
-Independent verification commands, from the repository root:
+The follow-up endpoint-metadata probe confirms direct summary/description reads for Minimal API endpoints, groups and MVC actions on all three runtimes. It adds no OpenAPI package reference and makes no schema-generation calls. See its README for reproduction and limits.
+
+Independent verification commands for the initial round, from the repository root:
 
 ```sh
 python3 pocs/provider-registration/run.py
