@@ -26,6 +26,14 @@ A separate initial compilation attempt applied the two attributes to a controlle
 
 This probe does not collect a complete OpenAPI document, parse XML comments, run generator-specific transformers, measure overhead, or validate the combined startup-event export path. A missing annotation stays absent; no summary is inferred from an endpoint's display name.
 
+Source inspection confirms that .NET 10's generated XML-comment transformer writes the OpenAPI operation during document generation, not the routing metadata. XML-only comments and OpenAPI-only transformer changes therefore do not appear through these two lookups.
+
+## Source references
+
+- [Native route metadata conventions](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Http/Routing/src/Builder/OpenApiRouteHandlerBuilderExtensions.cs)
+- [Metadata selection and precedence](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Http/Http.Abstractions/src/Routing/EndpointMetadataCollection.cs)
+- [.NET 10 XML-comment operation transformer](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/OpenApi/gen/XmlCommentGenerator.Emitter.cs#L361-L386)
+
 ## Reproduction
 
 From the repository root:
