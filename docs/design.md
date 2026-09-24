@@ -210,7 +210,13 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 **Reference behavior:** Python checks `PYTEST_CURRENT_TEST` and the Django `manage.py test` argument shape at activation. Its telemetry tests deliberately clear the pytest marker. This is targeted coverage, not a universal detector for every test runner.
 
-**Open:** establish a simple .NET guard using supported runner markers or recognition of the actual test server, with clear coverage for in-memory versus real-server tests. Verify its timing relative to private-provider construction and activation. Do not assume Python-style markers exist in .NET, scan arbitrary loaded assemblies or infer testing merely from the Development environment. No new public testing override or production detection mechanism is selected yet.
+**Research finding:** no documented marker that is generally set across ordinary VSTest and Microsoft.Testing.Platform runs was established. Debug/runtime-selection settings and mode-specific controller variables do not establish a general test environment. This is not proof that every runner-specific marker is absent.
+
+**Recommended candidate, not yet selected:** inspect the host's resolved `IServer` and recognize the exact runtime type `Microsoft.AspNetCore.TestHost.TestServer` from assembly `Microsoft.AspNetCore.TestHost`. Reading that existing object's type and assembly names requires no TestHost dependency or loaded-assembly scan. `UseTestServer` registers this singleton, and default `WebApplicationFactory` uses it. Resolve the actual server after host registrations are complete, not during `AddApitally`.
+
+This candidate covers standard in-memory TestServer tests; it does not identify real Kestrel tests, including the explicit Kestrel mode in .NET 10 `WebApplicationFactory`. Such tests would still use the existing disable configuration. Do not add wrapper introspection or infer testing from the Development environment. No new public testing override is proposed; SDK telemetry tests can use loopback Kestrel, with TestServer tests verifying suppression.
+
+**Open:** confirm this coverage boundary and validate the guard on all supported runtimes before choosing it as the production mechanism. Apply it before private fallback-provider construction and before either startup or first-request activation, while leaving application-owned providers operational. Source inspection supports the candidate; combined runtime/provider behavior has not been probed.
 
 Host lifetime integration is the default direction. Python fork handling and JavaScript signal re-delivery are not mechanisms to port into this SDK.
 
@@ -686,3 +692,6 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [Native route summary/description conventions](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Http/Routing/src/Builder/OpenApiRouteHandlerBuilderExtensions.cs)
 - [.NET 10 XML comments enrich OpenAPI operations during transformation](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/OpenApi/gen/XmlCommentGenerator.Emitter.cs#L361-L386)
 - [Python activation guards](../../apitally-py/apitally/shared/activation.py) and [deliberate activation in SDK tests](../../apitally-py/tests/conftest.py)
+- [TestServer identity and features](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Hosting/TestHost/src/TestServer.cs#L13-L31) and [server registration](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Hosting/TestHost/src/WebHostBuilderExtensions.cs#L27-L50)
+- [WebApplicationFactory server selection](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Mvc/Mvc.Testing/src/WebApplicationFactory.cs#L341-L368)
+- [Request pipeline construction with the resolved server](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Hosting/Hosting/src/GenericHost/GenericWebHostService.cs#L122-L143)
