@@ -33,6 +33,7 @@ An approved product/API direction does not establish that its proposed implement
 | Repeated setup | Within one host, compose code callbacks in registration order; later explicit assignments win. Register SDK components once and freeze resolved configuration before activation. |
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
 | Unfinished requests at shutdown | At the final SDK cutoff, discard detail for requests still awaiting transport completion or SERVER activity end. Flush finalized requests normally; recorded metrics and eligible error aggregates remain independent. |
+| Shutdown budget | Use the host's remaining shutdown budget and honor its cancellation. Add no separate Apitally flush window; final delivery may remain incomplete when the budget expires. |
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
@@ -199,7 +200,9 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 **POC evidence:** ordinary hosted-service `StopAsync` ordering relative to Kestrel differs between the two tested hosting compositions. `IHostedLifecycleService.StoppedAsync` follows all service stop calls and is a candidate final-drain phase. A request ignoring cancellation can remain unfinished after host stop returns; a 300 ms host budget took about 1.3 seconds in the tested Kestrel abort path. The final phase receives the already-canceled token in that case. Host cancellation is not an exact wall-clock termination guarantee.
 
-**Open:** actual OTel provider/worker disposal ordering, completed-spool-write coordination within the host budget, and implementation of the confirmed unfinished-request cutoff. The lifecycle POC's drain is a counter/cancellable delay, not export evidence. Respecting the host's budget is the proposed .NET approach; no separate arbitrary SDK-wide shutdown deadline is selected yet.
+**Confirmed shutdown budget:** the application host controls the available shutdown time. Apitally uses the remaining host budget and honors its cancellation rather than starting an additional SDK flush window. Drain, flush and delivery share that budget; each phase does not receive a fresh allowance. If request draining exhausts it, final telemetry delivery may remain incomplete. This is cooperative cancellation, not a guarantee that framework or blocking synchronous operations terminate at an exact wall-clock deadline.
+
+**Open:** actual OTel provider/worker disposal ordering, completed-spool-write coordination within the host budget, and implementation of the confirmed unfinished-request cutoff. The lifecycle POC's drain is a counter/cancellable delay, not export evidence. Validate that blocking processor/export work and cleanup do not introduce deliberate extra waiting beyond host cancellation.
 
 **Open:** test-host activation policy. .NET integration tests deliberately start hosts, and ordinary application construction is not equivalent to serving. Choose a reliable rule rather than assuming Python-style test-runner environment markers exist or scanning arbitrary loaded assemblies. The SDK's own tests must be able to exercise real activation.
 
@@ -413,7 +416,7 @@ Resolve proxy environment settings once and bind them to the SDK's HTTP delivery
 
 **Proposed:** a host-owned worker drives metric collection and spool delivery. Use .NET background execution appropriate to the work: HTTP sends may be asynchronous, while CPU-bound body processing must remain outside request-serving execution. Keep concurrency close to the shared model rather than introducing a task or thread per request/span.
 
-**Open:** exact batch processor settings, protobuf generation/distribution, metric snapshot lifetime, HTTP handler/proxy configuration, spool concurrency, and the host-shutdown budget. Preserve the shared limits while resolving their multi-host ownership explicitly.
+**Open:** exact batch processor settings, protobuf generation/distribution, metric snapshot lifetime, HTTP handler/proxy configuration, spool concurrency, and integration with the confirmed host-controlled shutdown budget. Preserve the shared limits while resolving their multi-host ownership explicitly.
 
 ## 11. Metrics
 
@@ -540,7 +543,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Activation failure scope | One attempt per host runtime. | Proposed consequence of host ownership. |
 | Configuration timing and repeated calls | Populate options before applying host-local code callbacks in registration order. Defer callback execution until startup configuration resolution, register components once and freeze before activation. | Confirmed behavior; DI resolution integration remains to be validated. |
 | Process identity, startup frequency, limits, process gauges | Must be reconciled with multiple host runtimes. | Open; existing process-wide requirements still apply until explicitly resolved. |
-| Ordinary final drain | Host lifetime and cancellation-budget integration. | Proposed; budget and exporter/spool coordination remain open. |
+| Ordinary final drain | Share the host's remaining shutdown budget and honor host cancellation, without an additional SDK flush window. | Confirmed budget policy; exporter/spool and disposal coordination remain to be validated. |
 | Unfinished-request detail | Discard requests still awaiting transport completion or SERVER activity end at the final SDK cutoff; retain normal flushing for finalized requests and independent recorded metrics/error aggregates. | Confirmed per-SDK policy permitted by the shared shutdown contract; integration remains to be validated. |
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
 | Span callback type | One complete, read-only span snapshot type for all sampling and body-masking callbacks, preserving stage-appropriate private data. | Confirmed .NET adaptation; detailed API and value semantics remain open. |
@@ -628,7 +631,7 @@ The interview has settled support scope and the main user-facing direction. The 
 1. Provider-selection/attachment timing and external-processor lifetime validation for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
 3. Detailed span-snapshot members and value semantics, native log-mask callback isolation/normalization, remaining option types and validation of deferred configuration resolution.
-4. Body completeness, implementation of the unfinished-request cutoff, shutdown budget and exporter/spool completion coordination.
+4. Body completeness, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
 5. Package target frameworks, C# language version and dependency floors.
 
 After those decisions, focused integration probes should compose the verified mechanisms, especially early activation, final responses, private pipeline ownership and shutdown. Physical proxy/retry/storage-failure behavior and shared backend/harness acceptance also remain to be validated.
