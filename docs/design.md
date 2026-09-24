@@ -42,6 +42,7 @@ An approved product/API direction does not establish that its proposed implement
 | Manual tracing | `IApitally.StartActivity(...)` returns the native .NET `Activity` type for a `using` scope. |
 | Monitored scope | The whole HTTP application, subject to shared eligibility, sampling, and exclusion rules. |
 | Sentry integration | Deferred beyond .NET SDK v1. Ordinary exception/error capture remains in scope; retain the Sentry POC as future research. |
+| Endpoint documentation | Low-priority enrichment. Prefer direct ASP.NET Core metadata; consider full OpenAPI capture only through a simple native .NET 10 path. |
 
 The older `Startup` approach has not been removed. Microsoft still supports it with Generic Host in .NET 10. This is distinct from the legacy `WebHostBuilder` and `WebHost` APIs, which became obsolete in .NET 10. Separate support for every obsolete hosting API is not part of the agreed scope. See the [hosting guidance](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/host/generic-host?view=aspnetcore-10.0) and [deprecation notice](https://learn.microsoft.com/en-us/aspnet/core/breaking-changes/10/webhostbuilder-deprecated?view=aspnetcore-10.0).
 
@@ -348,7 +349,11 @@ Emit `apitally.app.startup` through the private logs pipeline with scope `apital
 
 **POC evidence:** finalized `EndpointDataSource` entries retain tested nested group prefixes, route constraints and method metadata. Built-in net8 OpenAPI exposes operation metadata rather than full document generation. The tested net9 document-generation providers are internal; net10 exposes keyed `IOpenApiDocumentProvider` for in-process document generation, including transformers. Swashbuckle's public `ISwaggerProvider` generates a document on all three tested runtimes without an HTTP endpoint or self-request.
 
-**Open:** package boundaries, supported library versions, document-name discovery, multiple documents, NSwag and the net9 built-in schema boundary. The experiments use a known `v1` document name, not automatic discovery. Do not require an HTTP request to the application's own schema endpoint as an assumed discovery mechanism.
+**Additional POC evidence:** the [native endpoint-metadata probe](../pocs/endpoint-metadata/README.md) passed eight path/method cases on .NET 8/9/10 without OpenAPI package references or loaded generator assemblies. `IEndpointSummaryMetadata` and `IEndpointDescriptionMetadata` supply strings during existing route enumeration, including Minimal API group inheritance/endpoint overrides and MVC action annotations. Unannotated endpoints have no values. The two attributes are method-only; controller-class placement failed compilation on all three targets. This is metadata-read evidence, not integrated startup-event export validation.
+
+**Confirmed simplicity constraint:** endpoint documentation is low priority and must justify its code, dependency and runtime costs. Explore reading summaries/descriptions directly from ASP.NET Core endpoint metadata. Consider full-document capture only through a small, straightforward native .NET 10 path; broader generator integration machinery is outside this scope. The Swashbuckle POC remains evidence rather than a commitment to support it.
+
+**Open:** select the endpoint-documentation boundary and decide whether the native .NET 10 document path is simple enough to include. Its public provider lives in the optional OpenAPI package, not the ASP.NET Core shared framework. Typed integration introduces package dependencies; dependency-free invocation/serialization still needs a reflection path. Standard DI's `GetKeyedServices(Type, KeyedService.AnyKey)` offers provider enumeration without names, but does not identify document keys or deduplicate repeated registrations. Serialization requires an OpenAPI specification version, whose configured value belongs to named options. These costs must be assessed together rather than treating generation as one method call. The existing generation experiments use a known `v1` document name, not automatic discovery. HTTP self-requests and schema reconstruction from routes are not the intended approach.
 
 The shared contract says once per serving process. Emitting once per serving host is the natural host-owned adaptation, but its interaction with process identity and multiple hosts must be reviewed explicitly under section 2.
 
@@ -618,7 +623,7 @@ The interview has settled support scope and the main user-facing direction. The 
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
 3. Detailed span-snapshot members and value semantics, native log-mask callback isolation/normalization, remaining option types and validation of deferred configuration resolution.
 4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
-5. OpenAPI provider boundaries and dependency floors.
+5. Minimal native endpoint-documentation capture, whether a simple .NET 10 OpenAPI path is worthwhile, and dependency floors.
 
 After those decisions, focused integration probes should compose the verified mechanisms, especially early activation, final responses, private pipeline ownership and shutdown. Physical proxy/retry/storage-failure behavior and shared backend/harness acceptance also remain to be validated.
 
