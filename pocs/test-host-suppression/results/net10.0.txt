@@ -1,0 +1,35 @@
++ dotnet Driver/bin/Release/net10.0/Driver.dll
+Runtime: .NET 10.0.9; Arm64
+Assembly: Microsoft.AspNetCore 10.0.9
+Assembly: Microsoft.AspNetCore.Mvc.Testing 10.0.9
+Assembly: Microsoft.AspNetCore.TestHost 10.0.9
+Assembly: OpenTelemetry.Api 1.19.0
+Assembly: OpenTelemetry 1.19.0
+Assembly: OpenTelemetry.Instrumentation.AspNetCore 1.19.0
+OBSERVE factory-testserver-startup: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.TestHost.TestServer; suppressed=True; startup=1; requests=2; fallback=0; activations=0; privateExports=0; userExports=0
+PASS factory-testserver-startup (including resource disposal)
+OBSERVE factory-user-tracing-startup: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.TestHost.TestServer; suppressed=True; startup=1; requests=2; fallback=0; activations=0; privateExports=0; userExports=2
+PASS factory-user-tracing-startup (including resource disposal)
+OBSERVE direct-testserver-startup: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.TestHost.TestServer; suppressed=True; startup=1; requests=2; fallback=0; activations=0; privateExports=0; userExports=0
+PASS direct-testserver-startup (including resource disposal)
+OBSERVE generic-startup-testserver-startup: registered=<none>; resolved=Microsoft.AspNetCore.TestHost.TestServer; suppressed=True; startup=1; requests=2; fallback=0; activations=0; privateExports=0; userExports=0
+PASS generic-startup-testserver-startup (including resource disposal)
+OBSERVE direct-kestrel-development-startup: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; suppressed=False; startup=1; requests=2; fallback=1; activations=1; privateExports=2; userExports=0
+PASS direct-kestrel-development-startup (including resource disposal)
+OBSERVE factory-kestrel-development-startup: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; suppressed=False; startup=1; requests=2; fallback=1; activations=1; privateExports=2; userExports=0
+PASS factory-kestrel-development-startup (including resource disposal)
+OBSERVE factory-testserver-request-only: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.TestHost.TestServer; suppressed=True; startup=0; requests=2; fallback=0; activations=0; privateExports=0; userExports=0
+PASS factory-testserver-request-only (including resource disposal)
+OBSERVE factory-user-tracing-request-only: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.TestHost.TestServer; suppressed=True; startup=0; requests=2; fallback=0; activations=0; privateExports=0; userExports=2
+PASS factory-user-tracing-request-only (including resource disposal)
+OBSERVE direct-testserver-request-only: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.TestHost.TestServer; suppressed=True; startup=0; requests=2; fallback=0; activations=0; privateExports=0; userExports=0
+PASS direct-testserver-request-only (including resource disposal)
+OBSERVE generic-startup-testserver-request-only: registered=<none>; resolved=Microsoft.AspNetCore.TestHost.TestServer; suppressed=True; startup=0; requests=2; fallback=0; activations=0; privateExports=0; userExports=0
+PASS generic-startup-testserver-request-only (including resource disposal)
+OBSERVE direct-kestrel-development-request-only: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; suppressed=False; startup=0; requests=2; fallback=1; activations=1; privateExports=2; userExports=0
+PASS direct-kestrel-development-request-only (including resource disposal)
+OBSERVE factory-kestrel-development-request-only: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; suppressed=False; startup=0; requests=2; fallback=1; activations=1; privateExports=2; userExports=0
+PASS factory-kestrel-development-request-only (including resource disposal)
+OBSERVE direct-kestrel-explicitly-disabled: registered=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; resolved=Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerImpl; suppressed=False; startup=1; requests=2; fallback=0; activations=0; privateExports=0; userExports=0
+PASS direct-kestrel-explicitly-disabled (including resource disposal)
+PASS 13 cases; guard assembly dependency check passed; no external telemetry

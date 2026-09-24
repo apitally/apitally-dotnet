@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <TestPackageVersion Condition="'$(TargetFramework)' == 'net8.0'">8.0.13</TestPackageVersion>
+    <TestPackageVersion Condition="'$(TargetFramework)' == 'net9.0'">9.0.2</TestPackageVersion>
+    <TestPackageVersion Condition="'$(TargetFramework)' == 'net10.0'">10.0.9</TestPackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Fixture/Fixture.csproj" />
+    <PackageReference
+      Include="Microsoft.AspNetCore.Mvc.Testing"
+      Version="[$(TestPackageVersion)]"
+    />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="[$(TestPackageVersion)]" />
+  </ItemGroup>
+</Project>
