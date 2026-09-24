@@ -34,7 +34,7 @@ An approved product/API direction does not establish that its proposed implement
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
 | Unfinished requests at shutdown | At the final SDK cutoff, discard detail for requests still awaiting transport completion or SERVER activity end. Flush finalized requests normally; recorded metrics and eligible error aggregates remain independent. |
 | Shutdown budget | Use the host's remaining shutdown budget and honor its cancellation. Add no separate Apitally flush window; final delivery may remain incomplete when the budget expires. |
-| Test-host activation | Prefer reliable, straightforward automatic suppression of application integration-test telemetry. Bring complex detection mechanisms back for review; the .NET guard is still under investigation. |
+| Test-host activation | Automatically suppress Apitally for the standard in-memory TestServer by recognizing the resolved server's exact type and assembly. Real Kestrel tests use the existing disable configuration. Validate the guard across .NET 8/9/10 before implementation. |
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
@@ -212,11 +212,11 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 **Research finding:** no documented marker that is generally set across ordinary VSTest and Microsoft.Testing.Platform runs was established. Debug/runtime-selection settings and mode-specific controller variables do not establish a general test environment. This is not proof that every runner-specific marker is absent.
 
-**Recommended candidate, not yet selected:** inspect the host's resolved `IServer` and recognize the exact runtime type `Microsoft.AspNetCore.TestHost.TestServer` from assembly `Microsoft.AspNetCore.TestHost`. Reading that existing object's type and assembly names requires no TestHost dependency or loaded-assembly scan. `UseTestServer` registers this singleton, and default `WebApplicationFactory` uses it. Resolve the actual server after host registrations are complete, not during `AddApitally`.
+**Confirmed .NET guard:** inspect the host's resolved `IServer` and recognize the exact runtime type `Microsoft.AspNetCore.TestHost.TestServer` from assembly `Microsoft.AspNetCore.TestHost`. Reading that existing object's type and assembly names requires no TestHost dependency or loaded-assembly scan. `UseTestServer` registers this singleton, and default `WebApplicationFactory` uses it. Resolve the actual server after host registrations are complete, not during `AddApitally`.
 
-This candidate covers standard in-memory TestServer tests; it does not identify real Kestrel tests, including the explicit Kestrel mode in .NET 10 `WebApplicationFactory`. Such tests would still use the existing disable configuration. Do not add wrapper introspection or infer testing from the Development environment. No new public testing override is proposed; SDK telemetry tests can use loopback Kestrel, with TestServer tests verifying suppression.
+The guard covers standard in-memory TestServer tests; it does not identify real Kestrel tests, including the explicit Kestrel mode in .NET 10 `WebApplicationFactory`. Such tests use the existing disable configuration. Do not add wrapper introspection or infer testing from the Development environment. No new public testing override is selected; SDK telemetry tests can use loopback Kestrel, with TestServer tests verifying suppression.
 
-**Open:** confirm this coverage boundary and validate the guard on all supported runtimes before choosing it as the production mechanism. Apply it before private fallback-provider construction and before either startup or first-request activation, while leaving application-owned providers operational. Source inspection supports the candidate; combined runtime/provider behavior has not been probed.
+**Validation required:** exercise the selected guard on .NET 8/9/10 before production implementation. Apply it before private fallback-provider construction and before either startup or first-request activation, while leaving application-owned providers operational. Source inspection supports the guard; combined runtime/provider behavior has not been probed.
 
 Host lifetime integration is the default direction. Python fork handling and JavaScript signal re-delivery are not mechanisms to port into this SDK.
 
@@ -642,7 +642,7 @@ The first feasibility round is complete and independently checked across the ins
 
 The interview has settled support scope and the main user-facing direction. The next review should resolve:
 
-1. Provider-selection/attachment timing, external-processor lifetime validation and a simple automatic test-activation guard for the confirmed standard DI integration paths.
+1. Provider-selection/attachment timing, external-processor lifetime and validation of the selected TestServer activation guard for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
 3. Detailed span-snapshot members and value semantics, native log-mask callback isolation/normalization, remaining option types and validation of deferred configuration resolution.
 4. Body completeness, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
