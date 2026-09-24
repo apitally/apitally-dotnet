@@ -1,0 +1,13 @@
++ dotnet build Driver/Driver.csproj -c Release --no-restore --disable-build-servers
+  Fixture -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/test-host-suppression/Fixture/bin/Release/net8.0/Fixture.dll
+  Fixture -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/test-host-suppression/Fixture/bin/Release/net9.0/Fixture.dll
+  Fixture -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/test-host-suppression/Fixture/bin/Release/net10.0/Fixture.dll
+  Driver -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/test-host-suppression/Driver/bin/Release/net8.0/Driver.dll
+  Driver -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/test-host-suppression/Driver/bin/Release/net9.0/Driver.dll
+  Driver -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/test-host-suppression/Driver/bin/Release/net10.0/Driver.dll
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:01.70

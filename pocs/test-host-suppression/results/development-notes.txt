@@ -1,0 +1,16 @@
+Initial net8.0 run (runtime 8.0.13, OTel 1.19.0):
+- factory-testserver-startup passed.
+- factory-user-tracing-startup observed suppression, zero fallback/activation/private exports,
+  and two completed user spans, including one after candidate disposal.
+- The immediate post-factory-disposal assertion failed: expected user exporter DisposeCount 1,
+  observed 0. Factory disposal can overlap entry-point RunAsync host disposal.
+- The probe now waits up to five seconds for observed runtime/exporter disposal callbacks
+  before asserting disposal counts. It does not replace the factory or change server lookup,
+  suppression, provider ownership, or activation. Final matrix output records the result.
+
+Initial net10.0 UseKestrel control (runtime and Mvc.Testing 10.0.9):
+- The server resolved to Kestrel, startup activated, and a 127.0.0.1 dynamic listener existed.
+- factory.CreateClient(options) attempted localhost:80 and failed with connection refused.
+- The Kestrel control now uses the same no-proxy loopback client as direct Kestrel, with its
+  base address read from the resolved server's IServerAddressesFeature. The factory still
+  performs the standard .NET 10 UseKestrel(0) setup. The guard is unchanged.

@@ -34,7 +34,7 @@ An approved product/API direction does not establish that its proposed implement
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
 | Unfinished requests at shutdown | At the final SDK cutoff, discard detail for requests still awaiting transport completion or SERVER activity end. Flush finalized requests normally; recorded metrics and eligible error aggregates remain independent. |
 | Shutdown budget | Use the host's remaining shutdown budget and honor its cancellation. Add no separate Apitally flush window; final delivery may remain incomplete when the budget expires. |
-| Test-host activation | Automatically suppress Apitally for the standard in-memory TestServer by recognizing the resolved server's exact type and assembly. Real Kestrel tests use the existing disable configuration. Validate the guard across .NET 8/9/10 before implementation. |
+| Test-host activation | Automatically suppress Apitally for the standard in-memory TestServer by recognizing the resolved server's exact type and assembly. Real Kestrel tests use the existing disable configuration. The candidate runtime passed .NET 8/9/10 validation; full SDK integration remains open. |
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
@@ -216,7 +216,11 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 The guard covers standard in-memory TestServer tests; it does not identify real Kestrel tests, including the explicit Kestrel mode in .NET 10 `WebApplicationFactory`. Such tests use the existing disable configuration. Do not add wrapper introspection or infer testing from the Development environment. No new public testing override is selected; SDK telemetry tests can use loopback Kestrel, with TestServer tests verifying suppression.
 
-**Validation required:** exercise the selected guard on .NET 8/9/10 before production implementation. Apply it before private fallback-provider construction and before either startup or first-request activation, while leaving application-owned providers operational. Source inspection supports the guard; combined runtime/provider behavior has not been probed.
+**POC evidence:** the independently inspected and rerun [test-host-suppression probe](../pocs/test-host-suppression/README.md) passed 11 cases on .NET 8.0.13, 11 on 9.0.2 and 13 on 10.0.9, using SDK 10.0.301 and OTel 1.19.0. Its startup filter resolves the actual server during pipeline construction, before private fallback-provider creation. Default `WebApplicationFactory`, direct `WebApplicationBuilder` and Generic Host/`Startup` TestServer paths stay inactive for startup and request activation signals. The factory replaces the registration-time Kestrel server before the guard runs; no DI cycle occurred in the candidate. The guard assembly references neither TestHost nor Mvc.Testing.
+
+Application-owned tracing continues exporting real completed SERVER spans in suppressed TestServer cases, including after candidate disposal. Loopback Kestrel in Development activates and exports through the private fallback even with TestHost loaded; .NET 10 factory Kestrel mode also passes. Export and disposal assertions await observed completion rather than assuming `ForceFlush` establishes it.
+
+**Still unproven:** full SDK configuration/logging/metrics/worker integration, other tracing-registration modes and concurrent early-request activation. The request-only probe omits the startup activation hook but sends requests after the host has started. Active Kestrel controls use private tracing; application-owned tracing is exercised in the suppressed path. The selected guard remains limited to the exact TestServer identity.
 
 Host lifetime integration is the default direction. Python fork handling and JavaScript signal re-delivery are not mechanisms to port into this SDK.
 
@@ -555,6 +559,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Multi-host tracing | Single-host support baseline; document cross-provider sampling interference without prohibiting additional hosts or adding special coordination. | Confirmed support boundary; broader multi-host guarantees deferred. |
 | Manual block and function forms | Native `Activity` scope via `IApitally.StartActivity`. | Confirmed adaptation of the shared SHOULD. |
 | Activation failure scope | One attempt per host runtime. | Proposed consequence of host ownership. |
+| Test-host suppression | Recognize the resolved server's exact TestServer type/assembly without a test-framework dependency; real Kestrel tests use explicit disabling. | Confirmed scope; candidate runtime passed .NET 8/9/10 checks, full SDK integration remains open. |
 | Configuration timing and repeated calls | Populate options before applying host-local code callbacks in registration order. Defer callback execution until startup configuration resolution, register components once and freeze before activation. | Confirmed behavior; DI resolution integration remains to be validated. |
 | Process identity, startup frequency, limits, process gauges | Must be reconciled with multiple host runtimes. | Open; existing process-wide requirements still apply until explicitly resolved. |
 | Ordinary final drain | Share the host's remaining shutdown budget and honor host cancellation, without an additional SDK flush window. | Confirmed budget policy; exporter/spool and disposal coordination remain to be validated. |
@@ -589,6 +594,7 @@ Do not replace Apitally classes with mocks. Assert exact exported counts and att
 
 - First request, remote unsampled parent, concurrent requests, and keep-alive reuse.
 - Existing user providers, both DI registration orders, explicit external-provider setup, and preserved user exports.
+- Automatic TestServer suppression with application-owned tracing preserved, plus normal real-server activation.
 - Correct request association and disposal of host-owned state without disposing user-owned tracing providers.
 - Normal, unmatched, excluded, sampled-out, websocket, and `OPTIONS` requests.
 - Streaming and aborted bodies, compression, size caps, body-reader/writer paths, and complete-body redaction.
@@ -638,11 +644,13 @@ The first feasibility round is complete and independently checked across the ins
 | Error and optional integration hooks | Conservative MVC/Minimal API validation; first exception and final-500 rule; .NET 10 handled-exception diagnostics; request cancellation; finalized routes and native summary/description metadata. Sentry and full-OpenAPI evidence is retained for future work outside v1. |
 | Host shutdown | Server/request draining relative to SDK/provider disposal; ordinary final cycle; host cancellation budget; unfinished request policy; no duplicate release or retained host state after disposal. |
 
+Follow-up probes independently validate [native endpoint metadata](../pocs/endpoint-metadata/README.md) and [TestServer activation suppression](../pocs/test-host-suppression/README.md) on .NET 8/9/10. Their reports distinguish candidate-runtime evidence from full SDK integration.
+
 ## 19. Next design decisions
 
 The interview has settled support scope and the main user-facing direction. The next review should resolve:
 
-1. Provider-selection/attachment timing, external-processor lifetime and validation of the selected TestServer activation guard for the confirmed standard DI integration paths.
+1. Provider-selection/attachment timing, external-processor lifetime and full SDK integration of the verified TestServer guard for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
 3. Detailed span-snapshot members and value semantics, native log-mask callback isolation/normalization, remaining option types and validation of deferred configuration resolution.
 4. Body completeness, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
