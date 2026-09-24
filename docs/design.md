@@ -42,7 +42,7 @@ An approved product/API direction does not establish that its proposed implement
 | Span-based callbacks | All request/response sampling and body-masking callbacks receive the same complete, read-only span snapshot type, populated for the callback's stage. |
 | Sampling callback result | Both sampling callbacks return `double?`: a keep probability in `[0, 1]`, or `null` to abstain. |
 | Body-mask callbacks | Both use `Func<SpanSnapshot, byte[], byte[]?>`: snapshot first, decompressed body bytes second, replacement bytes returned. `null` produces `[REDACTED]`. |
-| Custom pattern inputs | Use `List<string>` for custom redaction and path-exclusion patterns, with the same pattern-string representation in code and configuration files. |
+| Custom pattern inputs | Use `List<string>` in code and configuration files. Custom redaction and path-exclusion patterns are case-insensitive by default and respect explicit .NET inline options. |
 | Log-mask callback | Use standard `OpenTelemetry.Logs.LogRecord` synchronously in the private logger pipeline, with isolated inputs and an owned copy afterward. The native callback record must not be retained. |
 | Manual tracing | `IApitally.StartActivity(...)` returns the native .NET `Activity` type for a `using` scope. |
 | Monitored scope | The whole HTTP application, subject to shared eligibility, sampling, and exclusion rules. |
@@ -181,7 +181,9 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 **Confirmed regex inputs:** expose each custom query-param, header, body-field and path-exclusion pattern collection as `List<string>`. Both code options and the `Apitally` configuration section supply .NET regex pattern strings. Validate and prepare patterns during startup configuration resolution, preserving the immutable-runtime rule above. Native `Regex` objects are not an additional public input form.
 
-**Open:** exact option property names and layout, genuinely optional values, custom-pattern case sensitivity and flag semantics, and the DI resolution hook and interaction with standard options registrations. The selected deferred resolution and freezing behavior still requires integrated validation; using `IConfiguration` does not introduce dynamic reload.
+**Confirmed custom-pattern matching:** use case-insensitive regex search by default for all four collections, consistently across code and configuration files. Respect standard .NET inline options: for example, `secret` matches `Secret` and `SECRET`, while `(?-i:secret)` makes that expression case-sensitive. Inline options override conflicting constructor options for their applicable scope. User patterns still extend the built-in defaults rather than changing their flags or removing them. Startup pattern serialization must retain the effective default and explicit inline options.
+
+**Open:** exact option property names and layout, genuinely optional values, and the DI resolution hook and interaction with standard options registrations. The selected deferred resolution and freezing behavior still requires integrated validation; using `IConfiguration` does not introduce dynamic reload.
 
 **Confirmed:** repeated registration within one host composes code configuration callbacks in registration order. Later explicit assignments override earlier assignments; a later callback or setup call leaves settings it does not assign unchanged. Resolve the composed code overrides using the source precedence and additive disable rules above, then freeze runtime configuration before activation. Repeated setup must not duplicate middleware, processors, workers or logging providers.
 
@@ -570,7 +572,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
 | Span callback type | One complete, read-only span snapshot type for all sampling and body-masking callbacks, preserving stage-appropriate private data. | Confirmed .NET adaptation; detailed API and value semantics remain open. |
 | Sampling result type | `double?` represents the keep probability or abstention for both callbacks; boolean choices use zero or one. | Confirmed typed C# adaptation; shared sampling semantics preserved. |
-| Custom pattern inputs | `List<string>` of .NET regex patterns for both code options and configuration files. | Confirmed input type; custom-pattern case sensitivity and flag semantics remain open. |
+| Custom pattern inputs | `List<string>` of .NET regex patterns for both code options and configuration files, case-insensitive by default with explicit inline options respected. | Confirmed input type and matching convention; user patterns extend built-in defaults. |
 | Log callback type | Standard OTel `LogRecord` in a synchronous private-provider callback, with isolated inputs and copying before native record recycling. | Confirmed direction; native-callback isolation and masking require validation. |
 | Encoding | Official OTLP schemas/protobuf encoding with SDK-owned mapping. | Proposed .NET mechanism; no change to HTTP/protobuf delivery. |
 | Metric capacity | Internally selected fixed capacity through native OTel views and reclamation, with visible overflow degradation. | Confirmed policy; numeric capacity requires measurement. |
