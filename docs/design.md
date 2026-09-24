@@ -34,6 +34,7 @@ An approved product/API direction does not establish that its proposed implement
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
 | Unfinished requests at shutdown | At the final SDK cutoff, discard detail for requests still awaiting transport completion or SERVER activity end. Flush finalized requests normally; recorded metrics and eligible error aggregates remain independent. |
 | Shutdown budget | Use the host's remaining shutdown budget and honor its cancellation. Add no separate Apitally flush window; final delivery may remain incomplete when the budget expires. |
+| Test-host activation | Prefer reliable, straightforward automatic suppression of application integration-test telemetry. Bring complex detection mechanisms back for review; the .NET guard is still under investigation. |
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
@@ -205,7 +206,11 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 **Open:** actual OTel provider/worker disposal ordering, completed-spool-write coordination within the host budget, and implementation of the confirmed unfinished-request cutoff. The lifecycle POC's drain is a counter/cancellable delay, not export evidence. Validate that blocking processor/export work and cleanup do not introduce deliberate extra waiting beyond host cancellation.
 
-**Open:** test-host activation policy. .NET integration tests deliberately start hosts, and ordinary application construction is not equivalent to serving. Choose a reliable rule rather than assuming Python-style test-runner environment markers exist or scanning arbitrary loaded assemblies. The SDK's own tests must be able to exercise real activation.
+**Confirmed test-suppression direction:** automatically suppress telemetry activation for application integration tests when a reliable, straightforward detector is available. Requiring users to disable every test host explicitly is not the preferred default. Bring any complex mechanism back for review rather than adding broad test-framework detection. The SDK's own tests must remain able to exercise real activation deliberately.
+
+**Reference behavior:** Python checks `PYTEST_CURRENT_TEST` and the Django `manage.py test` argument shape at activation. Its telemetry tests deliberately clear the pytest marker. This is targeted coverage, not a universal detector for every test runner.
+
+**Open:** establish a simple .NET guard using supported runner markers or recognition of the actual test server, with clear coverage for in-memory versus real-server tests. Verify its timing relative to private-provider construction and activation. Do not assume Python-style markers exist in .NET, scan arbitrary loaded assemblies or infer testing merely from the Development environment. No new public testing override or production detection mechanism is selected yet.
 
 Host lifetime integration is the default direction. Python fork handling and JavaScript signal re-delivery are not mechanisms to port into this SDK.
 
@@ -631,7 +636,7 @@ The first feasibility round is complete and independently checked across the ins
 
 The interview has settled support scope and the main user-facing direction. The next review should resolve:
 
-1. Provider-selection/attachment timing and external-processor lifetime validation for the confirmed standard DI integration paths.
+1. Provider-selection/attachment timing, external-processor lifetime validation and a simple automatic test-activation guard for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
 3. Detailed span-snapshot members and value semantics, native log-mask callback isolation/normalization, remaining option types and validation of deferred configuration resolution.
 4. Body completeness, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
@@ -680,3 +685,4 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [.NET options configuration, post-configuration and deferred evaluation](https://learn.microsoft.com/en-us/dotnet/core/extensions/options)
 - [Native route summary/description conventions](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Http/Routing/src/Builder/OpenApiRouteHandlerBuilderExtensions.cs)
 - [.NET 10 XML comments enrich OpenAPI operations during transformation](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/OpenApi/gen/XmlCommentGenerator.Emitter.cs#L361-L386)
+- [Python activation guards](../../apitally-py/apitally/shared/activation.py) and [deliberate activation in SDK tests](../../apitally-py/tests/conftest.py)
