@@ -16,8 +16,9 @@ These standalone experiments investigate public API behavior and architectural f
 | [error-integrations](error-integrations/README.md) | Framework validation/exceptions, Sentry event hooks and route/OpenAPI discovery | Reviewed; all 12 project/runtime combinations passed |
 | [endpoint-metadata](endpoint-metadata/README.md) | Follow-up: native route summaries/descriptions without generator dependencies | Eight path/method cases passed on .NET 8/9/10 |
 | [test-host-suppression](test-host-suppression/README.md) | Follow-up: resolved TestServer guard, activation signals and preserved user tracing | Reviewed and independently rerun; 11/11/13 cases passed on .NET 8/9/10 |
+| [native-log-masking](native-log-masking/README.md) | Follow-up: actual native callback, isolated inputs, normalized fields and owned output | Reviewed and independently rerun; 828 assertions per runtime and expected constructor failures on .NET 8/9/10 |
 
-All six initial experiment groups have been independently inspected and rerun. The endpoint-metadata and test-host-suppression follow-ups were also executed across the three supported runtimes. A successfully reproduced limitation is a valid POC outcome; passing checks do not establish untested behavior or a production-ready implementation.
+All six initial experiment groups have been independently inspected and rerun. The endpoint-metadata, test-host-suppression and native-log-masking follow-ups were also executed across the three supported runtimes. A successfully reproduced limitation is a valid POC outcome; passing checks do not establish untested behavior or a production-ready implementation.
 
 ## Verified findings
 
@@ -36,6 +37,8 @@ Every experiment group's .NET 8/9/10 matrix was independently rerun successfully
 The follow-up endpoint-metadata probe confirms direct summary/description reads for Minimal API endpoints, groups and MVC actions on all three runtimes. It adds no OpenAPI package reference and makes no schema-generation calls. This is the selected v1 documentation boundary; full OpenAPI capture, including native .NET 10, is deferred. See its README for reproduction and limits.
 
 The test-host-suppression follow-up verifies the selected exact type/assembly guard during pipeline construction, before fallback provider creation. Standard TestServer hosts stay inactive while application-owned tracing continues exporting. Real loopback Kestrel remains active in Development with TestHost loaded. The request-only mode tests that trigger after host startup, not a concurrent early-request race. This is a candidate runtime, not complete SDK logging/metrics/worker integration. Reproduce with `python3 pocs/test-host-suppression/run.py`; see its README for the complete hosting matrix and limits.
+
+The native-log-masking follow-up verifies synchronous native `LogRecord` callbacks with rendered `Body`, copied exception attributes and flattened structured scopes. Input/output detachment, callback edits/removals, drop behavior, actual pooling and independent-provider isolation pass for the probe's finite value set. Exporter completion is observed, not inferred from `ForceFlush`. General CLR-value normalization, auxiliary-member reassignment, production request association and OTLP wire mapping remain open. Reproduce with `python3 pocs/native-log-masking/run.py`; see its README for the experimental value policy and negative findings.
 
 Independent verification commands for the initial round, from the repository root:
 
