@@ -29,7 +29,7 @@ An approved product/API direction does not establish that its proposed implement
 | Setup | One builder-level call with automatic middleware registration, subject to integrated-pipeline validation. |
 | Existing tracing | Automatic integration with DI-registered tracing; register separately constructed providers as existing `TracerProvider` instances in DI. |
 | Tracing support boundary | Normal single-host integration is the initial supported baseline. Additional hosts are not prohibited; independent sampling across overlapping providers and broader multi-host guarantees are outside initial scope. |
-| Configuration | Automatically read the `Apitally` configuration section, support typed code overrides, and retain shared environment-variable fallbacks. |
+| Configuration | Populate typed options from defaults, environment fallbacks and the `Apitally` section before running code callbacks. Defer callbacks until startup configuration is resolved, then validate and freeze before activation. |
 | Repeated setup | Within one host, compose code callbacks in registration order; later explicit assignments win. Register SDK components once and freeze resolved configuration before activation. |
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
 | Request helpers | An injectable `IApitally` service is the primary API. |
@@ -163,13 +163,17 @@ The write token must match `apt_` followed by 24 alphanumeric characters. Missin
 
 ### Options and immutability
 
-**Proposed:** use one typed options surface with PascalCase names corresponding to the shared settings: `WriteToken`, `Env`, `AppVersion`, `Disabled`, `CaptureLogs`, the four directional capture toggles, `SampleRate`, the sampling and masking callbacks, and the redaction/exclusion pattern collections. Resolve these into immutable runtime configuration before activation.
+**Confirmed:** code configuration callbacks receive populated options rather than an override-only object. Apply defaults, allowed `OTEL_*` fallbacks, `APITALLY_*` fallbacks and the `Apitally` section in increasing precedence, then run the collected code callbacks in registration order. Each callback sees the populated values and earlier callbacks' changes. Unassigned settings retain their existing values; ordinary boolean and numeric settings do not require nullable properties or assignment tracking to distinguish omission from an explicit value.
+
+Collect callbacks during registration and execute them once when the host's startup configuration is resolved, not immediately inside `AddApitally()`. Apply the additive environment disable controls, validate the resulting settings and copy them into immutable runtime configuration before activation. Later mutations to the options object or configuration sources must not alter the running SDK.
+
+**Proposed names:** use PascalCase names corresponding to the shared settings: `WriteToken`, `Env`, `AppVersion`, `Disabled`, `CaptureLogs`, the four directional capture toggles, `SampleRate`, the sampling and masking callbacks, and the redaction/exclusion pattern collections.
 
 Callbacks are configured in code. The startup event serializes their presence as `true`, not their implementation. Pattern serialization includes their effective flags where relevant.
 
 **Inherited:** invalid static sampling rates resolve to full capture; invalid patterns are individually rejected with an error while valid patterns remain active. Default patterns remain case-insensitive and user patterns extend them.
 
-**Open:** exact option property names and layout, unset-value representation, regex input types/flag semantics, and when resolution occurs relative to standard options registration and host construction. Configuration is immutable once resolved; dynamic reload is not introduced by using `IConfiguration`.
+**Open:** exact option property names and layout, genuinely optional values, regex input types/flag semantics, and the DI resolution hook and interaction with standard options registrations. The selected deferred resolution and freezing behavior still requires integrated validation; using `IConfiguration` does not introduce dynamic reload.
 
 **Confirmed:** repeated registration within one host composes code configuration callbacks in registration order. Later explicit assignments override earlier assignments; a later callback or setup call leaves settings it does not assign unchanged. Resolve the composed code overrides using the source precedence and additive disable rules above, then freeze runtime configuration before activation. Repeated setup must not duplicate middleware, processors, workers or logging providers.
 
@@ -182,7 +186,7 @@ Callbacks are configured in code. The startup event serializes their presence as
 **Proposed lifecycle:**
 
 1. Builder registration wires options, services, tracing registration, logging capture, and middleware/lifecycle hooks.
-2. Resolve and validate configuration through the supported host construction path, then hold it fixed.
+2. Populate configuration from its source layers, run the collected code callbacks, apply additive disable controls, validate and freeze the resulting settings through the supported host construction path.
 3. Activate on completed web-server startup, with first-request fallback. Early tracing registration must ensure the first SERVER activity is observed even if it starts before middleware executes.
 4. Serialize concurrent activation attempts. Request handling must not proceed through a partially initialized Apitally pipeline.
 5. On ordinary host shutdown, finish eligible request state and run the shared final export cycle before disposing owned providers and transport resources.
@@ -525,7 +529,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Multi-host tracing | Single-host support baseline; document cross-provider sampling interference without prohibiting additional hosts or adding special coordination. | Confirmed support boundary; broader multi-host guarantees deferred. |
 | Manual block and function forms | Native `Activity` scope via `IApitally.StartActivity`. | Confirmed adaptation of the shared SHOULD. |
 | Activation failure scope | One attempt per host runtime. | Proposed consequence of host ownership. |
-| Configuration timing and repeated calls | Compose host-local code callbacks in registration order, register components once and freeze resolved configuration before activation. | Repeated-call behavior confirmed; exact resolution timing remains open. |
+| Configuration timing and repeated calls | Populate options before applying host-local code callbacks in registration order. Defer callback execution until startup configuration resolution, register components once and freeze before activation. | Confirmed behavior; DI resolution integration remains to be validated. |
 | Process identity, startup frequency, limits, process gauges | Must be reconciled with multiple host runtimes. | Open; existing process-wide requirements still apply until explicitly resolved. |
 | Ordinary final drain | Host lifetime and cancellation-budget integration. | Proposed; exact policy open. |
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
@@ -612,7 +616,7 @@ The interview has settled support scope and the main user-facing direction. The 
 
 1. Provider-selection/attachment timing and external-processor lifetime validation for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
-3. Detailed span-snapshot members and value semantics, native log-mask callback isolation/normalization, option representation and configuration-resolution timing.
+3. Detailed span-snapshot members and value semantics, native log-mask callback isolation/normalization, remaining option types and validation of deferred configuration resolution.
 4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
 5. OpenAPI provider boundaries and dependency floors.
 
@@ -656,3 +660,4 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [Python callback declarations](../../apitally-py/apitally/__init__.py) and [standard ReadableSpan copy construction](../../apitally-py/apitally/shared/span_processor.py)
 - [JavaScript callback declarations](../../apitally-js/src/config.ts) and [structural ReadableSpan copies](../../apitally-js/src/spanProcessor.ts)
 - [OTel private logger's synchronous processing and record recycling](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Logs/ILogger/OpenTelemetryLogger.cs#L44-L106)
+- [.NET options configuration, post-configuration and deferred evaluation](https://learn.microsoft.com/en-us/dotnet/core/extensions/options)
