@@ -32,6 +32,7 @@ An approved product/API direction does not establish that its proposed implement
 | Configuration | Populate typed options from defaults, environment fallbacks and the `Apitally` section before running code callbacks. Defer callbacks until startup configuration is resolved, then validate and freeze before activation. |
 | Repeated setup | Within one host, compose code callbacks in registration order; later explicit assignments win. Register SDK components once and freeze resolved configuration before activation. |
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
+| Unfinished requests at shutdown | At the final SDK cutoff, discard detail for requests still awaiting transport completion or SERVER activity end. Flush finalized requests normally; recorded metrics and eligible error aggregates remain independent. |
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
@@ -190,7 +191,7 @@ Callbacks are configured in code. The startup event serializes their presence as
 2. Populate configuration from its source layers, run the collected code callbacks, apply additive disable controls, validate and freeze the resulting settings through the supported host construction path.
 3. Activate on completed web-server startup, with first-request fallback. Early tracing registration must ensure the first SERVER activity is observed even if it starts before middleware executes.
 4. Serialize concurrent activation attempts. Request handling must not proceed through a partially initialized Apitally pipeline.
-5. On ordinary host shutdown, finish eligible request state and run the shared final export cycle before disposing owned providers and transport resources.
+5. On ordinary host shutdown, flush finalized requests and run the shared final export cycle before disposing owned providers and transport resources. At the final SDK cutoff, discard request detail that still lacks transport completion or SERVER activity end, as described in section 6.
 
 **POC evidence:** the [transport/lifecycle experiment](../pocs/transport-lifecycle/README.md) observes an early Generic Host request before `ApplicationStarted`, exercising first-request activation once. The separate provider experiment establishes tracing readiness for an early request. The transport activation probe is only a counter; concurrent initialization, failures and real worker activation are not yet proven.
 
@@ -198,7 +199,7 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 **POC evidence:** ordinary hosted-service `StopAsync` ordering relative to Kestrel differs between the two tested hosting compositions. `IHostedLifecycleService.StoppedAsync` follows all service stop calls and is a candidate final-drain phase. A request ignoring cancellation can remain unfinished after host stop returns; a 300 ms host budget took about 1.3 seconds in the tested Kestrel abort path. The final phase receives the already-canceled token in that case. Host cancellation is not an exact wall-clock termination guarantee.
 
-**Open:** actual OTel provider/worker disposal ordering, completed-spool-write coordination within the host budget, and the policy for unfinished requests. The lifecycle POC's drain is a counter/cancellable delay, not export evidence. Respecting the host's budget is the proposed .NET approach; no separate arbitrary SDK-wide shutdown deadline is selected yet.
+**Open:** actual OTel provider/worker disposal ordering, completed-spool-write coordination within the host budget, and implementation of the confirmed unfinished-request cutoff. The lifecycle POC's drain is a counter/cancellable delay, not export evidence. Respecting the host's budget is the proposed .NET approach; no separate arbitrary SDK-wide shutdown deadline is selected yet.
 
 **Open:** test-host activation policy. .NET integration tests deliberately start hosts, and ordinary application construction is not equivalent to serving. Choose a reliable rule rather than assuming Python-style test-runner environment markers exist or scanning arbitrary loaded assemblies. The SDK's own tests must be able to exercise real activation.
 
@@ -256,7 +257,9 @@ Python constructs a new instance of its standard OTel `ReadableSpan` class; Java
 
 **Open:** the final type/member names, delegate signatures, detailed value normalization and ownership, and complete scope/resource copying. The existing POC does not establish the complete public callback implementation. Log masking operates on a different signal and uses the separate native `LogRecord` API described in section 9.
 
-**Open:** unfinished-request shutdown policy. It must preserve complete-body guarantees, apply response sampling before any release, and leave user-owned activities untouched. The different Python and JavaScript shutdown policies are examples, not defaults to copy.
+**Confirmed unfinished-request shutdown policy:** at the final SDK cutoff, discard trace and application-log detail for requests still awaiting either transport completion or SERVER activity end. Discard their buffered descendants/logs together, release captured payloads unprocessed and ensure later telemetry cannot revive those requests. Do not create partial SERVER exports or synthetic end times, and leave application-owned activities untouched.
+
+Requests finalized before the cutoff follow the normal response-sampling, complete-body and once-only release rules and remain eligible for the final export cycle. Already-recorded metrics and eligible error aggregates remain independent of the request-detail discard policy. The cutoff's coordination with completion callbacks, closed intake and exporter/spool shutdown still requires integrated validation. This is a permitted per-SDK choice under the shared best-effort shutdown contract.
 
 ## 7. Capture pipeline: bodies, headers, sizes, redaction
 
@@ -537,7 +540,8 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Activation failure scope | One attempt per host runtime. | Proposed consequence of host ownership. |
 | Configuration timing and repeated calls | Populate options before applying host-local code callbacks in registration order. Defer callback execution until startup configuration resolution, register components once and freeze before activation. | Confirmed behavior; DI resolution integration remains to be validated. |
 | Process identity, startup frequency, limits, process gauges | Must be reconciled with multiple host runtimes. | Open; existing process-wide requirements still apply until explicitly resolved. |
-| Ordinary final drain | Host lifetime and cancellation-budget integration. | Proposed; exact policy open. |
+| Ordinary final drain | Host lifetime and cancellation-budget integration. | Proposed; budget and exporter/spool coordination remain open. |
+| Unfinished-request detail | Discard requests still awaiting transport completion or SERVER activity end at the final SDK cutoff; retain normal flushing for finalized requests and independent recorded metrics/error aggregates. | Confirmed per-SDK policy permitted by the shared shutdown contract; integration remains to be validated. |
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
 | Span callback type | One complete, read-only span snapshot type for all sampling and body-masking callbacks, preserving stage-appropriate private data. | Confirmed .NET adaptation; detailed API and value semantics remain open. |
 | Sampling result type | `double?` represents the keep probability or abstention for both callbacks; boolean choices use zero or one. | Confirmed typed C# adaptation; shared sampling semantics preserved. |
@@ -624,7 +628,7 @@ The interview has settled support scope and the main user-facing direction. The 
 1. Provider-selection/attachment timing and external-processor lifetime validation for the confirmed standard DI integration paths.
 2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
 3. Detailed span-snapshot members and value semantics, native log-mask callback isolation/normalization, remaining option types and validation of deferred configuration resolution.
-4. Body completeness, unfinished-request shutdown and exporter/spool completion coordination.
+4. Body completeness, implementation of the unfinished-request cutoff, shutdown budget and exporter/spool completion coordination.
 5. Package target frameworks, C# language version and dependency floors.
 
 After those decisions, focused integration probes should compose the verified mechanisms, especially early activation, final responses, private pipeline ownership and shutdown. Physical proxy/retry/storage-failure behavior and shared backend/harness acceptance also remain to be validated.
