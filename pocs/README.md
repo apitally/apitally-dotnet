@@ -32,7 +32,7 @@ Every experiment group's .NET 8/9/10 matrix was independently rerun successfully
 - Private metric providers need explicit meter-scope filtering. Delta capacity is reclaimed, but overflow loses required request dimensions; production capacity behavior remains a design decision.
 - Public exception features remain available despite net10 diagnostic suppression. Typed Sentry hooks work, but automatic dependency-free integration was not established; [Sentry integration is deferred beyond v1](../docs/design.md#14-sentry-integration), with the POC retained as future research. OpenAPI generation has public paths for Swashbuckle and built-in net10; the tested built-in net9 providers are internal.
 
-The follow-up endpoint-metadata probe confirms direct summary/description reads for Minimal API endpoints, groups and MVC actions on all three runtimes. It adds no OpenAPI package reference and makes no schema-generation calls. See its README for reproduction and limits.
+The follow-up endpoint-metadata probe confirms direct summary/description reads for Minimal API endpoints, groups and MVC actions on all three runtimes. It adds no OpenAPI package reference and makes no schema-generation calls. This is the selected v1 documentation boundary; full OpenAPI capture, including native .NET 10, is deferred. See its README for reproduction and limits.
 
 Independent verification commands for the initial round, from the repository root:
 
