@@ -18,7 +18,7 @@ Line references below apply to the reviewed revision. A verified validation gap 
 | ID | Priority | Finding | Classification | Status |
 | --- | --- | --- | --- | --- |
 | R1 | Out of scope | Standard Serilog host registration bypasses the proposed application-log capture provider | Later documentation improvement; no SDK-specific work | Closed for the rewrite |
-| R2 | High | Request association needs early HTTP data and integrated completion handling | Integrated POC verified; production cleanup and qualification remain | POC validation complete |
+| R2 | High | Request association needs early HTTP data and integrated completion handling | Integrated POC verified; bounded cache policy selected, implementation and qualification remain | POC validation complete |
 | R3 | High | Body capture needed explicit completeness and native file boundaries | Simple direct checks and native file omission approved; production integration remains | Design resolved |
 | R4 | High | Batch completion must be coordinated with spool closure and shutdown | Reproduced dependency limitation; previously acknowledged integration gate | Open |
 
@@ -63,7 +63,7 @@ The matrix covers fallback, application-owned tracing in both registration order
 
 Parent review caught two gaps in the first prototype: mixed-buffer submission placed logs before SERVER, and transport size remained outside the owned SERVER copy. New assertions reproduced both failures before correction. The independently rerun final code proves descendants/SERVER/log ordering, private final transport enrichment before decision/export, and unchanged application output. See [recorded results](../pocs/request-association/RESULTS.md).
 
-This resolves the missing integrated experiment at POC level, not production qualification. The manually swept 60-second association retention is experimental and can evict still-running children; neither that duration nor its eviction behavior is approved for the SDK. Production cleanup remains open. Primitive-only snapshots/logs, path-selected decision fixtures and transport/helper observations do not establish the full public callbacks, normalizer, body capture, metric/error export, or R4 spool/shutdown coordination. The R2 follow-up left `docs/design.md` and production code unchanged.
+This resolves the missing integrated experiment at POC level, not production qualification. The manually swept 60-second association retention and whole-request eviction are experimental, not the selected SDK policy. The subsequent approved direction preserves late telemetry using a bounded FIFO cache of completed, kept-request span IDs, with individual-ID eviction and a 10,000-ID initial internal capacity to validate. Active requests stay outside that cache; retained IDs share the request's final decision and cumulative counters. Eviction can drop later telemetry requiring an evicted ID, including a still-running child of a completed request. The selected cache has no time-based expiry; production implementation, concurrency/lifecycle integration and capacity validation remain open. Primitive-only snapshots/logs, path-selected decision fixtures and transport/helper observations do not establish the full public callbacks, normalizer, body capture, metric/error export, or R4 spool/shutdown coordination. The R2 follow-up left `docs/design.md` and production code unchanged.
 
 ## R3. Body completeness and native file capture - design resolved
 
