@@ -44,6 +44,7 @@ An approved product/API direction does not establish that its proposed implement
 | Individually oversized records | Split ordinary batches to fit the spool cap. Drop an indivisible encoded record that still cannot fit, with a deduplicated actionable warning, and continue with other records. |
 | Span-based callbacks | All request/response sampling and body-masking callbacks receive the same complete, read-only span snapshot type, populated for the callback's stage. |
 | Sampling callback result | Both sampling callbacks return `double?`: a keep probability in `[0, 1]`, or `null` to abstain. |
+| Late request telemetry | Preserve late spans/logs through a bounded FIFO cache of completed, kept-request span IDs. Evict individual oldest IDs; start with 10,000 IDs as an internal capacity to validate, without time-based expiry or a public setting. |
 | Body-mask callbacks | Both use `Func<SpanSnapshot, byte[], byte[]?>`: snapshot first, decompressed body bytes second, replacement bytes returned. `null` produces `[REDACTED]`. |
 | Body completeness | Finalize bounded ordinary capture using directly observed failures, visible cancellation and applicable length checks. Omit known incomplete bytes; do not build a transport-success certification system. |
 | File response bodies | Delegate native file sends unchanged and omit their entire body capture, including mixed stream/file output. Eligible content already passing through ordinary observed streams may be captured incidentally. |
@@ -263,7 +264,7 @@ Consumer identity must survive sampling and be adoptable when set before the SER
 
 Suppress framework per-message spans at the source where supported and filter their known kind/name/scope combinations in Apitally's processor. Do not treat websocket messages as HTTP requests.
 
-**Open:** exact association mechanics, context behavior before middleware entry, and cleanup for late-ending descendants and background work retaining request context. Verify isolation across concurrent and keep-alive requests without adding a blanket context reset that destroys legitimate upstream propagation.
+**Open:** full SDK integration of association mechanics and early request context, plus concurrency, lifecycle and capacity validation of the completed-request cache selected in section 6. Verify isolation across concurrent and keep-alive requests without adding a blanket context reset that destroys legitimate upstream propagation.
 
 ## 6. Sampling and per-request buffering
 
@@ -275,7 +276,17 @@ Response sampling runs once with final route, status, sizes, consumer, and custo
 
 **Confirmed .NET result type:** both sampling callbacks return `double?`. Zero means drop, one means keep, and a value between them is the keep probability. `null` at request stage falls back to the configured static rate; `null` at response stage preserves the earlier decision. Express boolean conditions as numeric probabilities, such as `condition ? 1.0 : 0.0`, rather than introducing a custom result type or a weakly typed boolean/numeric union. This adapts the shared API's return shape to C# without changing probability, abstention or invalid-result behavior. A response-stage keep cannot recover detail already dropped at request stage.
 
-Hold ended descendants and application logs until both transport observation and the SERVER activity complete. Keep at most 1,000 spans and 1,000 application log records per request, retaining the earliest arrivals. Release descendants, then the SERVER span, then the request's logs once. A drop discards buffered detail and raw payloads and ensures late detail also drops. Late descendants/logs for a released request remain eligible for export.
+Hold ended descendants and application logs until both transport observation and the SERVER activity complete. Keep at most 1,000 spans and 1,000 application log records per request, retaining the earliest arrivals. Release descendants, then the SERVER span, then the request's logs once. A drop discards buffered detail and raw payloads and ensures late detail also drops. Late descendants/logs for a released request remain eligible for export while their required associations are retained.
+
+### Late telemetry associations
+
+**Confirmed:** follow the JavaScript reference's bounded, first-in-first-out span-ID cache for completed, kept requests. Active-request tracking remains outside this cache; its span IDs enter the cache only after both transport completion and SERVER activity end. Use 10,000 retained IDs across completed requests as the initial fixed internal capacity to validate, with no public setting.
+
+After releasing buffered telemetry and clearing request payloads, retain lightweight ID associations referencing the request's shared final sampling decision and cumulative span/log counters. Remove completed dropped-request associations. Late spans and logs use the retained decision and the same per-request limits, including arrivals before release; they neither reset counters nor repeat response sampling. New descendants can inherit association through a retained parent ID.
+
+Evict individual oldest IDs when adding associations would exceed capacity, including additions for new late descendants. Lookups do not refresh insertion order. Use no whole-request eviction, retention duration or periodic expiry sweep. Retention therefore depends on traffic, not elapsed time. An evicted ID can belong to a still-running child of a completed request; subsequent telemetry requiring that ID is dropped locally without recreating request state. Other retained IDs for that request remain usable. Eviction leaves already-queued exports and application-owned telemetry unchanged, and the cache is cleared at the final SDK intake cutoff.
+
+The [request-association experiment](../pocs/request-association/README.md) verifies integrated late telemetry, shared decisions and cumulative caps, but uses a manually swept 60-second prototype policy. It does not validate this selected cache. Production concurrency/lifecycle integration and the initial capacity remain to be validated; this choice does not require a separate new POC.
 
 ### Export snapshots
 
@@ -636,6 +647,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Process identity, startup frequency, limits, process gauges | Preserve shared process-wide contracts and one process identity across all signals under host-owned state. | Inherited requirements for the single-host baseline; no global host coordinator. |
 | Ordinary final drain | Share the host's remaining shutdown budget and honor host cancellation, without an additional SDK flush window. | Confirmed budget policy; exporter/spool and disposal coordination remain to be validated. |
 | Unfinished-request detail | Discard requests still awaiting transport completion or SERVER activity end at the final SDK cutoff; retain normal flushing for finalized requests and independent recorded metrics/error aggregates. | Confirmed per-SDK policy permitted by the shared shutdown contract; integration remains to be validated. |
+| Late request associations | Keep completed-request span IDs in a bounded FIFO cache; evict individual IDs, preserving shared sampling decisions and cumulative counters for remaining associations. | Confirmed retention policy following the JavaScript reference; 10,000-ID initial internal capacity and production integration require validation. |
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
 | Span callback type | One complete, read-only span snapshot type for all sampling and body-masking callbacks, preserving stage-appropriate private data. | Confirmed .NET adaptation; detailed API and value semantics remain open. |
 | Sampling result type | `double?` represents the keep probability or abstention for both callbacks; boolean choices use zero or one. | Confirmed typed C# adaptation; shared sampling semantics preserved. |
@@ -682,7 +694,7 @@ Do not replace Apitally classes with mocks. Assert exact exported counts and att
 - Unchanged native file delivery with whole-body capture omission, including mixed stream/file output; incidental eligible stream capture.
 - Consumer/custom attribute helpers inside nested activities and error capture without recorded spans.
 - Validation/server aggregates independent of trace decisions and application-log capture; supported validation shapes with localized/custom message text, available metadata, unknown source/field values and unfamiliar-format omission.
-- Log state isolation, masking, correlation, bounded buffering, and late telemetry.
+- Log state isolation, masking, correlation, bounded buffering, late telemetry, individual-ID cache eviction and cumulative limits across request release.
 - Delta exponential request metrics, matching sizes, process gauges, and idle liveness.
 - Protobuf-decoded payloads, byte-identical retries, storage fallback/retention/rotation, headers, and export suppression.
 - Host shutdown and once-only release/flush behavior.
@@ -735,7 +747,7 @@ The interview has settled support scope and the main user-facing direction. Furt
 1. Provider-selection/attachment timing, external-processor lifetime and full SDK integration of the verified TestServer guard for the confirmed standard DI integration paths.
 2. Implement and validate process identity, process-wide bounds, startup events and process measurements for the single-host baseline, plus measurement and selection of the fixed internal metric capacity. Special multi-host coordination is outside v1 scope.
 3. Detailed span-snapshot members and collection/value types, full normalizer/ownership validation and integration of the selected native log-mask representation, remaining option types and validation of deferred configuration resolution.
-4. Integration of the selected simple body-completeness checks and native file omission, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
+4. Integration and initial capacity validation of the selected late-association cache, integration of the simple body-completeness checks and native file omission, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
 5. Package target frameworks, C# language version and integrated qualification of the selected OTel 1.19.0 baseline and instrumentation/dependency graph.
 
 After those decisions, focused integration probes should compose the verified mechanisms, especially early activation, final responses, private pipeline ownership and shutdown. Physical proxy/retry/storage-failure behavior and shared backend/harness acceptance also remain to be validated.
