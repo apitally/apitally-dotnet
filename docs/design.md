@@ -29,7 +29,7 @@ An approved product/API direction does not establish that its proposed implement
 | Hosting | Support modern `WebApplicationBuilder` hosting and Generic Host with `Startup`. Modern hosting is the primary documented path. |
 | Setup | One builder-level call with automatic middleware registration, subject to integrated-pipeline validation. |
 | Existing tracing | Automatic integration with DI-registered tracing; register separately constructed providers as existing `TracerProvider` instances in DI. |
-| Tracing support boundary | Normal single-host integration is the initial supported baseline. Additional hosts are not prohibited; independent sampling across overlapping providers and broader multi-host guarantees are outside initial scope. |
+| Hosting support boundary | Normal single-host ASP.NET Core integration is the v1 baseline. Additional hosts are not prohibited; special multi-host coordination is outside v1 implementation and release requirements. Independent sampling across overlapping providers is not guaranteed. |
 | Configuration | Populate typed options from defaults, environment fallbacks and the `Apitally` section before running code callbacks. Defer callbacks until startup configuration is resolved, then validate and freeze before activation. |
 | Repeated setup | Within one host, compose code callbacks in registration order; later explicit assignments win. Register SDK components once and freeze resolved configuration before activation. |
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
@@ -54,6 +54,7 @@ An approved product/API direction does not establish that its proposed implement
 | Plain log scope labels | Omit unstructured scope labels, matching the official .NET OTLP exporter. Log messages and structured scope fields remain captured. |
 | Manual tracing | `IApitally.StartActivity(...)` returns the native .NET `Activity` type for a `using` scope. |
 | Monitored scope | The whole HTTP application, subject to shared eligibility, sampling, and exclusion rules. |
+| Validation capture | Use framework-provided details and known standard response shapes for MVC and Minimal APIs. Preserve opaque field/message strings and available metadata; leave unknown source/field empty. |
 | Sentry integration | Deferred beyond .NET SDK v1. Ordinary exception/error capture remains in scope; retain the Sentry POC as future research. |
 | Endpoint documentation | Read native route summaries/descriptions on .NET 8/9/10. Full OpenAPI document capture is deferred beyond v1, including the native .NET 10 path. |
 
@@ -126,13 +127,13 @@ Public post-build `AddProcessor` works for an official SDK provider that already
 
 .NET `ActivityListener` subscriptions operate process-wide. The provider POC reproduces sampling interference in both host startup orders: a user sampler still returns `Drop`, but another host's always-on listener causes that user's exporter to receive recorded SERVER activities. Host association correctly filters foreign requests and one owned host can stop while another keeps serving, but export filtering does not undo sampling promotion or its effect on user exporters. Independent multi-host sampling is not established by host-owned runtime state.
 
-**Confirmed:** normal single-host integration is the initial supported baseline. Do not prohibit additional hosts or build special multi-host tracing coordination. Independent sampling across providers listening to the same sources is not guaranteed, even within a single host; broader multi-host guarantees remain outside initial scope. Retain host-owned configuration and lifecycle rather than introducing a process-global Apitally configuration singleton.
+**Confirmed:** normal single-host ASP.NET Core integration is the v1 baseline. Additional hosts are not prohibited. Coordinating startup events, process gauges, aggregate/spool budgets or tracing across multiple hosts is outside v1 implementation and release requirements. Independent sampling across providers listening to the same sources is not guaranteed, even within a single host. Retain host-owned configuration and lifecycle without a global host coordinator or process-global Apitally configuration singleton.
 
 This boundary follows the distinction in official OTel guidance: repeated hosting registration creates one provider per service collection, while separately constructed providers are supported without establishing host or sampling isolation. Real Azure Monitor reports describe overlapping test hosts and multiple providers; they establish actual usage, not its production prevalence. See the research references below.
 
 **Open:** the tested middleware association does not establish ownership of descendants ending before middleware entry or children with only an explicit parent context. These request-association questions also matter in a single host. Do not treat the POC's association filter as a complete request algorithm.
 
-If the public APIs cannot preserve the agreed ownership and tracing behavior in a particular composition, document the limitation and bring the decision back for review. Do not silently substitute a process-global configuration singleton.
+If the public APIs cannot preserve the agreed ownership and tracing behavior within the supported single-host integration, document the limitation and bring the decision back for review. Do not silently substitute a process-global configuration singleton.
 
 ### Private providers and resources
 
@@ -151,7 +152,7 @@ The resolved Apitally environment must also be used for the `Apitally-Env` HTTP 
 
 On the Apitally-only export of user-owned spans, override the instance ID and environment while preserving other resource attributes and the original user's telemetry.
 
-**Open:** reconcile host-owned runtimes with the specification's process identity and process-wide limits. A candidate is one UUID regenerated per process start and shared by that process's host resources, while operational state remains host-owned. Decide how multiple hosts account for process gauges, once-only events, and aggregate/spool limits before claiming full multi-host support. Do not implicitly change every occurrence of "per process" in the shared documents to "per host".
+**Inherited:** use one process instance identity across all signals, regenerated on process restart. Host-owned state does not change the shared process-wide event, gauge or aggregate/spool requirements into per-host requirements. Implement these contracts for the single-host baseline and preserve private-pipeline isolation; special multi-host coordination is outside v1 scope as described above.
 
 **Inherited:** captured bodies must not be silently truncated by OTel limits. **Open:** verify which length settings the supported .NET SDK actually exposes and where limits apply to export snapshots. Pin applicable owned settings to 65,536 and warn about observable lower user limits as required by the shared design; do not invent a .NET equivalent of Python's `SpanLimits` or use private APIs solely to inspect it.
 
@@ -201,7 +202,7 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 ## 4. Lifecycle: configure, activate, shut down
 
-**Confirmed:** DI and the application host own the runtime. A host's shutdown drains and disposes its Apitally components without stopping another host's components.
+**Confirmed:** DI and the application host own the runtime. A host's shutdown drains and disposes only its owned Apitally components.
 
 **Inherited:** configuration and serving activation are separate. Registration must not start Apitally export workers, send telemetry, or report the process online. Route metadata preparation may happen once the framework has finalized that information.
 
@@ -343,7 +344,9 @@ Route resolution must produce parameterized endpoint templates with applicable p
 
 **POC evidence:** the [error/integration experiments](../pocs/error-integrations/README.md) observe automatic MVC validation by wrapping the existing `ApiBehaviorOptions.InvalidModelStateResponseFactory`, preserving its behavior. `ProblemDetailsOptions.CustomizeProblemDetails` exposes typed validation objects when the registered problem-details service runs. Registering these options callbacks does not itself install MVC; Minimal-only hosts remain without MVC services.
 
-Known response shapes provide a conservative fallback. `TypedResults.ValidationProblem` bypasses the problem-details service on net8 but uses it on net9/net10. Built-in Minimal API parameter validation appears with `AddValidation` on net10; without problem-details services its tested response is compact 400 JSON containing title/errors. The probe recognizes tested 400/422 defaults, preserves opaque field strings and skips ordinary 400s. Localized/custom formats and comprehensive binding-source inference remain open. Recognizing bytes does not prove their transport capture is bounded or complete.
+Known response shapes provide a conservative fallback. `TypedResults.ValidationProblem` bypasses the problem-details service on net8 but uses it on net9/net10. Built-in Minimal API parameter validation appears with `AddValidation` on net10; without problem-details services its tested response is compact 400 JSON containing title/errors. The probe recognizes tested 400/422 defaults, preserves opaque field strings and skips ordinary 400s. Recognizing bytes does not prove their transport capture is bounded or complete.
+
+**Confirmed v1 scope:** capture MVC and Minimal API validation from framework-provided details and known standard response shapes. Preserve available metadata and opaque field/message strings, including localized or customized message text within a supported shape. Do not infer arbitrary custom/localized schemas or guess unavailable binding sources or fields. An unfamiliar response format without framework-provided validation details skips dedicated validation aggregation; ordinary request monitoring and existing error eligibility remain unchanged.
 
 Validation response observation is independent of trace sampling and response-body logging. Parsing requires a complete eligible response and retains at most 50,000 bytes. Retaining bytes for validation never enables exporting those bytes as a captured response body.
 
@@ -445,11 +448,11 @@ Emit `apitally.app.startup` through the private logs pipeline with scope `apital
 
 **Deferred full-schema research:** the native .NET 10 public provider lives in the optional OpenAPI package, not the ASP.NET Core shared framework. Typed integration introduces package dependencies; dependency-free invocation/serialization still needs a reflection path. Standard DI's `GetKeyedServices(Type, KeyedService.AnyKey)` offers provider enumeration without names, but does not identify document keys or deduplicate repeated registrations. Serialization requires an OpenAPI specification version, whose configured value belongs to named options. These costs must be assessed together rather than treating generation as one method call. The existing generation experiments use a known `v1` document name, not automatic discovery. HTTP self-requests and schema reconstruction from routes are not the intended approach.
 
-The shared contract says once per serving process. Emitting once per serving host is the natural host-owned adaptation, but its interaction with process identity and multiple hosts must be reviewed explicitly under section 2.
+Emit once per serving process under the shared contract. Cross-host startup coordination is outside the v1 scope defined in section 2.
 
 ### Error aggregates
 
-Use the shared validation/server aggregation identities, truncation rules and positive `UInt32` count range. Sentry event-ID enrichment is deferred from v1 as described in section 14. Limits are 100 validation and 100 server groups between drains in the shared process model; their multi-host scope remains open as noted in section 2.
+Use the shared validation/server aggregation identities, truncation rules and positive `UInt32` count range. Sentry event-ID enrichment is deferred from v1 as described in section 14. Limits remain 100 validation and 100 server groups per process between drains.
 
 Drain atomically, then emit outside the synchronization boundary immediately before the logs pipeline flushes in ordinary and final cycles. Each aggregate has the native event name and a structured OTLP object body, not the startup event's JSON-string body. It carries no request trace context and bypasses application-log masking/truncation.
 
@@ -499,7 +502,7 @@ Resolve proxy environment settings once and bind them to the SDK's HTTP delivery
 
 **Proposed:** a host-owned worker drives metric collection and spool delivery. Use .NET background execution appropriate to the work: HTTP sends may be asynchronous, while CPU-bound body processing must remain outside request-serving execution. Keep concurrency close to the shared model rather than introducing a task or thread per request/span.
 
-**Open:** exact batch processor settings, protobuf generation/distribution, metric snapshot lifetime, HTTP handler/proxy configuration, spool concurrency, and integration with the confirmed host-controlled shutdown budget. Preserve the shared limits while resolving their multi-host ownership explicitly.
+**Open:** exact batch processor settings, protobuf generation/distribution, metric snapshot lifetime, HTTP handler/proxy configuration, spool concurrency, and integration with the confirmed host-controlled shutdown budget. Preserve the shared process-wide limits for the single-host baseline.
 
 ## 11. Metrics
 
@@ -525,7 +528,7 @@ Observe normalized process CPU utilization, RSS-equivalent bytes, and uptime usi
 
 At capacity, retain native behavior for accepted combinations. Detect overflow during collection, omit the invalid overflow point from Apitally export and issue a deduplicated warning explaining that some request metrics are missing, with capacity documentation and support guidance. Preserve the required dimensions on valid points rather than reducing attribution to hide the limit. This remains a finite bound, not a promise of lossless metrics under arbitrary cardinality.
 
-**Open:** the exact fixed capacity and its measured memory/collection costs. Process-gauge ownership across hosts remains unresolved.
+**Open:** the exact fixed capacity and its measured memory/collection costs. Ordinary process-gauge implementation remains in scope; cross-host coordination does not gate v1.
 
 ## 12. Error handling and logging posture
 
@@ -621,13 +624,13 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Unified setup | Native builder registration for both supported hosting styles; automatic transport integration. | Confirmed API direction; focused hosting POC passed, combined pipeline remains open. |
 | Provider activation/attachment | Standard DI provider registration; externally built providers use existing-instance registration and retain original ownership. | Confirmed API path; combined activation and lifetime validation remain open. |
 | Tracing customization | Standard OTel provider registration selects application-owned tracing; configure-only hooks do not customize the private default provider. | Confirmed boundary. |
-| Multi-host tracing | Single-host support baseline; document cross-provider sampling interference without prohibiting additional hosts or adding special coordination. | Confirmed support boundary; broader multi-host guarantees deferred. |
+| Multi-host integration | Single-host support baseline; additional hosts are not prohibited. Preserve the documented cross-provider sampling limitation. | Confirmed support boundary; special cross-host coordination is outside v1 implementation and release requirements. |
 | Manual block and function forms | Native `Activity` scope via `IApitally.StartActivity`. | Confirmed adaptation of the shared SHOULD. |
 | Activation failure scope | One attempt per host runtime. | Proposed consequence of host ownership. |
 | Test-host suppression | Recognize the resolved server's exact TestServer type/assembly without a test-framework dependency; real Kestrel tests use explicit disabling. | Confirmed scope; candidate runtime passed .NET 8/9/10 checks, full SDK integration remains open. |
 | Options layout | Flat `ApitallyOptions` properties, matching keys directly under the `Apitally` configuration section. | Confirmed .NET API layout. |
 | Configuration timing and repeated calls | Populate options before applying host-local code callbacks in registration order. Defer callback execution until startup configuration resolution, register components once and freeze before activation. | Confirmed behavior; DI resolution integration remains to be validated. |
-| Process identity, startup frequency, limits, process gauges | Must be reconciled with multiple host runtimes. | Open; existing process-wide requirements still apply until explicitly resolved. |
+| Process identity, startup frequency, limits, process gauges | Preserve shared process-wide contracts and one process identity across all signals under host-owned state. | Inherited requirements for the single-host baseline; no global host coordinator. |
 | Ordinary final drain | Share the host's remaining shutdown budget and honor host cancellation, without an additional SDK flush window. | Confirmed budget policy; exporter/spool and disposal coordination remain to be validated. |
 | Unfinished-request detail | Discard requests still awaiting transport completion or SERVER activity end at the final SDK cutoff; retain normal flushing for finalized requests and independent recorded metrics/error aggregates. | Confirmed per-SDK policy permitted by the shared shutdown contract; integration remains to be validated. |
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
@@ -636,6 +639,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Custom pattern inputs | `List<string>` of .NET regex patterns for both code options and configuration files, case-insensitive by default with explicit inline options respected. | Confirmed input type and matching convention; user patterns extend built-in defaults. |
 | Body completeness | Finalize ordinary bounded capture with directly observed failure, visible cancellation and applicable length checks; omit known incomplete bytes without certifying transport success. | Confirmed scope and mechanism boundary; production integration remains to be validated. |
 | Native file response bodies | Delegate native file sends and omit their entire body capture, including mixed output; retain incidental eligible capture through ordinary observed streams. | Confirmed v1 scope deviation; no SDK file rereading or replacement copy path. |
+| Validation recognition | Framework-provided details and known standard response shapes; opaque field/message strings and available metadata, with unknown source/field empty. | Confirmed v1 boundary; arbitrary schema and binding-source inference are outside scope. |
 | Log callback type | Standard OTel `LogRecord` in a synchronous private-provider callback, with isolated inputs and copying before native record recycling. | Confirmed direction; native follow-up passes on .NET 8/9/10 for the tested value set, with full normalizer/integration validation open. |
 | Callback attribute values | Standard .NET OTLP value conversions before span/log callbacks, with owned collections; normalize and detach accepted log output again. | Confirmed .NET adaptation; converted log strings receive post-mask truncation, while full normalizer validation remains open. |
 | Log exception representation | Private exception type/message/stacktrace string attributes available to masking, with the native record's `Exception` unset. | Confirmed .NET adaptation; preserves maskable exception metadata without sharing the application object. |
@@ -674,7 +678,7 @@ Do not replace Apitally classes with mocks. Assert exact exported counts and att
 - Ordinary streaming, directly observed incomplete bodies, compression, size caps, body-reader/writer paths, and complete-body redaction.
 - Unchanged native file delivery with whole-body capture omission, including mixed stream/file output; incidental eligible stream capture.
 - Consumer/custom attribute helpers inside nested activities and error capture without recorded spans.
-- Validation/server aggregates independent of trace decisions and application-log capture.
+- Validation/server aggregates independent of trace decisions and application-log capture; supported validation shapes with localized/custom message text, available metadata, unknown source/field values and unfamiliar-format omission.
 - Log state isolation, masking, correlation, bounded buffering, and late telemetry.
 - Delta exponential request metrics, matching sizes, process gauges, and idle liveness.
 - Protobuf-decoded payloads, byte-identical retries, storage fallback/retention/rotation, headers, and export suppression.
@@ -700,7 +704,7 @@ The current v0 reference is commit `65e25ed13e15c6d6b77125749eba5cece6aa008f`. A
 | Hub client, payload models, retry policy, custom histogram bins | Replace with OTel signals and the prescribed delivery architecture. |
 | Custom activity collector | Replace with provider integration and request-scoped OTel processing. |
 | Whole-body request/response buffering | Replace with bounded transparent observation. |
-| Persistent instance UUID/lock behavior | Replace with the v1 process-identity contract, subject to the explicit host/process resolution above. |
+| Persistent instance UUID/lock behavior | Replace with the v1 process-identity contract: one identity across all signals, regenerated on process restart. |
 | Independent forwarding-header interpretation | Use ASP.NET Core's configured trust behavior. |
 
 A stable implementation is a useful baseline, not evidence that every existing behavior is appropriate for v1. Review reused code and tests against the shared requirements before porting them.
@@ -711,7 +715,7 @@ The first feasibility round is complete and independently checked across the ins
 
 | POC | Questions and acceptance evidence |
 | --- | --- |
-| Provider registration and host ownership | Both DI registration orders; explicit external provider; default HTTP instrumentation; existing instrumentation; user's sampler/exporters unchanged; first request captured; two active hosts correctly associated; one host can stop without disabling the other. |
+| Provider registration and host ownership | Both DI registration orders; explicit external provider; default HTTP instrumentation; existing instrumentation; user's sampler/exporters unchanged; first request captured. Two-host association, shutdown and sampling-interference experiments remain evidence, not additional v1 release requirements. |
 | Middleware placement and completion | Modern and `Startup` hosting; controllers and Minimal APIs; exception-handler final responses and route re-execution; streamed responses, `BodyWriter`, and native file delegation with capture omission; both transport/activity completion orders; directly observed abort/cancellation behavior. |
 | Private export snapshots and batching | Preserve span identity/events/links/resource; late enrichment without original mutation; no captured payloads in user exports; maximum-size complete bodies; bounded release/drop and late descendants; public stock batching over the selected representation. |
 | Private logging and internal events | Additive `ILogger` capture; category filtering, scopes, mutable state isolation, masking/drop; pooled-record lifetime; request linkage through child activities; startup JSON string versus structured error bodies; event names and context-free internal records. |
@@ -726,7 +730,7 @@ Follow-up probes independently validate [native endpoint metadata](../pocs/endpo
 The interview has settled support scope and the main user-facing direction. Further design discussion should focus on material architecture, application impact and release-support decisions. Routine implementation details should follow the selected contracts and established .NET conventions rather than becoming individual interview questions. Most remaining items below are engineering validation work:
 
 1. Provider-selection/attachment timing, external-processor lifetime and full SDK integration of the verified TestServer guard for the confirmed standard DI integration paths.
-2. Process identity, process-wide bounds, startup events and process measurements under host-owned state, plus measurement and selection of the fixed internal metric capacity.
+2. Implement and validate process identity, process-wide bounds, startup events and process measurements for the single-host baseline, plus measurement and selection of the fixed internal metric capacity. Special multi-host coordination is outside v1 scope.
 3. Detailed span-snapshot members and collection/value types, full normalizer/ownership validation and native log-mask writable-member semantics, remaining option types and validation of deferred configuration resolution.
 4. Integration of the selected simple body-completeness checks and native file omission, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
 5. Package target frameworks, C# language version and integrated qualification of the selected OTel 1.19.0 baseline and instrumentation/dependency graph.
