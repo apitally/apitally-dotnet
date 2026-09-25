@@ -18,7 +18,7 @@ Line references below apply to the reviewed revision. A verified validation gap 
 | ID | Priority | Finding | Classification | Status |
 | --- | --- | --- | --- | --- |
 | R1 | Out of scope | Standard Serilog host registration bypasses the proposed application-log capture provider | Later documentation improvement; no SDK-specific work | Closed for the rewrite |
-| R2 | High | Request association needs early HTTP data and integrated completion handling | Newly verified timing constraint; previously acknowledged integration gate | Open |
+| R2 | High | Request association needs early HTTP data and integrated completion handling | Integrated POC verified; production cleanup and qualification remain | POC validation complete |
 | R3 | High | Complete-body guarantees still need a supported transport implementation | Previously acknowledged capture gate | Open |
 | R4 | High | Batch completion must be coordinated with spool closure and shutdown | Reproduced dependency limitation; previously acknowledged integration gate | Open |
 
@@ -56,6 +56,14 @@ R1 is closed as outside the SDK rewrite. R2-R4 are engineering design and valida
 **Recommended direction:** use supported early HTTP-context access to construct private request data rather than assuming activity tags are populated. Specify and test one request association and completion mechanism across these components, leaving the application's activity untouched. Verify an ordinary first request, nested async activities, outgoing HTTP, helper calls, concurrent requests, keep-alive reuse, response sampling and late detail. Preserve the already-selected API and sampling behavior; a callback-timing change is not established as necessary.
 
 **Closure:** complete exported counts, attributes and log linkage are correct through the integrated path, including with a user-owned provider; the request map and completion state are not manually supplied by the test.
+
+**Approved follow-up and verified result (2026-09-25):** the user chose a focused integrated POC before implementation planning. The [request-association experiment](../pocs/request-association/README.md) was inspected and independently rerun: 1533 assertions passed on each exact .NET/ASP.NET runtime pair 8.0.13, 9.0.2 and 10.0.9, with SDK 10.0.301, OTel 1.19.0, locked dependencies and zero build warnings/errors. Actual SERVER/child callbacks, an HTTP-context feature and an ID-based association map feed real native log capture, helpers, final transport data and owned export. No fixture supplies associations or fabricates SERVER completion.
+
+The matrix covers fallback, application-owned tracing in both registration orders, and existing-instance DI registration with preserved external disposal ownership. Before-middleware children/logs, first requests before ApplicationStarted, nested and explicit-parent activities, outgoing HTTP, concurrent requests, keep-alive reuse, shared trace IDs, sampled-out helper state, response keep/drop/abstain, late detail and explicit cutoff were exercised. Normal retained requests exported five descendants, SERVER and five logs with exact identity/linkage. Native completion order was transport then SERVER; reverse/racing processing uses labeled test-only handoffs of already-observed real events.
+
+Parent review caught two gaps in the first prototype: mixed-buffer submission placed logs before SERVER, and transport size remained outside the owned SERVER copy. New assertions reproduced both failures before correction. The independently rerun final code proves descendants/SERVER/log ordering, private final transport enrichment before decision/export, and unchanged application output. See [recorded results](../pocs/request-association/RESULTS.md).
+
+This resolves the missing integrated experiment at POC level, not production qualification. The manually swept 60-second association retention is experimental and can evict still-running children; neither that duration nor its eviction behavior is approved for the SDK. Production cleanup remains open. Primitive-only snapshots/logs, path-selected decision fixtures and transport/helper observations do not establish the full public callbacks, normalizer, body capture, metric/error export, or R4 spool/shutdown coordination. `docs/design.md` and production code remain unchanged.
 
 ## R3. Complete-body guarantees need integrated transport validation
 
@@ -95,6 +103,7 @@ R1 is closed as outside the SDK rewrite. R2-R4 are engineering design and valida
 | Existing activity-snapshot/batch POC | 109 assertions passed per runtime on .NET 8.0.13/9.0.2/10.0.9 | Reproduces the batch limitations; request coordination remains a sequential model. |
 | Temporary Serilog provider-dispatch check | Four cases passed per runtime with matching hosting package major versions 8/9/10 | Default forwarding loses the additional provider's output; explicit forwarding restores it. No full Apitally request pipeline was exercised. |
 | Temporary early-request-data check | Four real loopback requests passed per runtime with OTel 1.19.0 | HTTP fields are absent from initial activity tags but available through the registered accessor; middleware sees the same request with enriched tags. No production sampling/association implementation was exercised. |
+| Approved R2 request-association follow-up | Independently rerun: 1533 assertions per exact .NET 8.0.13/9.0.2/10.0.9 runtime | Real integrated request/span/log/helper association and completion processing; test-only retention/controlled handoffs and primitive snapshots. No production cleanup, body, metric/error export or spool proof. |
 
 Temporary checks used SDK 10.0.301, locked dependencies, pinned .NET and ASP.NET Core shared-framework versions, bounded execution, synthetic data and in-memory observation. Builds had zero warnings/errors. No external telemetry was sent. Initial temporary-program launches failed before application execution because only the .NET runtime, not the ASP.NET shared-framework version, had been pinned; the corrected runner pins both. This was a harness configuration failure, not an SDK finding.
 
