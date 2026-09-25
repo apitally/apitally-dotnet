@@ -13,18 +13,18 @@ Status: Reviewed and independently verified; findings await resolution. This rev
 
 Line references below apply to the reviewed revision. A verified validation gap is not an observed production defect: the v1 SDK has not been implemented. Existing POCs establish individual mechanisms, not their complete integration.
 
-## Findings and discussion order
+## Findings and resolution status
 
 | ID | Priority | Finding | Classification | Status |
 | --- | --- | --- | --- | --- |
-| R1 | High | Standard Serilog host registration bypasses the proposed application-log capture provider | Newly verified compatibility limitation; support decision needed | Open |
+| R1 | Out of scope | Standard Serilog host registration bypasses the proposed application-log capture provider | Later documentation improvement; no SDK-specific work | Closed for the rewrite |
 | R2 | High | Request association needs early HTTP data and integrated completion handling | Newly verified timing constraint; previously acknowledged integration gate | Open |
 | R3 | High | Complete-body guarantees still need a supported transport implementation | Previously acknowledged capture gate | Open |
 | R4 | High | Batch completion must be coordinated with spool closure and shutdown | Reproduced dependency limitation; previously acknowledged integration gate | Open |
 
-R1 requires a user-facing support decision. R2-R4 are engineering design and validation items under already-approved requirements.
+R1 is closed as outside the SDK rewrite. R2-R4 are engineering design and validation items under already-approved requirements.
 
-## R1. Standard Serilog host registration bypasses application-log capture
+## R1. Serilog provider forwarding - closed, outside rewrite scope
 
 **Scenario and consequence:** an application configures Serilog using its normal host/service registration and writes request logs through `ILogger<T>`. Its Serilog sinks keep receiving logs, but the proposed additive Apitally `ILoggerProvider` is bypassed. Enabled-by-default log capture would therefore not work in this common composition without an additional integration requirement.
 
@@ -37,9 +37,7 @@ R1 requires a user-facing support decision. R2-R4 are engineering design and val
 - The [private logging POC](../pocs/private-logging/README.md) uses an ordinary `LoggerFactory`. Preserving its independent sinks in both registration orders does not validate replacement-factory dispatch.
 - The parent independently reproduced the dispatch behavior using `Serilog.Extensions.Hosting` 8.0.0/9.0.0/10.0.0 on .NET 8.0.13/9.0.2/10.0.9. All four cases per runtime passed: both registration orders, with default forwarding versus `writeToProviders: true`. The existing Serilog sink received exactly one unchanged message in every case; the additional provider received zero by default and one with forwarding. These are factory-dispatch results, not full Apitally integration results.
 
-**Recommended direction:** support the existing Serilog provider-forwarding option as a documented integration requirement, then validate it with the private pipeline. Forwarding targets all registered providers, not just Apitally; examples must account for duplicate output from other providers rather than silently changing application logging. If automatic capture with unchanged Serilog setup is a v1 requirement, investigate a dedicated supported integration before claiming it works.
-
-**Closure:** agree the supported Serilog setup and verify a real request's `ILogger<T>` event reaches Apitally once, remains correctly linked and maskable, and preserves the application's intended output. Provider dispatch alone does not establish the full callback/request/export path.
+**Approved resolution:** retain the SDK's existing generic `ILoggerProvider` design. Applications may enable Serilog's standard `writeToProviders: true` setting; this adds no Serilog-specific code to the SDK. Guidance about that setting and other registered providers can be a later documentation improvement. Serilog-specific integration work and release gates are outside the rewrite, and this observation does not change `docs/design.md`.
 
 ## R2. Early request data and request association need one integrated path
 
