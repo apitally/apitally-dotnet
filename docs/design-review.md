@@ -19,7 +19,7 @@ Line references below apply to the reviewed revision. A verified validation gap 
 | --- | --- | --- | --- | --- |
 | R1 | Out of scope | Standard Serilog host registration bypasses the proposed application-log capture provider | Later documentation improvement; no SDK-specific work | Closed for the rewrite |
 | R2 | High | Request association needs early HTTP data and integrated completion handling | Integrated POC verified; production cleanup and qualification remain | POC validation complete |
-| R3 | High | Complete-body guarantees still need a supported transport implementation | Previously acknowledged capture gate | Open |
+| R3 | High | Complete-body guarantees still need a supported transport implementation | Completion POC verified; file rereading disproved, single-pass approach experimental | Open |
 | R4 | High | Batch completion must be coordinated with spool closure and shutdown | Reproduced dependency limitation; previously acknowledged integration gate | Open |
 
 R1 is closed as outside the SDK rewrite. R2-R4 are engineering design and validation items under already-approved requirements.
@@ -67,19 +67,27 @@ This resolves the missing integrated experiment at POC level, not production qua
 
 ## R3. Complete-body guarantees need integrated transport validation
 
-**Scenario and consequence:** a client disconnects during a streamed response, or an endpoint returns an allowed small text/JSON file. The SDK must omit partial bytes while capturing complete eligible content without changing application delivery. The current transport experiment does not establish that full behavior.
+**Scenario and consequence:** a client disconnects during a streamed response, or an endpoint returns an allowed small text/JSON file. The SDK must omit partial bytes while capturing complete eligible content without changing application delivery. The original transport experiment does not establish that full behavior.
 
 **Verified evidence:**
 
 - Shared spec section 6.3 and shared design section 7 require complete, never-truncated captured bodies. An already-established oversized sentinel is a separate case and can survive an abort.
 - Design section 7, lines 320-324, explicitly records the unresolved completeness rule and file-payload capture.
-- The [transport POC report](../pocs/transport-lifecycle/README.md), lines 45-52 and 81-86, records `OnCompleted` after aborts and length mismatches. The tested predicate combines observed abort/escape and declared-length agreement; it is not a general proof of complete delivery.
+- The [transport POC report](../pocs/transport-lifecycle/README.md), lines 45-52 and 81-86, records `OnCompleted` after aborts and length mismatches. The tested predicate combines observed abort/escape and declared-length agreement; it does not establish complete captured bytes across all response paths. Client receipt is a separate question.
 - [Observation.cs](../pocs/transport-lifecycle/Observation.cs), lines 45-63, contains that experimental predicate. It protects the exercised paths but does not establish all server-originated abort handling.
 - The native file-send path delegates delivery, then marks capture missing and clears payload bytes: the same file, lines 152-158 and 187-199. Even an eligible file below 50,000 bytes therefore has no captured payload in the experiment.
 
 **Recommended direction:** retain the complete-body contract and validate a concrete supported completeness rule. Keep native file sending and bounded capture behavior explicit; if a real transport limitation requires a scope exception, bring that exception back for approval. Do not treat the POC's deliberate omission as an approved v1 exception or use whole-response buffering as a fallback.
 
 **Closure:** actual Kestrel responses demonstrate complete eligible capture and suppression of partial buffered bytes, including the supported body-writer/compression/file paths, without disrupting streaming or client-visible output. This is not a claim that the current SDK leaks partial bodies.
+
+**Approved follow-up and verified result (2026-09-25):** the user approved a focused transport-completeness POC using subagents. The [new experiment](../pocs/transport-completeness/README.md) preserves the original transport/lifecycle POC. Parent source inspection and the final independent exact-runtime rerun passed 3564 assertions per .NET/ASP.NET pair 8.0.13, 9.0.2 and 10.0.9: 68 scenarios in uninstrumented, native-send-plus-side-read and experimental single-pass modes, each with fresh and pooled connections. SDK 10.0.301, locked framework-only restore and CSharpier 1.3.0 checks passed with zero build warnings/errors. A separate read-only assertion review found no additional material issue within the stated fixture scope.
+
+The completion callback publishes an owned result using evidence available at that point. The observer tracks public abort, original/current cancellation, write/flush/advance/completion failures and applicable length. It copies leased writer bytes before Advance and commits only accepted operations. Tests preserve streaming, including a client-decoded gzip prefix before endpoint release, and cover size boundaries, handled errors, request consumption, file/range responses and failure containment. Healthy replacement of RequestAborted does not itself suppress capture. Explicit writer completion errors are retained even when the native implementation ignores the argument; source and runtime checks confirm that behavior on all three versions.
+
+The file comparison establishes a concrete limitation: a real OnStarting callback replaces a small file after Kestrel has read its first chunk. Native delivery returns the original bytes, but the bounded post-send read captures replacement bytes while ordinary completion evidence passes. Deletion/truncation instead causes omission. A second file read therefore cannot serve as an exact-body capture mechanism. The single-pass experiment captures the original copy bytes in these cases, but bypasses the inner SendFile feature and uses the public SendFileFallback infrastructure helper, whose documentation cautions against application use. It is not a selected production mechanism or a qualification of other servers.
+
+The objective remains complete captured bytes, not TCP acknowledgment. Some conservative error fixtures omit a fully observed prefix; those are evidence-handling tests, not proof of an unobserved missing byte. Unknown internal network success alone is not a new release blocker. A separate connection-reuse investigation and parent rerun verified actual healthy reuse and recovery after writer errors by replacing the aborted connection. The full checked-in matrix now passes with both fresh and pooled connections. An earlier development timeout remains unexplained; neither a cause nor a fix is claimed. See [results and development failures](../pocs/transport-completeness/RESULTS.md). R3 remains open for the supported production file-capture approach and integrated qualification. No file omission exception, whole-response buffering, production change or design policy was approved.
 
 ## R4. Spool closure needs completed export, not only a successful flush
 
@@ -104,6 +112,7 @@ This resolves the missing integrated experiment at POC level, not production qua
 | Temporary Serilog provider-dispatch check | Four cases passed per runtime with matching hosting package major versions 8/9/10 | Default forwarding loses the additional provider's output; explicit forwarding restores it. No full Apitally request pipeline was exercised. |
 | Temporary early-request-data check | Four real loopback requests passed per runtime with OTel 1.19.0 | HTTP fields are absent from initial activity tags but available through the registered accessor; middleware sees the same request with enriched tags. No production sampling/association implementation was exercised. |
 | Approved R2 request-association follow-up | Independently rerun: 1533 assertions per exact .NET 8.0.13/9.0.2/10.0.9 runtime | Real integrated request/span/log/helper association and completion processing; test-only retention/controlled handoffs and primitive snapshots. No production cleanup, body, metric/error export or spool proof. |
+| Approved R3 transport-completeness follow-up | Independently rerun: 3564 assertions per exact .NET 8.0.13/9.0.2/10.0.9 runtime, across fresh and pooled connections | Fixed completion-time decisions and real body/file comparisons. Native post-send rereading captures wrong bytes under mutation; single-pass feature bypass remains experimental. Actual reuse verified; historical timeout unexplained. |
 
 Temporary checks used SDK 10.0.301, locked dependencies, pinned .NET and ASP.NET Core shared-framework versions, bounded execution, synthetic data and in-memory observation. Builds had zero warnings/errors. No external telemetry was sent. Initial temporary-program launches failed before application execution because only the .NET runtime, not the ASP.NET shared-framework version, had been pinned; the corrected runner pins both. This was a harness configuration failure, not an SDK finding.
 

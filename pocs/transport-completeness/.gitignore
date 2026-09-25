@@ -1,0 +1,4 @@
+bin/
+obj/
+results/
+__pycache__/
