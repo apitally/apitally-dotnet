@@ -100,7 +100,9 @@ collection remains unchanged after later collection.
   records survive across four files; the largest is 2,822,514 uncompressed
   bytes. Every tested stored file is also below the 4 MiB wire cap.
 - A single indivisible request larger than the cap is rejected explicitly.
-  This proves the guard, not a selected production data-loss policy. The splitter
+  This proves the guard, not production loss handling. The subsequently approved
+  v1 policy drops an indivisible oversized record with a deduplicated warning
+  and continues with other records, without fragmentation or repair. The splitter
   materializes candidate protobuf requests and is not a memory benchmark.
 - Four physical local POSTs read and replay the same persisted gzip file.
   All received bodies exactly match disk, including both simulated replay sends.
