@@ -103,11 +103,13 @@ The old timeout remains unexplained. Historical Control requests shared a client
 
 Ignored development logs retain the failed local executions. The tracked description above preserves their meaning when those logs are absent.
 
-## Remaining choices and gaps
+## Approved scope and remaining gaps
+
+Following these results, the user approved simple directly observed completeness checks and native file-send payload omission for v1. Ordinary bounded REST stream/body-reader/writer capture stays in scope. Native file delivery is delegated unchanged; its entire body capture is omitted, including mixed output. Eligible content already passing through ordinary observed streams can be captured incidentally. The richer diagnostic failure tracker and both experimental file-capture alternatives are not production requirements. The unchanged POC remains research, not the implementation of this narrowed design.
 
 - A native-preserving post-send side read is a limited stable-file experiment, not a reliable identity-preserving file-body capture mechanism.
-- Mode B is an experimentally successful single-pass **Kestrel** comparison for these cases. Choosing a production architecture that bypasses a body feature and depends on a public infrastructure helper remains a separate decision.
-- The original POC's native file omission remains a demonstrated limitation, not an approved v1 scope exception. This experiment does not turn metadata or a captured prefix into a full-body success.
+- Mode B is an experimentally successful single-pass **Kestrel** comparison for these cases. It bypasses a body feature and depends on a public infrastructure helper; this approach is outside the selected v1 design.
+- The approved native file omission includes the entire mixed body. Metadata or a captured prefix is not a full-body capture.
 - Unknown-length internal finalization failures are not all surfaced by public features. No arbitrary cancellation-settling delay is added. The absence of a universal TCP success signal is distinct from body capture completeness.
 - Pooled reuse is demonstrated for the final matrix and focused sequences, while the historical timeout remains unexplained. HTTPS, HTTP/2/3, other servers/custom features, concurrent body writers, arbitrary middleware order and multi-chunk file mutation remain unqualified. IsCompleted terminal flush, explicitly conflicting Transfer-Encoding/Content-Length, escaped-handler exceptions and real internally swallowed network-flush exceptions are not independently exercised here.
-- Changes are limited to this POC and companion/index documentation. Production SDK code, the original POC, tests, solution and design remain unchanged. A production file-capture architecture still requires separate approval.
+- The approved scope is recorded in the design and companion/index documentation. Production SDK code, the original POC, tests and solution remain unchanged. Production integration of the simpler capture boundary remains pending.

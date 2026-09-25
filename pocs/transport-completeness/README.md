@@ -2,6 +2,10 @@
 
 Isolated R3 follow-up, not production SDK code. The original `../transport-lifecycle/` experiment and its 271-assertion baseline remain separate. This experiment uses a `WebApplication`, real loopback Kestrel HTTP/1.1, synthetic files and bodies, and no telemetry packages or listeners.
 
+## Approved v1 direction
+
+The design review selected simple completeness checks for ordinary REST body capture and excluded the observer's native file-send path from body capture. Delegate that path unchanged and omit the whole capture, including mixed stream/file output. Eligible bytes already passing through ordinary observed streams may still be captured incidentally. Both experimental file-capture modes and the richer diagnostic failure tracker below remain research, not production requirements. See [design section 7](../../docs/design.md#7-capture-pipeline-bodies-headers-sizes-redaction).
+
 ## Run
 
 ```sh
