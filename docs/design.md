@@ -44,7 +44,7 @@ An approved product/API direction does not establish that its proposed implement
 | Individually oversized records | Split ordinary batches to fit the spool cap. Drop an indivisible encoded record that still cannot fit, with a deduplicated actionable warning, and continue with other records. |
 | Span-based callbacks | All request/response sampling and body-masking callbacks receive the same complete span snapshot type, populated for the callback's stage. It exposes read-only interfaces and native .NET/OTel types but is the SDK-owned record itself, with no isolation guarantee. |
 | Sampling callback result | Both sampling callbacks return `double?`: a keep probability in `[0, 1]`, or `null` to abstain. |
-| Late request telemetry | Preserve late spans/logs through a bounded FIFO cache of completed, kept-request span IDs. Evict individual oldest IDs; start with 10,000 IDs as an internal capacity to validate, without time-based expiry or a public setting. |
+| Late request telemetry | Drop spans and logs that arrive after a request is released. There is no completed-request cache. |
 | Body-mask callbacks | Both use `Func<SpanSnapshot, byte[], byte[]?>`: snapshot first, decompressed body bytes second, replacement bytes returned. `null` produces `[REDACTED]`. |
 | Body completeness | Finalize bounded ordinary capture using directly observed failures, visible cancellation and applicable length checks. Omit known incomplete bytes; do not build a transport-success certification system. |
 | File response bodies | Delegate native file sends unchanged and omit their entire body capture, including mixed stream/file output. Eligible content already passing through ordinary observed streams may be captured incidentally. |
@@ -266,7 +266,7 @@ Consumer identity must survive sampling and be adoptable when set before the SER
 
 Suppress framework per-message spans at the source where supported and filter their known kind/name/scope combinations in Apitally's processor. Do not treat websocket messages as HTTP requests.
 
-**Open:** full SDK integration of association mechanics and early request context, plus concurrency, lifecycle and capacity validation of the completed-request cache selected in section 6. Verify isolation across concurrent and keep-alive requests without adding a blanket context reset that destroys legitimate upstream propagation.
+**Open:** full SDK integration of association mechanics and early request context, plus concurrency and lifecycle validation. Verify isolation across concurrent and keep-alive requests without adding a blanket context reset that destroys legitimate upstream propagation.
 
 ## 6. Sampling and per-request buffering
 
@@ -278,17 +278,15 @@ Response sampling runs once with final route, status, sizes, consumer, and custo
 
 **Confirmed .NET result type:** both sampling callbacks return `double?`. Zero means drop, one means keep, and a value between them is the keep probability. `null` at request stage falls back to the configured static rate; `null` at response stage preserves the earlier decision. Express boolean conditions as numeric probabilities, such as `condition ? 1.0 : 0.0`, rather than introducing a custom result type or a weakly typed boolean/numeric union. This adapts the shared API's return shape to C# without changing probability, abstention or invalid-result behavior. A response-stage keep cannot recover detail already dropped at request stage.
 
-Hold ended descendants and application logs until both transport observation and the SERVER activity complete. Keep at most 1,000 spans and 1,000 application log records per request, retaining the earliest arrivals. Release descendants, then the SERVER span, then the request's logs once. A drop discards buffered detail and raw payloads and ensures late detail also drops. Late descendants/logs for a released request remain eligible for export while their required associations are retained.
+Hold ended descendants and application logs until both transport observation and the SERVER activity complete. Keep at most 1,000 spans and 1,000 application log records per request, retaining the earliest arrivals. Release descendants, then the SERVER span, then the request's logs once. A drop discards buffered detail and raw payloads. Release and drop both remove the request's associations, so telemetry arriving afterwards drops locally.
 
-### Late telemetry associations
+### Late telemetry
 
-**Confirmed:** follow the JavaScript reference's bounded, first-in-first-out span-ID cache for completed, kept requests. Active-request tracking remains outside this cache; its span IDs enter the cache only after both transport completion and SERVER activity end. Use 10,000 retained IDs across completed requests as the initial fixed internal capacity to validate, with no public setting.
+**Confirmed:** drop spans and logs that arrive after the request has been released. Release removes the request's associations; there is no completed-request cache, retained decision or cross-release counter.
 
-After releasing buffered telemetry and clearing request payloads, retain lightweight ID associations referencing the request's shared final sampling decision and cumulative span/log counters. Remove completed dropped-request associations. Late spans and logs use the retained decision and the same per-request limits, including arrivals before release; they neither reset counters nor repeat response sampling. New descendants can inherit association through a retained parent ID.
+In ASP.NET Core, Kestrel awaits the application pipeline, finishes the response, runs `OnCompleted` callbacks and then calls `HostingApplication.DisposeContext`, which writes the "Request finished" log before stopping the SERVER activity ([HttpProtocol.cs](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Servers/Kestrel/Core/src/Internal/Http/HttpProtocol.cs#L673-L772), [HostingApplication.cs](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Hosting/Hosting/src/Internal/HostingApplication.cs#L99-L104)). Because release waits for both transport completion and SERVER end, telemetry from streamed responses, `OnCompleted` callbacks, end-of-request framework logs and automatic Sentry.AspNetCore captures always arrives before release. Only work that outlives the response, such as fire-and-forget tasks or queue hand-offs that keep `Activity.Current`, is lost; the trace is shorter, not misattributed.
 
-Evict individual oldest IDs when adding associations would exceed capacity, including additions for new late descendants. Lookups do not refresh insertion order. Use no whole-request eviction, retention duration or periodic expiry sweep. Retention therefore depends on traffic, not elapsed time. An evicted ID can belong to a still-running child of a completed request; subsequent telemetry requiring that ID is dropped locally without recreating request state. Other retained IDs for that request remain usable. Eviction leaves already-queued exports and application-owned telemetry unchanged, and the cache is cleared at the final SDK intake cutoff.
-
-The [request-association experiment](../pocs/request-association/README.md) verifies integrated late telemetry, shared decisions and cumulative caps, but uses a manually swept 60-second prototype policy. It does not validate this selected cache. Production concurrency/lifecycle integration and the initial capacity remain to be validated; this choice does not require a separate new POC.
+**Shared contract:** shared spec section 6.5 and the shared design's per-request buffering section make telemetry arriving after release best effort: an SDK may export or drop it. The JavaScript SDK keeps a 10,000-ID completed-request cache; Python drops children started after release. A future Sentry integration that correlates explicit captures made after the request would need its own small pending-event-ID map, as in the Python SDK, not a general late-telemetry cache.
 
 ### Export snapshots
 
@@ -312,7 +310,7 @@ Attributes are an `IReadOnlyDictionary<string, object?>`. Values follow the expo
 
 **Confirmed unfinished-request shutdown policy:** at the final SDK cutoff, discard trace and application-log detail for requests still awaiting either transport completion or SERVER activity end. Discard their buffered descendants/logs together, release captured payloads unprocessed and ensure later telemetry cannot revive those requests. Do not create partial SERVER exports or synthetic end times, and leave application-owned activities untouched.
 
-Requests finalized before the cutoff follow the normal response-sampling, complete-body and once-only release rules and remain eligible for the final export cycle. Already-recorded metrics and eligible error aggregates remain independent of the request-detail discard policy. The cutoff's coordination with completion callbacks, closed intake and exporter/spool shutdown still requires integrated validation. This is a permitted per-SDK choice under the shared best-effort shutdown contract.
+Requests finalized before the cutoff follow the normal response-sampling, complete-body and once-only release rules and remain eligible for the final export cycle. Already-recorded metrics and eligible error aggregates remain independent of the request-detail discard policy. The cutoff's coordination with completion callbacks, adapter detachment and exporter/spool shutdown still requires integrated validation. This is a permitted per-SDK choice under the shared best-effort shutdown contract.
 
 ## 7. Capture pipeline: bodies, headers, sizes, redaction
 
@@ -322,7 +320,7 @@ For in-scope ordinary body capture, apply the canonical content-type allowlist a
 
 Process bodies in the shared order: bounded decompression, mask callback, parse, field redaction, and serialization. Parse to identify JSON regardless of content type once capture is allowed. Unsupported/failed decompression must not export the original bytes. A failed or dropping mask callback yields `[REDACTED]`; an oversized masked result yields `[BODY_TOO_LARGE]`. The oversized sentinel bypasses body processing.
 
-**Confirmed .NET body-mask signature:** `MaskRequestBody` and `MaskResponseBody` both use `Func<SpanSnapshot, byte[], byte[]?>`, with `SpanSnapshot` as the working name. The first argument is the complete span snapshot; the second is the decompressed body bytes before JSON parsing. The returned array replaces those bytes, and `null` produces `[REDACTED]`. Ordinary byte arrays keep the two callbacks consistent without another buffer abstraction. Preserve private ownership of input and accepted output data.
+**Confirmed .NET body-mask signature:** `MaskRequestBody` and `MaskResponseBody` both use `Func<SpanSnapshot, byte[], byte[]?>`, with `SpanSnapshot` as the working name. The first argument is the complete span snapshot; the second is the decompressed body bytes before JSON parsing. The returned array replaces those bytes, and `null` produces `[REDACTED]`. Ordinary byte arrays keep the two callbacks consistent without another buffer abstraction. The returned array is consumed immediately and not copied; only the serialized result is retained.
 
 The body-mask callback sees the export snapshot after query/header redaction and captured-header attachment, but before body attributes are attached. Document that execution may happen later on another thread. A failure in the export redaction boundary drops the affected span rather than sending raw sensitive data.
 
@@ -427,11 +425,11 @@ A failing ordinary fallback conversion omits that attribute; a failing array-ele
 
 **Confirmed callback value policy:** use the type mapping of the inspected standard OTel .NET export conversions for span and log callback attribute values. Normalize before callbacks and detach arrays/maps from application-owned data. Ordinary lists and opaque objects use the standard string fallback rather than expanding their contents or cloning object properties. Applications can supply arrays explicitly when they want element values captured. Convert values a log callback added when the batch worker encodes the record. Conversion failures omit the value, never passing through raw mutable values as a fallback; the stock converter's internal edge-case behavior is not an Apitally contract. This selects value conversion, not every stock serializer limit; shared Apitally payload requirements still apply.
 
-This is an explicit .NET qualification of the shared design's non-string pass-through wording: a CLR value converted to a log string before masking is subject to the existing 2,048-character string limit after masking. The same applies to a string produced while encoding accepted callback output. Span attributes retain their separate limits. Unicode and array-element truncation semantics still require resolution. The selected normalizer requires runtime validation beyond the finite POC value set.
+This is an explicit .NET qualification of the shared design's non-string pass-through wording: a CLR value converted to a log string before masking is subject to the existing 2,048-character string limit after masking. The same applies to a string produced while encoding accepted callback output. Span attributes retain their separate limits. The limit counts UTF-16 code units, matching the JavaScript SDK; a split surrogate pair is harmless because Google.Protobuf encodes strings with replacement. Array and map values pass through untruncated, as the shared design specifies for non-string values. The selected normalizer requires runtime validation beyond the finite POC value set.
 
 **Confirmed duplicate-key rule:** within one attribute or key/value collection, the last occurrence of a key wins, including accepted callback output. The selected log-entry-over-inner-scope-over-outer-scope precedence remains unchanged.
 
-**Open:** full normalizer validation, production request association and integration with other logging factories. The follow-up uses ASCII truncation fixtures only; the initial POC's Unicode-scalar policy remains experimental. Neither selects Unicode or array-element truncation semantics.
+**Open:** full normalizer validation, production request association and integration with other logging factories.
 
 ### Startup event
 
@@ -480,7 +478,7 @@ A 32-record trace chunk exceeds the 4,000,000-byte cap in the experiment; exact 
 
 Use stock batch queue/worker machinery with explicit settings and approximately one-second intake delay. The snapshot POC demonstrates `BatchExportProcessor<T>` intake without private reflection. Bound encoded appends by actual size; a record-count chunk limit alone is not proof that a file stays below the cap.
 
-**POC evidence:** in the tested stock batch processor, `ForceFlush` can return true after dequeue but before synchronous `Export` finishes. Its export timeout does not cancel a blocked synchronous exporter. Successful `Shutdown` drains and joins; standalone `Dispose` alone does not, and generic intake does not itself reject calls after shutdown. The production design still needs completed-spool-write coordination and lifecycle handling. Do not treat a successful flush as proof a file is ready to close and send.
+**POC evidence:** in the tested stock batch processor, `ForceFlush` can return true after dequeue but before synchronous `Export` finishes. Its export timeout does not cancel a blocked synchronous exporter. Successful `Shutdown` drains and joins; standalone `Dispose` alone does not. Generic intake does not reject calls after shutdown; such records are only buffered, and the SDK accepts that a record racing shutdown may be left unsent rather than adding an admission lock. The production design still needs completed-spool-write coordination and lifecycle handling. Do not treat a successful flush as proof a file is ready to close and send.
 
 ### Delivery contract to preserve
 
@@ -639,7 +637,7 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | Process identity, startup frequency, limits, process gauges | Preserve shared process-wide contracts and one process identity across all signals under host-owned state. | Inherited requirements for the single-host baseline; no global host coordinator. |
 | Ordinary final drain | Share the host's remaining shutdown budget and honor host cancellation, without an additional SDK flush window. | Confirmed budget policy; exporter/spool and disposal coordination remain to be validated. |
 | Unfinished-request detail | Discard requests still awaiting transport completion or SERVER activity end at the final SDK cutoff; retain normal flushing for finalized requests and independent recorded metrics/error aggregates. | Confirmed per-SDK policy permitted by the shared shutdown contract; integration remains to be validated. |
-| Late request associations | Keep completed-request span IDs in a bounded FIFO cache; evict individual IDs, preserving shared sampling decisions and cumulative counters for remaining associations. | Confirmed retention policy following the JavaScript reference; 10,000-ID initial internal capacity and production integration require validation. |
+| Late request telemetry | Drop spans and logs arriving after release; no completed-request cache. | Confirmed .NET choice, permitted by shared spec section 6.5. |
 | SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
 | Span callback type | One complete span snapshot type for all sampling and body-masking callbacks, using native event, link and resource types. It is the SDK-owned record, with read-only interfaces but no isolation guarantee. | Confirmed .NET adaptation; final member names remain open. |
 | Sampling result type | `double?` represents the keep probability or abstention for both callbacks; boolean choices use zero or one. | Confirmed typed C# adaptation; shared sampling semantics preserved. |
@@ -687,7 +685,7 @@ Do not replace Apitally classes with mocks. Assert exact exported counts and att
 - Unchanged native file delivery with whole-body capture omission, including mixed stream/file output; incidental eligible stream capture.
 - Consumer/custom attribute helpers inside nested activities and error capture without recorded spans.
 - Validation/server aggregates independent of trace decisions and application-log capture; supported validation shapes with localized/custom message text, available metadata, unknown source/field values and unfamiliar-format omission.
-- Log state isolation, masking, correlation, bounded buffering, late telemetry, individual-ID cache eviction and cumulative limits across request release.
+- Other logging providers, scopes and exception objects left unchanged, masking, correlation, bounded buffering, per-request caps and dropping telemetry that arrives after release.
 - Delta exponential request metrics, matching sizes, process gauges, and idle liveness.
 - Protobuf-decoded payloads, byte-identical retries, storage fallback/retention/rotation, headers, and export suppression.
 - Host shutdown and once-only release/flush behavior.
@@ -740,7 +738,7 @@ The interview has settled support scope and the main user-facing direction. Furt
 1. Provider-selection/attachment timing, external-processor lifetime and full SDK integration of the verified TestServer guard for the confirmed standard DI integration paths.
 2. Implement and validate process identity, process-wide bounds, startup events and process measurements for the single-host baseline, plus measurement and selection of the fixed internal metric capacity. Special multi-host coordination is outside v1 scope.
 3. Detailed span-snapshot members and collection/value types, full normalizer validation and integration of the selected log-mask representation, remaining option types and validation of Options-based configuration resolution.
-4. Integration and initial capacity validation of the selected late-association cache, integration of the simple body-completeness checks and native file omission, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
+4. Integration of the simple body-completeness checks and native file omission, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
 5. Package target frameworks, C# language version and integrated qualification of the selected OTel 1.19.0 baseline and instrumentation/dependency graph.
 
 After those decisions, focused integration probes should compose the verified mechanisms, especially startup-filter activation, final responses, private pipeline ownership and shutdown. Physical proxy/retry/storage-failure behavior and shared backend/harness acceptance also remain to be validated.
