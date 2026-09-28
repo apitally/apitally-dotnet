@@ -29,3 +29,7 @@ bld/
 
 # Agents
 .pi/tasks/
+
+# Vendored OTLP schemas
+!src/Apitally/Protos/opentelemetry/proto/logs/
+!src/Apitally/Protos/opentelemetry/proto/collector/logs/

@@ -1,26 +1,29 @@
-namespace Apitally.TestApp;
-
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 
-[ApiController]
-public class ItemsController : ControllerBase
-{
-    [HttpGet("/controller/items")]
-    public IActionResult GetItems()
-    {
-        var items = new[] { new Item(1, "bob"), new Item(2, "alice") };
-        return Ok(items);
-    }
+namespace Apitally.TestApp;
 
-    [HttpPost("/controller/items")]
-    public IActionResult CreateItem([FromBody] Item item)
-    {
-        return Created($"/controller/items/{item.Id}", item);
-    }
+[ApiController]
+[Route("controller/items")]
+public sealed class ItemsController : ControllerBase
+{
+    [HttpGet("{id:int}")]
+    [EndpointSummary("Get an item")]
+    public IActionResult Get(int id) => Ok(new { id });
+
+    [HttpPost]
+    public IActionResult Create(ItemInput input) => Created($"/controller/items/{input.Id}", input);
+
+    [HttpGet]
+    public IActionResult List([FromQuery(Name = "limit")] int limit) => Ok(new { limit });
 }
 
-public record Item(
-    [Required] [Range(1, 1000)] int Id,
-    [Required] [StringLength(100, MinimumLength = 2)] string Name
-);
+public sealed class ItemInput
+{
+    [Range(1, 1000)]
+    public int Id { get; set; }
+
+    [Required]
+    [StringLength(10)]
+    public string? Name { get; set; }
+}

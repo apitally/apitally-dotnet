@@ -1,0 +1,83 @@
+using Apitally.Logging;
+using Google.Protobuf;
+using Microsoft.Extensions.Logging;
+using OpenTelemetry.Proto.Collector.Logs.V1;
+using OpenTelemetry.Proto.Common.V1;
+using OpenTelemetry.Proto.Logs.V1;
+using OpenTelemetry.Resources;
+
+namespace Apitally.Export;
+
+internal static class OtlpLogMapper
+{
+    public const string ServerSpanIdAttribute = "apitally.request.server_span_id";
+
+    // Counts UTF-16 code units, matching the JavaScript SDK.
+    private const int MaxStringLength = 2_048;
+
+    public static IMessage BuildRequest(IReadOnlyList<LogSnapshot> logs, Resource resource)
+    {
+        var resourceLogs = new ResourceLogs { Resource = OtlpEncoder.ToOtlpResource(resource) };
+        foreach (var scopeGroup in logs.GroupBy(log => log.ScopeName))
+        {
+            var scopeLogs = new ScopeLogs
+            {
+                Scope = new InstrumentationScope { Name = scopeGroup.Key },
+            };
+            scopeLogs.LogRecords.Add(scopeGroup.Select(ToOtlpLogRecord));
+            resourceLogs.ScopeLogs.Add(scopeLogs);
+        }
+        return new ExportLogsServiceRequest { ResourceLogs = { resourceLogs } };
+    }
+
+    private static LogRecord ToOtlpLogRecord(LogSnapshot log)
+    {
+        var time = OtlpEncoder.ToUnixNanoseconds(log.Timestamp);
+        var output = new LogRecord { TimeUnixNano = time, ObservedTimeUnixNano = time };
+        if (log.Record is { } record)
+        {
+            output.SeverityNumber = ToSeverityNumber(record.LogLevel);
+            output.SeverityText = record.LogLevel.ToString();
+            output.Body = new AnyValue { StringValue = Truncate(record.Body ?? "") };
+            output.EventName = record.EventId.Name ?? "";
+            output.TraceId = OtlpEncoder.ToByteString(log.TraceId);
+            output.SpanId = OtlpEncoder.ToByteString(log.SpanId);
+            output.Flags = (uint)log.TraceFlags;
+            foreach (var (key, value) in record.Attributes)
+            {
+                if (
+                    key != ServerSpanIdAttribute
+                    && AttributeValues.TryNormalize(value, out var normalized)
+                )
+                    output.Attributes.Add(OtlpEncoder.ToKeyValue(key, Truncate(normalized)));
+            }
+            // SDK-owned linkage overwrites a same-named attribute from the mask callback.
+            output.Attributes.Add(
+                OtlpEncoder.ToKeyValue(ServerSpanIdAttribute, log.ServerSpanId.ToHexString())
+            );
+        }
+        else
+        {
+            output.EventName = log.EventName ?? "";
+            output.Body = OtlpEncoder.ToAnyValue(log.EventBody);
+        }
+        return output;
+    }
+
+    private static object? Truncate(object? value) => value is string text ? Truncate(text) : value;
+
+    private static string Truncate(string text) =>
+        text.Length > MaxStringLength ? text[..MaxStringLength] : text;
+
+    private static SeverityNumber ToSeverityNumber(LogLevel level) =>
+        level switch
+        {
+            LogLevel.Trace => SeverityNumber.Trace,
+            LogLevel.Debug => SeverityNumber.Debug,
+            LogLevel.Information => SeverityNumber.Info,
+            LogLevel.Warning => SeverityNumber.Warn,
+            LogLevel.Error => SeverityNumber.Error,
+            LogLevel.Critical => SeverityNumber.Fatal,
+            _ => SeverityNumber.Unspecified,
+        };
+}

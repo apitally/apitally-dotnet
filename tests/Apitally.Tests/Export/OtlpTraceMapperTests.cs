@@ -1,0 +1,128 @@
+using System.Diagnostics;
+using Apitally.Export;
+using Apitally.Tests.Support;
+using OpenTelemetry.Proto.Collector.Trace.V1;
+using OpenTelemetry.Resources;
+using OtlpSpan = OpenTelemetry.Proto.Trace.V1.Span;
+
+namespace Apitally.Tests.Export;
+
+public class OtlpTraceMapperTests
+{
+    [Fact]
+    public void MapsCompleteSpanFields()
+    {
+        var parent = ActivitySpanId.CreateRandom();
+        var linked = new ActivityContext(
+            ActivityTraceId.CreateRandom(),
+            ActivitySpanId.CreateRandom(),
+            ActivityTraceFlags.Recorded,
+            "k=v"
+        );
+        var span = new SpanSnapshot(
+            ActivityTraceId.CreateRandom(),
+            ActivitySpanId.CreateRandom(),
+            parent,
+            ActivityTraceFlags.Recorded,
+            "vendor=1",
+            "GET /items/{id}",
+            ActivityKind.Server,
+            new DateTime(2026, 9, 28, 10, 0, 0, DateTimeKind.Utc),
+            TimeSpan.FromMilliseconds(250),
+            ActivityStatusCode.Error,
+            "failed",
+            new() { ["http.route"] = "/items/{id}", ["http.response.status_code"] = 500L },
+            [
+                new ActivityEvent(
+                    "exception",
+                    new DateTimeOffset(2026, 9, 28, 10, 0, 0, 100, TimeSpan.Zero),
+                    new ActivityTagsCollection { ["exception.type"] = "System.Exception" }
+                ),
+            ],
+            [new ActivityLink(linked, new ActivityTagsCollection { ["link.kind"] = "retry" })],
+            TestSpans.Resource,
+            "Microsoft.AspNetCore",
+            "1.0"
+        );
+
+        var request = (ExportTraceServiceRequest)OtlpTraceMapper.BuildRequest([span]);
+
+        var resourceSpans = Assert.Single(request.ResourceSpans);
+        Assert.Contains(resourceSpans.Resource.Attributes, a => a.Key == "service.instance.id");
+        var scopeSpans = Assert.Single(resourceSpans.ScopeSpans);
+        Assert.Equal("Microsoft.AspNetCore", scopeSpans.Scope.Name);
+        Assert.Equal("1.0", scopeSpans.Scope.Version);
+        var output = Assert.Single(scopeSpans.Spans);
+        Assert.Equal(span.TraceId.ToHexString(), Hex(output.TraceId));
+        Assert.Equal(span.SpanId.ToHexString(), Hex(output.SpanId));
+        Assert.Equal(parent.ToHexString(), Hex(output.ParentSpanId));
+        Assert.Equal("vendor=1", output.TraceState);
+        Assert.Equal(1u, output.Flags);
+        Assert.Equal("GET /items/{id}", output.Name);
+        Assert.Equal(OtlpSpan.Types.SpanKind.Server, output.Kind);
+        Assert.Equal(250_000_000ul, output.EndTimeUnixNano - output.StartTimeUnixNano);
+        Assert.Equal(
+            OpenTelemetry.Proto.Trace.V1.Status.Types.StatusCode.Error,
+            output.Status.Code
+        );
+        Assert.Equal("failed", output.Status.Message);
+        Assert.Equal(
+            new Dictionary<string, object?>
+            {
+                ["http.route"] = "/items/{id}",
+                ["http.response.status_code"] = 500L,
+            },
+            OtlpDecoding.Attributes(output.Attributes)
+        );
+        var exceptionEvent = Assert.Single(output.Events);
+        Assert.Equal("exception", exceptionEvent.Name);
+        Assert.Equal(
+            "System.Exception",
+            OtlpDecoding.Attributes(exceptionEvent.Attributes)["exception.type"]
+        );
+        var link = Assert.Single(output.Links);
+        Assert.Equal(linked.SpanId.ToHexString(), Hex(link.SpanId));
+        Assert.Equal("k=v", link.TraceState);
+        Assert.Equal("retry", OtlpDecoding.Attributes(link.Attributes)["link.kind"]);
+    }
+
+    [Fact]
+    public void GroupsSpansByResourceAndScope()
+    {
+        var other = new Resource(new Dictionary<string, object> { ["service.name"] = "other" });
+        var spans = new[]
+        {
+            TestSpans.Create(),
+            TestSpans.Create(kind: ActivityKind.Internal),
+            new SpanSnapshot(
+                ActivityTraceId.CreateRandom(),
+                ActivitySpanId.CreateRandom(),
+                default,
+                default,
+                null,
+                "work",
+                ActivityKind.Internal,
+                DateTime.UtcNow,
+                TimeSpan.Zero,
+                ActivityStatusCode.Unset,
+                null,
+                [],
+                [],
+                [],
+                other,
+                "apitally.otel",
+                null
+            ),
+        };
+
+        var request = (ExportTraceServiceRequest)OtlpTraceMapper.BuildRequest(spans);
+
+        Assert.Equal(2, request.ResourceSpans.Count);
+        Assert.Equal(2, request.ResourceSpans[0].ScopeSpans.Single().Spans.Count);
+        Assert.Equal("apitally.otel", request.ResourceSpans[1].ScopeSpans.Single().Scope.Name);
+        Assert.True(request.ResourceSpans[1].ScopeSpans[0].Spans[0].ParentSpanId.IsEmpty);
+    }
+
+    private static string Hex(Google.Protobuf.ByteString bytes) =>
+        Convert.ToHexString(bytes.ToByteArray()).ToLowerInvariant();
+}
