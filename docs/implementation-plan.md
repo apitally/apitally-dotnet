@@ -16,7 +16,7 @@ The simplest appropriate architecture is:
 - One host-owned runtime and one automatic transport middleware.
 - One request state shared by middleware, activity processing, logging and request helpers.
 - One tracing integration that joins an application provider or constructs an owned fallback.
-- Two stock batch processors, for owned span and log records, plus one delivery worker. Metrics are collected by that worker.
+- Two instances of one batch processor subclass, for owned span and log records, plus one delivery worker. Metrics are collected by that worker.
 - One spool implementation using either file streams or memory streams, selected at construction.
 - Concrete internal classes with narrow responsibilities. Add interfaces only for the public `IApitally` service and framework/OTel extension points.
 
@@ -101,7 +101,7 @@ src/Apitally/
   Export/
     AttributeValues.cs                 common normalization and value ownership
     SpanRedaction.cs                   query/header/body export privacy boundary
-    BatchProcessor.cs                  stock generic batching
+    ApitallyBatchProcessor.cs          stock generic batching
     OtlpEncoder.cs                     shared values, resources and bounded requests
     OtlpTraceMapper.cs                 span/event/link/scope mapping
     OtlpLogMapper.cs                   canonical bodies, event names and log truncation
@@ -230,7 +230,7 @@ public sealed class LogRecordSnapshot
 
 `SpanSnapshot` members use the names of the corresponding `Activity` properties, so users read them as they would an activity; `Duration` is null until the span has ended. `LogRecordSnapshot.Timestamp` is UTC, as on OTel's `LogRecord`. The option names are the shared option names in .NET casing; there is no exclude-user-agent option because the shared user-agent list is not configurable.
 
-`AddApitally` returns the service collection. Document it as `builder.Services.AddApitally()` for modern hosting and `services.AddApitally()` in `Startup.ConfigureServices`. There are no host-builder overloads and no second middleware call. Everything it registers is an ordinary service registration: options, the logger provider, the startup filter, the hosted service, the tracing contribution and `IApitally`. Use `TryAdd*` and `TryAddEnumerable` so repeated calls register each SDK service once.
+`AddApitally` returns the service collection. Document it as `builder.Services.AddApitally()` for modern hosting and `services.AddApitally()` in `Startup.ConfigureServices`. There are no host-builder overloads and no second middleware call. Everything it registers is an ordinary service registration: options, `TelemetryRuntime`, the startup filter, the hosted service, the tracing contribution, `IHttpContextAccessor`, `IApitally` and the logger provider. Use `TryAdd*` and `TryAddEnumerable` so repeated calls register each SDK service once.
 
 `StartActivity` creates an INTERNAL activity from `apitally.otel`; callers use native activity tags and `using`. The singleton implementation resolves the current request through `IHttpContextAccessor` and its private feature on each call. It never stores a `HttpContext` in the singleton. Helpers are safe no-ops without an active monitored request or when disabled; helper updates target the SERVER handle, not a current child activity.
 
@@ -291,7 +291,7 @@ Bound captured payloads and queued detail as specified; do not claim an absolute
 
 `AttributeValues` implements the selected stock-exporter-aligned CLR conversion once for both signals. Normalize and detach before any callback. Scalars become the corresponding OTLP-compatible CLR scalar; bytes, arrays and maps are copied. Ordinary lists/objects use invariant string conversion, not reflection-based object traversal. Implement this type mapping; do not reproduce or test the stock converter's internal edge-case behavior, such as its failure omission rules or map depth, as an Apitally contract.
 
-Propose these public snapshot representations:
+The public snapshot representations (exact members in section 4) are:
 
 - Native activity IDs, flags, kind and status types; start time and nullable duration; optional status description and trace state.
 - Events as `IReadOnlyList<ActivityEvent>`, links as `IReadOnlyList<ActivityLink>`, resource as OTel `Resource`, and scope as `ScopeName` and `ScopeVersion` properties. No Apitally-specific event, link or scope types.
@@ -420,7 +420,7 @@ Connection failures, timeouts, 408, 429 and 5xx retain the file and stop that se
 
 ### Shutdown
 
-Use `IHostedLifecycleService.StoppedAsync` as the proposed final phase after server/service stop calls, validated in both hosting compositions. Keep SDK intake active while the host drains requests; stopping the server is not itself the final detail cutoff.
+Use `IHostedLifecycleService.StoppedAsync` as the final phase after server/service stop calls, validated in both hosting compositions. Keep SDK intake active while the host drains requests; stopping the server is not itself the final detail cutoff.
 
 1. Stop ordinary scheduling and perform the short atomic request cutoff even if the host token is already canceled. Preserve already-finalized releases; discard detail still missing transport completion or SERVER end, clear raw capture, and detach the tracing/logging adapters. Completed metrics/errors remain eligible. Do not invoke application callbacks while holding the cutoff lock.
 2. Always establish one shutdown/cleanup task before any cancellable wait, including when the host token is already canceled. Do not pass that token as cancellation of task scheduling. This task owns the remaining sequence and resource disposal; the host awaits it with its existing token, not a new timeout per phase.
@@ -450,17 +450,17 @@ Implement the stages in order on `v1`. Each stage depends only on earlier stages
 | 5. Transport observation and request metrics | Implement stream and pipe observation with byte counts, bounded body capture, incomplete-body marking, native file omission, header capture and size resolution. Add sizes, headers and bodies to the final span record. Record the three request histograms and select the fixed metric capacity by measurement (section 9). | 1-4 |
 | 6. Validation and error aggregates | Implement `ValidationCapture` over the MVC hooks and the stage 5 response observation, and `ErrorAggregates` with the final-500 rule, drained into internal events in ordinary and final cycles. | 1-5 |
 | 7. Application logs | Implement `ApitallyLoggerProvider` with scope merging and SDK category exclusion, `LogMasking`, request association and per-request log caps, release of logs after SERVER, and logging adapter detachment at cutoff. | 1-4 |
-| 8. Qualification and release readiness | Measure and fix the batch queue, batch size and delay, and run the soak (section 12). Record the qualified dependency graph. Add the `../sdk-tests` adapter, app and variants and assert real ingestion on the backend; package-consumer validation belongs to that harness, and this repository has no packed-package tests. Update the README, migration guide and publishing workflows. | 1-7 |
+| 8. Qualification and release readiness | Measure and fix the batch queue, batch size and delay. Record the qualified dependency graph. Add the `../sdk-tests` adapter, app and variants and assert real ingestion on the backend; package-consumer validation belongs to that harness, and this repository has no packed-package tests. Update the README, migration guide and publishing workflows. | 1-7 |
 
-A few modules grow across stages by addition: `EndpointMetadata` enumerates startup routes in stage 3 and resolves request routes in stage 4; `ApitallyMetrics` has process gauges from stage 3 and request histograms from stage 5; the startup filter, final span enrichment and shutdown cutoff gain the steps of each later stage. The worker's instrumentation suppression lands in stage 3 and is first testable in stage 4, when tracing exists.
+A few modules grow across stages by addition: `AddApitally` registers the runtime services in stage 3, `IHttpContextAccessor` and `IApitally` in stage 4 and the logger provider in stage 7; `EndpointMetadata` enumerates startup routes in stage 3 and resolves request routes in stage 4; `ApitallyMetrics` has process gauges from stage 3 and request histograms from stage 5; the startup filter, final span enrichment and shutdown cutoff gain the steps of each later stage. The worker's instrumentation suppression lands in stage 3 and is first testable in stage 4, when tracing exists.
 
 Port knowledge, not old architecture: read the `v0` branch for route enumeration, recursive masking, process measurement and test scenarios, and review each against the contract before porting it. Do not bring back the Hub client/models, custom counters/histograms/activity collector, whole-response buffering, persistent UUID/lock or independent forwarding-header interpretation.
 
-## 12. Validation and performance criteria
+## 12. Validation criteria
 
 ### Automated behavior
 
-Use xUnit module tests for algorithms and small real Kestrel applications for lifecycle, body features, compression, aborts and provider interaction. Reserve TestServer tests for automatic suppression. Use in-memory exporters for owned-data assertions and a physical loopback OTLP receiver for gzip/protobuf/HTTP behavior. Read responses fully and wait for observed export completion; neither a delay nor stock `ForceFlush` alone proves it.
+Use xUnit module tests for algorithms and small real Kestrel applications for lifecycle, body features, compression, aborts and provider interaction. Reserve TestServer tests for automatic suppression. Assert owned data by decoding memory-mode spool contents, use OTel in-memory exporters only on application-owned providers, and use a physical loopback OTLP receiver for gzip/protobuf/HTTP behavior. Read responses fully and wait for observed export completion; neither a delay nor stock `ForceFlush` alone proves it.
 
 Cover these contract groups without multiplying every case across every hosting arrangement:
 
