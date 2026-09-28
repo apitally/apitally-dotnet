@@ -387,13 +387,13 @@ Provider-independent minimum/category rules apply to the adapter, and the alias 
 
 Resolve `apitally.request.server_span_id` through the activity-to-request association, preserving the emitting child span ID separately. Application logs without a request association are dropped. Exclude Apitally's and the OTel SDK's own diagnostic logs from capture to prevent feedback loops. Capture code-location attributes when supplied by the logging interface; do not invent stack inspection solely to manufacture them.
 
-Run `MaskLogRecord` synchronously on the captured record before buffering. It may return the supplied record or drop it; exceptions or a different instance drop the record. Normalize values before the callback so it cannot change what other application logging providers receive, and so it sees exactly what will be exported. Truncate string bodies and string attributes to 2,048 characters after masking, when the batch worker encodes the record.
+Run `MaskLogRecord` synchronously on the captured record before buffering. It may return the supplied record or drop it; exceptions, a different instance or a null/empty `Body` drop the record. Normalize values before the callback so it cannot change what other application logging providers receive, and so it sees the values that will be exported before truncation. Truncate string bodies and string attributes to 2,048 characters after masking, when the batch worker encodes the record.
 
 **Confirmed .NET deviation from the shared design:** the shared design asks for the ecosystem's mutable log-record type. `ILogger` has no record type, and an OTel `LogRecord` produced for this path would differ from ordinary OTel .NET use: `Body` would hold rendered text rather than the template, `Exception` would always be null, `FormattedMessage` would be ignored and scopes would be flattened. Producing it would also require a second provider lifecycle, pooled-record lifetime rules, a second copy of every record, and the `OpenTelemetryLoggerProvider(IOptionsMonitor<...>)` constructor that pinned 1.19.0 source marks for deprecation in favor of the still-experimental `Sdk.CreateLoggerProviderBuilder`. `MaskLogRecord` therefore receives an Apitally-owned `LogRecordSnapshot`.
 
 **Confirmed callback type:** `LogRecordSnapshot` has read-only `Timestamp`, `CategoryName`, `LogLevel` and `EventId`, and mutable `string? Body` and `Dictionary<string, object?> Attributes`. Its constructor is internal. Trace context and request linkage are added after masking, so the callback cannot unlink or reassign a record. The accepted instance is buffered without another copy; the SDK does not defend against callbacks that retain and later mutate it.
 
-**Confirmed callback message:** `Body` contains rendered text, and the original message-template attribute `{OriginalFormat}` is omitted. `Body` is the message field for masking and export, including when it is null. Do not restore an unmasked rendered message or template after the callback. Structured values remain separate attributes and need separate masking when sensitive; changing `Body` does not implicitly redact those values. Other logging providers retain their normal message representations.
+**Confirmed callback message:** `Body` contains rendered text, and the original message-template attribute `{OriginalFormat}` is omitted. `Body` is the message field for masking and export. A record whose `Body` is null or empty after masking is dropped locally, because the server drops empty-body records at ingest. Do not restore an unmasked rendered message or template after the callback. Structured values remain separate attributes and need separate masking when sensitive; changing `Body` does not implicitly redact those values. Other logging providers retain their normal message representations.
 
 **Confirmed exception representation:** present captured `exception.type`, `exception.message` and `exception.stacktrace` strings as attributes. Capture these values before the callback so it can mask or remove them as ordinary attributes. Export the accepted attribute values after normal log truncation, and do not restore original exception details after masking. The application's exception object never reaches the callback. Separate request-level exception capture, error aggregates and other logging providers are unchanged.
 
@@ -458,6 +458,12 @@ Use the shared validation/server aggregation identities, truncation rules and po
 
 Drain atomically, then emit outside the synchronization boundary immediately before the logs pipeline flushes in ordinary and final cycles. Each aggregate has the native event name and a structured OTLP object body, not the startup event's JSON-string body. It carries no request trace context and bypasses application-log masking/truncation.
 
+### Consumer updates
+
+Emit `apitally.consumer.update` events under spec section 9.3. `SetConsumer` accepts optional `name`, `group` and an `IReadOnlyDictionary<string, string?>` attribute patch; string-or-null values avoid coercion rules, and a null value deletes an attribute. Normalize each patch per the spec, keeping the first ten valid attribute entries including deletions, before change detection. Emit only patches that carry metadata, from monitored requests, independently of span recording, trace sampling, exclusion and application-log capture, including unmatched routes but not websockets.
+
+Detect changes with a 10,000-identifier LRU cache of hashes of the canonical normalized patch, not merged consumer state, following the shared design. Update the cache when the event is handed to the log batch processor. Consumer names, groups and attributes are not put on spans.
+
 **Confirmed:** internal events do not pass through the logger adapter. `InternalEvents` builds owned log entries directly, with the event name, scope `apitally`, empty trace/span context and a string or structured body, and submits them to the log batch processor. They bypass application masking and truncation by construction, even with application capture disabled.
 
 **POC evidence:** the encoding POC round-trips native event names, startup string bodies and structured error bodies through official protobuf messages. Implementing full aggregate/startup behavior remains unproven.
@@ -496,6 +502,7 @@ Use stock batch queue/worker machinery with explicit settings and approximately 
 | Permanent rejection | Other 4xx discard the file and warn once per status under the shared warning policy. Trace quota rejection does not stop metrics or eligible error capture. |
 | Retention | Expire files 59 minutes after first send attempt. Never-attempted files have no age expiry. |
 | Storage bounds | 50 MB disk or 10 MB memory, measured as compressed bytes. Evict oldest closed non-metrics files first, then metrics if necessary to enforce the bound. |
+| File permissions | Create spool files owner-only (`0600`) on non-Windows, as the Python and JavaScript SDKs do; they contain masked but potentially sensitive payloads. |
 | Filesystem fallback | Probe at spool construction; a failed probe selects memory with one warning. Later write failure discards the current affected file with deduplicated warning; it does not switch storage mode. |
 | Orphan cleanup | Recognizable spool files untouched for two hours, checked once at construction. Active runtimes refresh file modification times each cycle. |
 | Final cycle | Drain error groups, flush batch processors, collect metrics, close all current files, and attempt delivery without inter-send pauses or the ten-file cap. Normal failure rules still apply. |
@@ -592,7 +599,7 @@ The provider's instrumentation and source subscriptions must be configured befor
 
 | Operation | Required behavior |
 | --- | --- |
-| `SetConsumer(...)` | Retain normalized identity in request state and set the SERVER attributes when available. Metrics retain the consumer even without recorded trace detail. |
+| `SetConsumer(identifier, name, group, attributes)` | Retain normalized identity in request state and set the SERVER attributes when available. Metrics retain the consumer even without recorded trace detail. Name, group and attributes produce consumer-update events as described in section 9. |
 | `SetRequestAttribute(...)` | Target the request's SERVER span, including from inside a child activity; expose the value to response sampling. |
 | `CaptureException(...)` | Retain the first eligible exception in request-local state and add its SERVER exception event when possible. |
 | `StartActivity(...)` | Create an INTERNAL child activity under scope `apitally.otel`, usable with `using` across synchronous or asynchronous code. |
@@ -676,19 +683,7 @@ Do not replace Apitally classes with mocks. Assert exact exported counts and att
 
 ### Required behavioral coverage
 
-- First request, remote unsampled parent, concurrent requests, and keep-alive reuse.
-- Existing user providers, both DI registration orders, explicit external-provider setup, and preserved user exports.
-- Automatic TestServer suppression with application-owned tracing preserved, plus normal real-server activation.
-- Correct request association and disposal of host-owned state without disposing user-owned tracing providers.
-- Normal, unmatched, excluded, sampled-out, websocket, and `OPTIONS` requests.
-- Ordinary streaming, directly observed incomplete bodies, compression, size caps, body-reader/writer paths, and complete-body redaction.
-- Unchanged native file delivery with whole-body capture omission, including mixed stream/file output; incidental eligible stream capture.
-- Consumer/custom attribute helpers inside nested activities and error capture without recorded spans.
-- Validation/server aggregates independent of trace decisions and application-log capture; supported validation shapes with localized/custom message text, available metadata, unknown source/field values and unfamiliar-format omission.
-- Other logging providers, scopes and exception objects left unchanged, masking, correlation, bounded buffering, per-request caps and dropping telemetry that arrives after release.
-- Delta exponential request metrics, matching sizes, process gauges, and idle liveness.
-- Protobuf-decoded payloads, byte-identical retries, storage fallback/retention/rotation, headers, and export suppression.
-- Host shutdown and once-only release/flush behavior.
+The implementation plan's section 12 is the single list of required test coverage.
 
 Add a .NET application/language adapter to the sibling [SDK test harness](../../sdk-tests/README.md) so the shared end-to-end tests exercise real ingestion. The harness currently has Python and JavaScript language adapters; .NET integration is work to be done, not existing coverage. Keep ordinary app configuration in that harness rather than adding workarounds to make tests pass.
 
@@ -698,7 +693,7 @@ The runtime matrix is .NET 8/9/10. Native AOT publishing is not an initial relea
 
 **Preferred approach, not authorization to delete code:** preserve a frozen v0 reference checkout at a known commit, then build the v1 implementation on the `v1` branch. Keep useful repository infrastructure. Selectively bring proven logic and behavioral test scenarios into the new architecture rather than modifying every legacy component in place.
 
-The current v0 reference is commit `65e25ed13e15c6d6b77125749eba5cece6aa008f`. A detached sibling worktree is a candidate reference location; none has been created as part of this design work.
+The current v0 reference is commit `65e25ed13e15c6d6b77125749eba5cece6aa008f`. Preserve it as a `v0` branch before `v1` replaces `main`; none has been created as part of this design work.
 
 | Existing area | Intended treatment |
 | --- | --- |

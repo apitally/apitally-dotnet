@@ -26,8 +26,6 @@ Preserve the confirmed boundaries: .NET 8/9/10, modern hosting and Generic Host 
 
 Use the shared [specification](../../cloud/docs/sdks/spec.md) for wire contracts and [design](../../cloud/docs/sdks/design.md) for shared behavior, with the explicit .NET adaptations taking precedence over shared mechanisms. This plan was prepared against .NET commit `23f4dd01855a817af076418bae64fce8c5663a98` and cloud checkout `9ff1af09`.
 
-The shared documents have advanced since the .NET design's `f22ee6c0` baseline: cloud commit `6115eefe` adds consumer metadata update events. This plan includes that current inherited contract, rather than putting consumer name/group/attributes on spans. At implementation approval, explicitly reconcile this addition with the .NET design. Its concrete implementation is described in section 8; it is not an already-validated .NET feature.
-
 ## 2. Project and dependency choices
 
 - Keep one production project, `src/Apitally/Apitally.csproj`, targeting `net8.0` with C# 12, nullable reference types and the ASP.NET Core framework reference. A single net8 assembly can serve the supported runtimes; current production requirements do not justify three target frameworks.
@@ -127,41 +125,9 @@ tests/
     ApitallyTestExtensions.cs           shared small route/feature fixtures
   Apitally.Tests/
     Apitally.Tests.csproj
-    Hosting/
-      RuntimeConfigurationTests.cs
-      TelemetryRuntimeTests.cs
-    Requests/
-      RequestRegistryTests.cs
-      RequestSamplingTests.cs
-      ConsumerUpdatesTests.cs
-      ErrorAggregatesTests.cs
-    AspNetCore/
-      ApitallyMiddlewareTests.cs
-      BodyCaptureTests.cs
-      EndpointMetadataTests.cs
-      ValidationCaptureTests.cs
-    Tracing/
-      TracingIntegrationTests.cs
-    Logging/
-      ApitallyLoggerProviderTests.cs
-      LogMaskingTests.cs
-      InternalEventsTests.cs
-    Metrics/
-      ApitallyMetricsTests.cs
-      ProcessMetricsTests.cs
-    Export/
-      AttributeValuesTests.cs
-      SpanRedactionTests.cs
-      OtlpEncoderTests.cs
-      BatchProcessorTests.cs
-      TelemetrySpoolTests.cs
-      ExportWorkerTests.cs
-    Integration/
-      RequestLifecycleTests.cs          request completion across modules
-      TelemetryDeliveryTests.cs         request capture through OTLP delivery
-    Support/
-      TestHelpers.cs                   real hosts, collectors and common assertions
-      OtlpTestServer.cs                 loopback receiver and scripted HTTP outcomes
+    Hosting/  Requests/  AspNetCore/  Tracing/  Logging/  Metrics/  Export/
+    Integration/                        scenarios spanning request capture through OTLP delivery
+    Support/                            real hosts, loopback OTLP receiver and common assertions
 
 docs/
   design.md
@@ -265,9 +231,9 @@ Propose these public snapshot representations:
 - Events as `IReadOnlyList<ActivityEvent>`, links as `IReadOnlyList<ActivityLink>`, resource as OTel `Resource`, and scope as `ScopeName` and `ScopeVersion` properties. No Apitally-specific event, link or scope types.
 - Attributes as `IReadOnlyDictionary<string, object?>` over the owned dictionary. Values use the plain CLR types OTel .NET users see on activity tags: scalars, `string[]`, `long[]`, `double[]`, `bool[]`, `byte[]` and normalized maps.
 
-Snapshots contain the available identity, parent, name, timing, status, attributes, events, links, resource and scope at that stage. Unknown data stays unset. A `SpanSnapshot` is the SDK-owned span record itself, not a per-callback copy. Copy from the `Activity` once for the request stage and once at final completion, then reuse the final record for response sampling, redaction, body masking and export. Read-only interfaces state intent only: the SDK does not defend against callbacks that cast and mutate values, or that retain a snapshot and observe later enrichment. Preserve available metadata without fabricating information that public OTel APIs do not expose.
+Snapshots contain the available identity, parent, name, timing, status, attributes, events, links, resource and scope at that stage. Unknown data stays unset. A `SpanSnapshot` is the SDK-owned span record itself, not a per-callback copy. Copy from the `Activity` once for the request stage when `SampleOnRequest` is configured and once at final completion, then reuse the final record for response sampling, redaction, body masking and export. Read-only interfaces state intent only: the SDK does not defend against callbacks that cast and mutate values, or that retain a snapshot and observe later enrichment. Preserve available metadata without fabricating information that public OTel APIs do not expose.
 
-For logs, normalize and detach values before the mask, so the mask sees exactly what will be exported, then buffer the accepted `LogRecordSnapshot` without another copy. Convert any values the callback added, and truncate strings, when the batch worker encodes the record. Truncate to 2,048 UTF-16 code units (`string.Length`), matching the JavaScript SDK; a split surrogate pair is harmless because Google.Protobuf encodes with replacement. Apply this to scalar string bodies/attribute values, including values converted to strings; non-string array/map attributes pass through untruncated.
+For logs, normalize and detach values before the mask, so the mask sees the values that will be exported before truncation, then buffer the accepted `LogRecordSnapshot` without another copy. Convert any values the callback added, and truncate strings, when the batch worker encodes the record. Truncate to 2,048 UTF-16 code units (`string.Length`), matching the JavaScript SDK; a split surrogate pair is harmless because Google.Protobuf encodes with replacement. Apply this to scalar string bodies/attribute values, including values converted to strings; non-string array/map attributes pass through untruncated.
 
 ### Request-thread versus export-thread work
 
@@ -314,7 +280,7 @@ For each associated application record:
 1. Resolve SERVER identity through the activity association while preserving the emitting child span ID.
 2. Render the message for Apitally once, copy supported structured values and flatten scopes. Explicit entry fields win over inner scopes, then outer scopes. Omit unstructured scope labels and `{OriginalFormat}`.
 3. Add copied `exception.type`, `exception.message` and `exception.stacktrace` attributes; the original exception never reaches the callback.
-4. Build a `LogRecordSnapshot` with read-only `Timestamp`, `CategoryName`, `LogLevel` and `EventId`, and mutable `string? Body` (the canonical rendered message) and `Dictionary<string, object?> Attributes` (keys are unique after scope precedence). Its constructor is internal. Invoke `MaskLogRecord` synchronously on the logging thread. Null, exceptions or a different instance drop the log.
+4. Build a `LogRecordSnapshot` with read-only `Timestamp`, `CategoryName`, `LogLevel` and `EventId`, and mutable `string? Body` (the canonical rendered message) and `Dictionary<string, object?> Attributes` (keys are unique after scope precedence). Its constructor is internal. Invoke `MaskLogRecord` synchronously on the logging thread. Null, exceptions, a different instance or a null/empty `Body` after the callback drop the log; the server drops empty-body records at ingest.
 5. Buffer the accepted instance itself in a `LogSnapshot` that references it; do not copy it again. `OtlpLogMapper` converts callback-added values and truncates application strings during encoding. Only accepted output supplies message/exception content; never restore removed values from original input. The SDK does not defend against callbacks that retain and later mutate the record.
 6. Add trace context and `apitally.request.server_span_id` to the `LogSnapshot` after masking. The callback never sees or edits linkage, so masking cannot unlink or reassign a record; the SDK-set linkage overwrites a same-named callback attribute.
 
@@ -324,13 +290,13 @@ For each associated application record:
 - Errors: two short-lock dictionaries with at most 100 validation and 100 server groups. Normalize/truncate before keying; increment existing groups at capacity, silently ignore new groups, and keep positive counts within UInt32. Atomically swap maps immediately before ordinary/final log flush, then emit structured object bodies outside the lock.
 - Consumers: normalize each submitted identifier/name/group/attribute patch per current spec before change detection. The string-or-null dictionary API avoids coercion rules. Retain the first ten valid attributes, including deletions; reject invalid/NUL-containing entries without discarding other valid fields. Emit only metadata-bearing updates from monitored request state, independently of recording, trace decisions and log capture, including unmatched requests but not websockets.
 
-`ConsumerUpdates` uses a dictionary plus linked list for the specified 10,000-identifier LRU cache. Hash canonical normalized submitted payloads with stable key ordering and equivalent null/empty deletions; store hashes, not merged consumer state. Update the cache when handing the structured event to the log batch processor. It is distinct from the FIFO span-ID cache because the contracts differ; do not build a generic cache framework or a separate consumer delivery queue.
+`ConsumerUpdates` uses a dictionary plus linked list for the specified 10,000-identifier LRU cache. Hash canonical normalized submitted payloads with stable key ordering and equivalent null/empty deletions; store hashes, not merged consumer state. Update the cache when handing the structured event to the log batch processor. Do not build a generic cache framework or a separate consumer delivery queue.
 
 ## 9. Native metrics
 
 `ApitallyMetrics` owns a scoped `Meter` and private provider named `apitally`. Apply the POC's scope filter so this provider drops foreign meter instances. Do not pass it to ASP.NET instrumentation or replace application metrics registration; document that another unfiltered user meter provider can still observe instruments process-wide.
 
-- Record the three request histograms at final transport completion, independent of activities, passing dimensions as a `TagList`. Use the same method, parameterized route, status, optional consumer, scheme and 5xx `error.type` tuple for duration and known sizes.
+- Record the three request histograms at final transport completion, independent of activities, passing dimensions as a `TagList`. Skip `OPTIONS`, websockets and unmatched routes; excluded and sampled-out requests are still recorded. Use the same method, parameterized route, status, optional consumer, scheme and 5xx `error.type` tuple for duration and known sizes.
 - Use histogram-specific `Base2ExponentialBucketHistogramConfiguration` views, delta temporality, `MaxScale = 3` and native inactive-series reclamation. Preserve the accepted wire scale range; validate measured value ranges without implementing custom aggregation/downscaling.
 - Use a non-periodic reader. The export worker performs ordinary collections; terminal reader `Shutdown(Timeout.Infinite)` performs the final collection in the cleanup task before spool sealing. Its one-shot shutdown guard prevents another collection during provider disposal. Map/encode metric points synchronously inside the exporter before reusable native storage is released.
 - Measure startup allocation, active memory and collection time for representative route/status/consumer cardinalities, comparing candidate fixed limits such as 10,000, 20,000 and 50,000. Select and document one internal limit before release; the POC's two-point limit and OTel's default are not product decisions.
@@ -341,7 +307,7 @@ For each associated application record:
 
 ### Stock intake and safe spool closure
 
-Use two small subclasses of `BatchExportProcessor<T>` for owned span/log entries, initially with explicit queue size 2,048, batch size 512 and 1,000 ms delay. Pass all remaining constructor settings explicitly and qualify memory/throughput before fixing release values. User OTel batch environment variables do not tune these processors.
+Use one generic `ApitallyBatchProcessor<T>` subclass of `BatchExportProcessor<T>`, instantiated once for owned span entries and once for owned log entries, initially with explicit queue size 2,048, batch size 512 and 1,000 ms delay. Pass all remaining constructor settings explicitly and qualify memory/throughput before fixing release values. User OTel batch environment variables do not tune these processors.
 
 Resolve [review finding R4](design-review.md#r4-spool-closure-needs-completed-export-not-only-a-successful-flush) with spool synchronization and terminal worker completion, rather than another queue or acknowledgement protocol:
 
@@ -351,7 +317,7 @@ Resolve [review finding R4](design-review.md#r4-spool-closure-needs-completed-ex
 - In the final cycle, stop producers, emit final internal events while budget remains and call stock terminal `Shutdown(Timeout.Infinite)` in the cleanup task before sealing remaining files. This joins the batch worker; `Shutdown(0)` can return true without joining, and a finite timeout cannot be retried to obtain a later join. Do not use standalone `Dispose` as a drain.
 - Establish the cleanup task before any cancellable wait, even if the host token is already canceled. The host token cancels awaiting that task and further delivery, not its scheduling or terminal shutdown. The task retains ownership of resource disposal until existing synchronous work returns, as described below.
 
-Prove these rules with production exporters in the stage-3 integrated tests: encoding overlapping rotation and a blocked append still produce complete, decodable files, and a write failure discards only the current file. Do not test stock queue overflow.
+Prove these rules with production exporters in integrated tests: encoding overlapping rotation and a blocked append still produce complete, decodable files, and a write failure discards only the current file. Do not test stock queue overflow.
 
 ### Encoding and storage
 
@@ -366,6 +332,7 @@ Build bounded protobuf requests, starting with at most 32 records per chunk and 
 | Concern | Implementation rule |
 | --- | --- |
 | Storage selection | Probe temp storage at construction; choose file streams or memory streams once. Warn once on fallback. |
+| File permissions | On non-Windows, create probe and spool files with `FileMode.CreateNew` and `UnixCreateMode = UserRead \| UserWrite` (`0600`), matching the Python and JavaScript SDKs; the .NET default is `0666` before umask. Windows `%TEMP%` is already per-user. |
 | File rotation | Check 4,000,000 raw-byte limit before append. At send time rotate a signal's current file only if that signal has no closed backlog. |
 | Storage bounds | Account compressed current and closed storage: 50 MB disk or 10 MB memory. Evict oldest closed non-metrics first, then metrics. If open storage alone needs reclamation, close a current file under the same lock so the absolute bound remains enforceable. |
 | Write failure | Discard the affected current file, deduplicate warnings until recovery; keep the selected storage mode. |
@@ -398,21 +365,23 @@ Use `IHostedLifecycleService.StoppedAsync` as the proposed final phase after ser
 
 Host cancellation, including cancellation already present on entry, only ends the host's wait and prevents new POSTs; exporters and the spool have no separate abandoned state. Drain, sealing and disposal finish in the cleanup task in the background, or end with the process. Orphaned spool files are not sent by later processes, so nothing is gained by discarding local work early. Cancellation cannot interrupt an already-running synchronous user mask callback or filesystem call, so resources stay alive until that work returns rather than being disposed underneath it.
 
-The host's shutdown budget takes precedence over completing cleanup before returning. Cleanup is best effort while the process remains alive: a callback that never returns can retain its resources until process exit. The one-off cleanup task adds neither a delivery worker nor an extra export window. Validate through the stage-3 integrated tests that shutdown with an already-canceled token returns promptly without throwing, and that an idle host still delivers the uptime gauge in the final cycle.
+The host's shutdown budget takes precedence over completing cleanup before returning. Cleanup is best effort while the process remains alive: a callback that never returns can retain its resources until process exit. The one-off cleanup task adds neither a delivery worker nor an extra export window. Validate through integrated tests that shutdown with an already-canceled token returns promptly without throwing, and that an idle host still delivers the uptime gauge in the final cycle.
 
 ## 11. Implementation sequence and acceptance gates
 
 Implement small vertical slices on `v1`, keeping each stage buildable. Tests use the production classes rather than reimplementing their algorithms.
 
-| Stage | Work | Completion evidence |
-| --- | --- | --- |
-| 1. Establish the v1 foundation | Preserve the v0 reference at `65e25ed13e15c6d6b77125749eba5cece6aa008f` in a detached sibling worktree after approval. Reconcile the current shared consumer contract. Update project targets/dependencies and build/test CI together, explicitly installing the supported SDKs/runtimes and configuring the 8/9/10 matrix. Implement public options/helpers, frozen configuration, common value ownership and internal protobuf generation. Replace legacy components as their v1 replacements land. | CI restores/builds the net8 package and 8/9/10 test applications with declared toolchains and runs the available production-linked tests across that runtime matrix. Configuration precedence, callback order and the documented value mapping pass. Internal generated types do not leak into the public API. |
-| 2. Prove the integrated request path | Implement preparation/activation, the `IServiceCollection` entry point in both hosting styles, provider ownership, suppression, request associations, snapshots, minimal log capture and helpers. Add two-completion release. | Real first requests, nested/explicit-parent/outgoing activities, both provider orders and external DI instance export exact counts/IDs. No duplicate SERVER spans or changed user exports; TestServer is inactive; sampling and concurrent/keep-alive isolation pass. |
-| 3. Complete delivery and lifetime ownership | Implement owned batching, synchronized file closure, unconditional cleanup ownership and terminal batch/metric-reader shutdown, OTLP mapping, file/memory spool, worker/HTTP and final cutoff. Begin with small real span/log payloads and native metric collection. | R4 integrated tests pass: encoding overlapping rotation and blocked appends preserve complete files, and write failures discard only the current file. Shutdown with an already-canceled token returns promptly. An idle host delivers the uptime gauge in the final cycle. Physical receiver decodes all three signals. |
-| 4. Complete transport and privacy | Adapt bounded stream/pipe observation, final route/status/size metadata, headers, body processing, native file omission and exception/validation adapters. Add sampling-independent error aggregation. | Client sees unchanged streaming/compression; complete allowed bodies redact correctly; known partial captures are absent. Sizes agree across spans/metrics. Typed and fallback validation, final-500 rules and user-export privacy pass. |
-| 5. Complete logs and internal events | Finish log-mask normalization, scopes, canonical messages, exception attributes, startup metadata and consumer update cache/events. | Exact decoded application/internal output, masks seeing exactly the exported values, and scope precedence pass; internal object bodies remain objects and startup remains a string. Consumers/errors work without recorded spans and with application logs disabled. |
-| 6. Qualify metrics and resource bounds | Finish native delta histograms/process gauges; measure fixed cardinality and queue settings. Exercise sustained consumer churn and spool pressure. | Matching duration/size dimensions, independent delta intervals, overflow omission/warning, reclamation and idle liveness pass. Record the selected constants and the measurements that chose them. |
-| 7. Validate the package and publish readiness | Add the sibling harness adapter/app/variants; run real ingestion. Update README, migration guide and publishing workflows; remove remaining legacy-only code/tests/dependencies. | net8/9/10 matrix, loopback OTLP receiver and proxy-binding tests, backend assertions and clean packed-package consumers pass. No Hub code remains in the v1 package. Release starts as an explicitly approved prerelease. |
+| Stage | Work |
+| --- | --- |
+| 1. Establish the v1 foundation | Push a `v0` branch at `65e25ed13e15c6d6b77125749eba5cece6aa008f` before `v1` replaces `main`. Update project targets/dependencies and build/test CI together, explicitly installing the supported SDKs/runtimes and configuring the 8/9/10 matrix. Implement public options/helpers, frozen configuration, common value ownership and internal protobuf generation; generated protobuf types stay internal. Replace legacy components as their v1 replacements land. |
+| 2. Prove the integrated request path | Implement preparation/activation, the `IServiceCollection` entry point in both hosting styles, provider ownership, suppression, request associations, snapshots, minimal log capture and helpers. Add two-completion release. |
+| 3. Complete delivery and lifetime ownership | Implement owned batching, synchronized file closure, unconditional cleanup ownership and terminal batch/metric-reader shutdown, OTLP mapping, file/memory spool, worker/HTTP and final cutoff. Begin with small real span/log payloads and native metric collection. |
+| 4. Complete transport and privacy | Adapt bounded stream/pipe observation, final route/status/size metadata, headers, body processing, native file omission and exception/validation adapters. Add sampling-independent error aggregation. |
+| 5. Complete logs and internal events | Finish log-mask normalization, scopes, canonical messages, exception attributes, startup metadata and consumer update cache/events. |
+| 6. Qualify metrics and resource bounds | Finish native delta histograms/process gauges; measure fixed cardinality and queue settings. Exercise sustained consumer churn and spool pressure. |
+| 7. Validate the package and publish readiness | Add the sibling harness adapter/app/variants; run real ingestion and assert it on the backend. Package-consumer validation belongs to the harness; this repository has no packed-package tests. Update README, migration guide and publishing workflows; remove remaining legacy-only code/tests/dependencies. |
+
+A stage is complete when it builds on the 8/9/10 matrix and the section 12 tests for its modules pass.
 
 Port knowledge, not old architecture: retain useful route enumeration, recursive masking, process measurement and test scenarios after contract review. Replace the Hub client/models, custom counters/histograms/activity collector, whole-response buffering, persistent UUID/lock and independent forwarding-header interpretation. Do not delete v0 source before preserving its reference or treat this plan as deletion approval.
 
@@ -430,29 +399,9 @@ Cover these contract groups without multiplying every case across every hosting 
 - Matched/unmatched, OPTIONS, websocket, excluded and sampled-out requests with exact independent metric/error/consumer eligibility.
 - Request stream/reader and response stream/writer paths, app-consumed-only request capture, allowed content types, size boundaries, bounded compression, known incomplete bodies, handled errors, unchanged native file delivery/mixed omission and incidental streamed files.
 - Value mapping for scalars, arrays, dictionaries and string fallback; detachment of arrays before callbacks; conversion of callback-added log values; stage-appropriate callback snapshot contents, other logging providers, scopes and exception objects left unchanged, user-export privacy, callback-proof linkage, scope precedence, 2,048-unit truncation and canonical Body/exception output.
-- Validation supported shapes/localized messages, unknown-shape omission, first exception and final-500 rules, aggregate identities/limits/atomic drains, native event names and startup config exclusions.
+- Validation supported shapes/localized messages, unknown-shape omission, first exception and final-500 rules, aggregate identities/limits/atomic drains, native event names, startup string body with config exclusions, and structured aggregate and consumer bodies.
 - Consumer partial patches/deletions, order-independent hashing, per-update entry limits, bounded LRU and sampling/log-capture independence.
 - Delta exponential histograms, shared size tuple, scope isolation, overflow omission, reclamation, paired gauges and idle uptime.
-- Exact wire size splitting and oversized-record loss, continuous gzip merging for each signal, byte-identical retries, headers/intervals, proxy binding, suppression, file/memory retention/eviction/write failures, and completed-write shutdown.
+- Exact wire size splitting and oversized-record loss, continuous gzip merging for each signal, byte-identical retries, headers/intervals, proxy binding, suppression, file/memory retention/eviction/write failures, complete files under overlapping rotation and blocked appends, completed-write shutdown, and prompt return with an already-canceled shutdown token.
 
 Keep global environment/listener cleanup in shared fixtures, and serialize or isolate tests that alter process-global state. Use `FakeTimeProvider` from `Microsoft.Extensions.TimeProvider.Testing` for retention/scheduling tests, and `FakeLogger`/`FakeLogCollector` and `MetricCollector<T>` from `Microsoft.Extensions.Diagnostics.Testing` for SDK diagnostics and metric assertions; do not write custom clocks or collectors or mock Apitally's classes. Ordinary CI must not send to the production endpoint. Permanent tests assert SDK behavior, not every upstream fact investigated in the POCs.
-
-### Measured performance
-
-Measure only to choose a constant or to catch unbounded growth; there is no standalone benchmark framework and no generic latency/GC/CPU/RSS reporting gate.
-
-- Select the fixed metric capacity from startup allocation, active memory and collection time, as described in section 9.
-- Select the batch queue size, batch size and delay from memory and throughput under concurrent requests.
-- Run one bounded soak with sustained traffic, high consumer churn and an export outage, and confirm retained memory is stable after traffic stops.
-
-Streaming/backpressure, body work outside request handling, no per-request background task and bounded buffers/spool are verified by the integration tests, not by measurements.
-
-### Release checklist
-
-- [ ] Resolve the consumer-contract baseline and approve public names and value semantics.
-- [ ] Close the integrated provider, startup-filter activation and R4 shutdown/write-completion gates on all supported runtimes.
-- [ ] Select fixed metric capacity and batch settings with measurements.
-- [ ] Pass real OTLP ingestion through the sibling harness; an HTTP 200 alone does not establish valid telemetry.
-- [ ] Validate the packed NuGet artifact from clean net8/9/10 applications and record the tested dependency floor.
-- [ ] Document write-token setup, enabled-by-default logs, keep-probability callbacks, safe masking, consumer patches, native-file omission, TestServer suppression and standard OTel customization/external-provider ownership.
-- [ ] Leave production implementation unstarted until this plan is approved. When fully implemented, set `implemented_at` as the final change to this plan.
