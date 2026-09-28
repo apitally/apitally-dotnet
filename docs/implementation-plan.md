@@ -405,13 +405,3 @@ Cover these contract groups without multiplying every case across every hosting 
 - Exact wire size splitting and oversized-record loss, continuous gzip merging for each signal, byte-identical retries, headers/intervals, proxy binding, suppression, file/memory retention/eviction/write failures, complete files under overlapping rotation and blocked appends, completed-write shutdown, and prompt return with an already-canceled shutdown token.
 
 Keep global environment/listener cleanup in shared fixtures, and serialize or isolate tests that alter process-global state. Use `FakeTimeProvider` from `Microsoft.Extensions.TimeProvider.Testing` for retention/scheduling tests, and `FakeLogger`/`FakeLogCollector` and `MetricCollector<T>` from `Microsoft.Extensions.Diagnostics.Testing` for SDK diagnostics and metric assertions; do not write custom clocks or collectors or mock Apitally's classes. Ordinary CI must not send to the production endpoint. Permanent tests assert SDK behavior, not every upstream fact investigated in the POCs.
-
-### Measured performance
-
-Measure only to choose a constant or to catch unbounded growth; there is no standalone benchmark framework and no generic latency/GC/CPU/RSS reporting gate.
-
-- Select the fixed metric capacity from startup allocation, active memory and collection time, as described in section 9.
-- Select the batch queue size, batch size and delay from memory and throughput under concurrent requests.
-- Run one bounded soak with sustained traffic, high consumer churn and an export outage, and confirm retained memory is stable after traffic stops.
-
-Streaming/backpressure, requests not waiting on body processing, and bounded buffers/spool are verified by the integration tests, not by measurements.
