@@ -24,13 +24,13 @@ Preserve the confirmed boundaries: .NET 8/9/10, modern hosting and Generic Host 
 
 ### Contract baseline
 
-Use the shared [specification](../../cloud/docs/sdks/spec.md) for wire contracts and [design](../../cloud/docs/sdks/design.md) for shared behavior, with the explicit .NET adaptations taking precedence over shared mechanisms. This plan was prepared against .NET commit `23f4dd01855a817af076418bae64fce8c5663a98` and cloud checkout `9ff1af09`.
+Use the shared [specification](../../cloud/docs/sdks/spec.md) for wire contracts and [design](../../cloud/docs/sdks/design.md) for shared behavior, with the explicit .NET adaptations taking precedence over shared mechanisms. This plan was last checked against cloud commit `f98007ae`.
 
 ## 2. Project and dependency choices
 
 - Keep one production project, `src/Apitally/Apitally.csproj`, targeting `net8.0` with C# 12, nullable reference types and the ASP.NET Core framework reference. A single net8 assembly can serve the supported runtimes; current production requirements do not justify three target frameworks.
 - Retain the existing solution, xUnit, formatting, coverage and package-publishing infrastructure. Multi-target the test project and test application to `net8.0;net9.0;net10.0`. Use conditional compilation only in test fixtures for genuinely version-specific features, such as .NET 10 Minimal API validation.
-- Start with OTel SDK and hosting packages at the tested 1.19.0 minimum, and the tested ASP.NET Core and HTTP instrumentation versions. Qualify the entire resolved graph, including `System.Diagnostics.DiagnosticSource`, rather than equating the target framework with the loaded dependency versions.
+- Start with OTel SDK and hosting packages at the tested 1.19.0 minimum, and ASP.NET Core and HTTP instrumentation 1.19.0. Qualify the entire resolved graph, including `System.Diagnostics.DiagnosticSource`, rather than equating the target framework with the loaded dependency versions.
 - Use `Google.Protobuf` and vendored official OTLP v1.11.0 schemas. Generate internal message classes at build time with build-only `Grpc.Tools`, with gRPC service generation disabled. Keep schema provenance, hashes and license in the repository; generated files belong in `obj/`, not the source tree or public API.
 - Use framework `System.Text.Json`, compression, HTTP and process APIs. Remove legacy-only dependencies, including the Hub retry library. There is no stock OTLP network exporter in the production delivery path.
 - Keep selected versions explicit and record the qualified dependency graph. Do not add older-OTel compatibility branches or a new dependency-management framework for one library.
@@ -147,28 +147,94 @@ The shared harness requires separately reviewed changes in `../sdk-tests`: a `Do
 
 ## 4. Public API and configuration
 
-### Proposed API
+### Public API
 
-Provide a single public entry point, `IServiceCollection AddApitally(this IServiceCollection services, Action<ApitallyOptions>? configure = null)`, returning the service collection. Document it as `builder.Services.AddApitally()` for modern hosting and `services.AddApitally()` in `Startup.ConfigureServices`. There are no host-builder overloads and no second middleware call. Everything it registers is an ordinary service registration: options, the logger provider, the startup filter, the hosted service, the tracing contribution and `IApitally`. Use `TryAdd*` and `TryAddEnumerable` so repeated calls register each SDK service once.
-
-Keep `IApitally` small:
+This is the complete public surface, approved on 2026-09-28, all in namespace `Apitally`. Every other type is internal.
 
 ```csharp
-void SetConsumer(
-    string identifier,
-    string? name = null,
-    string? group = null,
-    IReadOnlyDictionary<string, string?>? attributes = null);
-void SetRequestAttribute(string name, object? value);
-void CaptureException(Exception exception);
-Activity? StartActivity(string name);
+public static class ApitallyExtensions
+{
+    public static IServiceCollection AddApitally(
+        this IServiceCollection services,
+        Action<ApitallyOptions>? configure = null);
+}
+
+public interface IApitally
+{
+    void SetConsumer(
+        string identifier,
+        string? name = null,
+        string? group = null,
+        IReadOnlyDictionary<string, string?>? attributes = null);
+    void SetRequestAttribute(string key, object? value);
+    void CaptureException(Exception exception);
+    Activity? StartActivity(string name);
+}
+
+public sealed class ApitallyOptions
+{
+    public string? WriteToken { get; set; }
+    public string Env { get; set; } = "dev";
+    public string? AppVersion { get; set; }
+    public bool Disabled { get; set; }
+    public bool CaptureLogs { get; set; } = true;
+    public bool CaptureRequestHeaders { get; set; }
+    public bool CaptureRequestBody { get; set; }
+    public bool CaptureResponseHeaders { get; set; } = true;
+    public bool CaptureResponseBody { get; set; }
+    public double SampleRate { get; set; } = 1.0;
+    public Func<SpanSnapshot, double?>? SampleOnRequest { get; set; }
+    public Func<SpanSnapshot, double?>? SampleOnResponse { get; set; }
+    public Func<SpanSnapshot, byte[], byte[]?>? MaskRequestBody { get; set; }
+    public Func<SpanSnapshot, byte[], byte[]?>? MaskResponseBody { get; set; }
+    public Func<LogRecordSnapshot, LogRecordSnapshot?>? MaskLogRecord { get; set; }
+    public List<string> MaskQueryParams { get; set; } = [];
+    public List<string> MaskHeaders { get; set; } = [];
+    public List<string> MaskBodyFields { get; set; } = [];
+    public List<string> ExcludePaths { get; set; } = [];
+}
+
+public sealed class SpanSnapshot
+{
+    internal SpanSnapshot(/* owned values */);
+    public ActivityTraceId TraceId { get; }
+    public ActivitySpanId SpanId { get; }
+    public ActivitySpanId ParentSpanId { get; }
+    public ActivityTraceFlags TraceFlags { get; }
+    public string? TraceStateString { get; }
+    public string DisplayName { get; }
+    public ActivityKind Kind { get; }
+    public DateTime StartTimeUtc { get; }
+    public TimeSpan? Duration { get; }
+    public ActivityStatusCode Status { get; }
+    public string? StatusDescription { get; }
+    public IReadOnlyDictionary<string, object?> Attributes { get; }
+    public IReadOnlyList<ActivityEvent> Events { get; }
+    public IReadOnlyList<ActivityLink> Links { get; }
+    public Resource Resource { get; }
+    public string ScopeName { get; }
+    public string? ScopeVersion { get; }
+}
+
+public sealed class LogRecordSnapshot
+{
+    internal LogRecordSnapshot(/* owned values */);
+    public DateTime Timestamp { get; }
+    public string CategoryName { get; }
+    public LogLevel LogLevel { get; }
+    public EventId EventId { get; }
+    public string? Body { get; set; }
+    public Dictionary<string, object?> Attributes { get; }
+}
 ```
+
+`SpanSnapshot` members use the names of the corresponding `Activity` properties, so users read them as they would an activity; `Duration` is null until the span has ended. `LogRecordSnapshot.Timestamp` is UTC, as on OTel's `LogRecord`. The option names are the shared option names in .NET casing; there is no exclude-user-agent option because the shared user-agent list is not configurable.
+
+`AddApitally` returns the service collection. Document it as `builder.Services.AddApitally()` for modern hosting and `services.AddApitally()` in `Startup.ConfigureServices`. There are no host-builder overloads and no second middleware call. Everything it registers is an ordinary service registration: options, the logger provider, the startup filter, the hosted service, the tracing contribution and `IApitally`. Use `TryAdd*` and `TryAddEnumerable` so repeated calls register each SDK service once.
 
 `StartActivity` creates an INTERNAL activity from `apitally.otel`; callers use native activity tags and `using`. The singleton implementation resolves the current request through `IHttpContextAccessor` and its private feature on each call. It never stores a `HttpContext` in the singleton. Helpers are safe no-ops without an active monitored request or when disabled; helper updates target the SERVER handle, not a current child activity.
 
-Use these flat options: `WriteToken`, `Env`, `AppVersion`, `Disabled`, `CaptureLogs`, `CaptureRequestHeaders`, `CaptureRequestBody`, `CaptureResponseHeaders`, `CaptureResponseBody`, `SampleRate`, `SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody`, `MaskResponseBody`, `MaskLogRecord`, `MaskQueryParams`, `MaskHeaders`, `MaskBodyFields`, and `ExcludePaths`.
-
-Sampling delegates are `Func<SpanSnapshot, double?>`; body delegates are `Func<SpanSnapshot, byte[], byte[]?>`; log masking is `Func<LogRecordSnapshot, LogRecordSnapshot?>`. Pattern properties are `List<string>`. Optional strings and delegates are nullable; ordinary booleans and numbers need no assignment-tracking wrappers.
+Ordinary booleans and numbers need no assignment-tracking wrappers: configuration layers apply in order, so an unassigned value keeps the value of the layer below.
 
 ### Resolution
 
@@ -227,7 +293,7 @@ Bound captured payloads and queued detail as specified; do not claim an absolute
 
 Propose these public snapshot representations:
 
-- Native activity IDs, flags, kind and status types; start time and nullable end time; optional status description and trace state.
+- Native activity IDs, flags, kind and status types; start time and nullable duration; optional status description and trace state.
 - Events as `IReadOnlyList<ActivityEvent>`, links as `IReadOnlyList<ActivityLink>`, resource as OTel `Resource`, and scope as `ScopeName` and `ScopeVersion` properties. No Apitally-specific event, link or scope types.
 - Attributes as `IReadOnlyDictionary<string, object?>` over the owned dictionary. Values use the plain CLR types OTel .NET users see on activity tags: scalars, `string[]`, `long[]`, `double[]`, `bool[]`, `byte[]` and normalized maps.
 
@@ -248,7 +314,7 @@ Request-serving work is limited to association, decisions, bounded observation/c
 5. Use callback output directly; it is consumed in this step and only the serialized result is retained. Dropped/throwing masks produce `[REDACTED]`; oversized input, decoded or replacement bodies produce `[BODY_TOO_LARGE]`. Unsupported/failed decompression never passes through original bytes.
 6. A failure of the overall privacy boundary drops that span. No captured payload is ever attached to a live user activity.
 
-Centralize shared names, patterns, content types and limits with their owning modules and verify them against the canonical spec. Do not port the older .NET allowlist or masking rules unchanged. Applicable owned span limits must permit 65,536 characters; inspect/warn about lower user limits only where public APIs expose them. Owned body attributes are added after activity copying and must not be clipped by generic attribute normalization.
+Centralize shared names, patterns, content types and limits with their owning modules and verify them against the canonical spec. Do not port the older .NET allowlist or masking rules unchanged. OTel .NET applies attribute limits only inside its OTLP exporter, so owned span records are never clipped by OTel limits and there is nothing to pin or inspect. Owned body attributes are added after activity copying and must not be clipped by generic attribute normalization.
 
 ## 7. Transport, routes and errors
 
@@ -346,7 +412,7 @@ One asynchronous delivery worker runs ordinary cycles: drain error aggregates be
 
 Resolve a `TimeProvider` from DI when registered, otherwise use `TimeProvider.System`, and pass it to scheduling, spool retention and uptime. Wait with `Task.Delay(delay, timeProvider, token)` and draw jitter from `Random.Shared`.
 
-Freeze endpoint, headers and proxy configuration in `ExportHttpClient`. Use HTTP/protobuf with gzip, bearer token and matching `Apitally-Env` on every POST. Construct one private `HttpClient` over a `SocketsHttpHandler`; do not use `IHttpClientFactory`, because application-wide defaults such as `ConfigureHttpClientDefaults(b => b.AddStandardResilienceHandler())` would add retries beneath the worker's own retry rules. Assign the captured `HttpClient.DefaultProxy` to the handler rather than parsing proxy environment variables: .NET already implements `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`, plus the system proxy on Windows. Verify proxy binding with an injected loopback proxy; do not test .NET's environment parsing or change process-global proxy state. Keep credentials out of diagnostics and do not install a retry handler.
+Freeze endpoint, headers and proxy configuration in `ExportHttpClient`. Every POST sends `Content-Type: application/x-protobuf`, `Content-Encoding: gzip`, the bearer token and the matching `Apitally-Env`. Construct one private `HttpClient` over a `SocketsHttpHandler`; do not use `IHttpClientFactory`, because application-wide defaults such as `ConfigureHttpClientDefaults(b => b.AddStandardResilienceHandler())` would add retries beneath the worker's own retry rules. Assign the captured `HttpClient.DefaultProxy` to the handler rather than parsing proxy environment variables: .NET already implements `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`, plus the system proxy on Windows. Verify proxy binding with an injected loopback proxy; do not test .NET's environment parsing or change process-global proxy state. Keep credentials out of diagnostics and do not install a retry handler.
 
 First attempt is about two seconds after activation. Subsequent cycles wait 15 seconds with +/-10% jitter after the preceding cycle finishes; accept integer server interval adjustments clamped to 5-60 seconds. Ordinary cycles send at most ten files with 0.1-0.5 seconds between sends. Each POST has a ten-second timeout bounded by shutdown cancellation when applicable.
 
