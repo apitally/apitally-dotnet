@@ -1,6 +1,6 @@
 # Implementation plan review, round 6
 
-Date: 2026-09-28. Status: In progress. Findings are being decided one at a time. Production code is unchanged.
+Date: 2026-09-28. Status: Resolved. All findings are decided; B10 was not adopted and the others are folded into the plan and design. Production code is unchanged.
 
 ## Assessment
 
@@ -56,6 +56,8 @@ New evidence since round 3 (T4), which kept these measurements:
 
 **Recommendation:** fix the batch settings at 2,048/512/1,000 ms as release values, matching both SDKs. Choose one metric capacity now and remove both measurement steps.
 
+**Decision (2026-09-28):** adopt. Batch settings are fixed at 2,048/512/1,000 ms. Metric capacity is fixed at 10,000 per request histogram: OTel `core-1.19.0` allocates roughly 100-200 bytes per slot upfront (`AggregatorStore.cs`) and allocates histogram buckets only for active series, so 10,000 costs a few MB and exceeds the 2,000 default used by Python and JavaScript fivefold. Both measurement steps are removed from the plan and design.
+
 ### B2. Validation response-shape fallback
 
 **Where:** design lines 351-357; plan section 7 line 334.
@@ -66,6 +68,8 @@ The fallback adds coverage in two cases only: `TypedResults.ValidationProblem` o
 
 **Recommendation:** remove the fallback and rely on the framework hooks, documenting the two uncovered cases. If it stays, state exactly which buffer it reads from.
 
+**Decision (2026-09-28):** keep the fallback and specify its buffer. The coverage premise was incomplete: `ProblemHttpResult` (`release/8.0`, lines 55-65) applies `CustomizeProblemDetails` only through `IProblemDetailsService`, which only `AddProblemDetails` registers, so without the fallback Minimal API `Results.ValidationProblem` is uncaptured on every runtime. MVC is fully covered by `DefaultProblemDetailsFactory`. The plan now states that the response `BodyCapture` retains up to 50,000 bytes for 400/422 JSON responses regardless of body capture or sampling, parsed only when no hook supplied typed details.
+
 ### B3. Shutdown prose
 
 **Where:** plan section 10 lines 384 and 421-434; design section 4.
@@ -73,6 +77,8 @@ The fallback adds coverage in two cases only: `TypedResults.ValidationProblem` o
 Round 3 kept the mechanism: one cleanup task started with `Task.Run` and awaited with `WaitAsync(token)`. The prose describing it has grown to three passages, with phrases such as "retains ownership of resource disposal until existing synchronous work returns", "resources stay alive until that work returns rather than being disposed underneath it" and "exporters and the spool have no separate abandoned state". An agent reading these may build leases, reference counts or state flags. The agreed mechanism needs none: disposal at the end of one sequential task already runs after any synchronous work.
 
 **Recommendation:** replace the passages with a short ordered sequence and one rule for `DisposeAsync`. The mechanism is unchanged.
+
+**Decision (2026-09-28):** adopt. Plan section 10's shutdown steps now name `Task.Run` and `WaitAsync(cancellationToken)`, drop the "while budget remains" qualifiers except for final delivery ("unless canceled"), and remove the ownership and abandoned-state paragraphs. `TelemetryRuntime.DisposeAsync` does nothing once the cleanup task has started; section 5 references that rule.
 
 ### B4. Request pipe-reader wrapper
 
@@ -83,6 +89,8 @@ The plan wraps both the request stream and `IRequestBodyPipeFeature`, "covering 
 The response side still needs the `IHttpResponseBodyFeature` wrapper, to pass native `SendFileAsync` through unchanged. The request-lifetime (abort) wrapper also stays; see "Candidates not retained".
 
 **Recommendation:** wrap only `Request.Body` on the request side, after confirming this against the transport-completeness POC matrix.
+
+**Decision (2026-09-28):** adopt. IIS and HttpSys do not implement `IRequestBodyPipeFeature`, so the default `RequestBodyPipeFeature` (`release/8.0`, lines 35-39) applies there with the same rule as Kestrel. The existing section 12 request reader-path test confirms the behavior; no POC rerun is needed. The response `IHttpResponseBodyFeature` wrapper stays, because .NET 8 JSON output writes through `BodyWriter`.
 
 ### B5. Legacy HTTP normalization and per-message span filter
 
@@ -97,6 +105,8 @@ Shared design line 189 does require redacting legacy query-bearing attributes, a
 
 **Recommendation:** drop the normalization, URL derivation and per-message filter, and record this as a .NET adaptation. Keep one list of query-bearing attribute keys, stable and legacy, for redaction.
 
+**Decision (2026-09-28):** adopt, with one addition. SignalR on .NET 9+ (`DefaultHubDispatcher.cs`, `release/9.0` and `release/10.0`) clears `Activity.Current` and starts a SERVER activity per hub invocation, linked but not parented to the connection activity, whenever the user enables `Microsoft.AspNetCore.SignalR.Server`. The former "local-root SERVER" rule would treat each invocation as a request. Only the ASP.NET Core hosting activity (`Microsoft.AspNetCore` / `Microsoft.AspNetCore.Hosting.HttpRequestIn`) now starts a request association; other roots drop locally. Both removals are recorded as .NET adaptations in design section 5, and the association tests gain a SignalR invocation case.
+
 ### B6. Empty `OTEL_*` fallback layer
 
 **Where:** design lines 168 and 181; plan section 4 line 243.
@@ -104,6 +114,8 @@ Shared design line 189 does require redacting legacy query-bearing attributes, a
 The precedence lists "semantically equivalent `OTEL_*` fallbacks" as a layer, and the base configure step "applies the applicable `OTEL_*` fallbacks". The shared design's environment table (lines 73-80) has no `OTEL_*` option fallbacks. `OTEL_SDK_DISABLED` is an additive disable control, and `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` flow through the standard resource builder. Python and JavaScript read no other `OTEL_*` variable for options. An agent may invent mappings such as `OTEL_TRACES_SAMPLER_ARG` to `SampleRate`.
 
 **Recommendation:** remove the layer and name the exact variables the base step maps: `APITALLY_WRITE_TOKEN` and `APITALLY_ENV`. `APITALLY_DISABLED`, `OTEL_SDK_DISABLED` and `APITALLY_OTLP_ENDPOINT` keep their existing separate handling.
+
+**Decision (2026-09-28):** adopt. Confirmed that Python (`shared/config.py`) and JavaScript (`src/config.ts`) read only `OTEL_SDK_DISABLED` among `OTEL_*` variables for configuration. The design precedence list and plan section 4 now name the two mapped `APITALLY_*` variables and state that no `OTEL_*` variable maps to an option.
 
 ### B7. Spool file pinning and open-storage reclamation
 
@@ -114,6 +126,8 @@ The precedence lists "semantically equivalent `OTEL_*` fallbacks" as a layer, an
 
 **Recommendation:** match Python. Evict closed files only; read the file before sending and treat a file already evicted after the send as a no-op.
 
+**Decision (2026-09-28):** adopt. Python streams the file during the POST and treats a concurrent eviction as a failed read. In .NET, each send opens its own `FileStream` with `FileShare.Read | FileShare.Delete`, or holds the memory buffer, so eviction does not interrupt it. Plan section 10's storage-bounds and concurrency rows are updated.
+
 ### B8. Map-valued attribute conversion
 
 **Where:** plan section 6 line 298; design section 6 (attribute value list) and the value table at lines 398-410.
@@ -121,6 +135,8 @@ The precedence lists "semantically equivalent `OTEL_*` fallbacks" as a layer, an
 The plan lists "normalized maps" as a snapshot value type, but the design's type list for the snapshot does not include them. The design table documents stock three-level map recursion, while round 2 decided not to copy stock depth quirks. An agent is left to invent a depth and cycle policy.
 
 **Recommendation:** state one rule. For example, dictionaries convert one level deep with scalar and array values, and anything deeper uses the invariant string fallback. Alternatively, all dictionaries use the string fallback.
+
+**Decision (2026-09-28):** one level. A value implementing `IDictionary` becomes an owned `Dictionary<string, object?>` with invariant string keys and scalar or array values; a nested dictionary uses the string fallback. Applied to plan section 6 and design sections 6 and 9.
 
 ### B9. Omitted-versus-explicit sentence
 
@@ -130,6 +146,8 @@ The plan lists "normalized maps" as a snapshot value type, but the design's type
 
 **Recommendation:** replace it with "Layering satisfies the shared absent-versus-default rule: an unassigned value keeps the value of the layer below."
 
+**Decision (2026-09-28):** adopt as worded.
+
 ### B10. Stage 1 modules without consumers
 
 **Where:** plan stage 1 (line 446); layout entry for `SdkDiagnostics` ("SDK logging and warning deduplication").
@@ -138,6 +156,8 @@ Stage 1 builds `AttributeValues` and `SdkDiagnostics`, but nothing converts valu
 
 **Recommendation:** create both in the first stage that uses them, and state that deduplication is a flag at each warning site.
 
+**Decision (2026-09-28):** not adopted; stage 1 stays as written. `SdkDiagnostics` is used in stage 1 anyway, because `RuntimeConfiguration` logs invalid-token and invalid-regex errors, and the general rule to add members in the stage that first uses them already applies.
+
 ### B11. Exception event equivalence
 
 **Where:** plan section 7 line 336.
@@ -145,6 +165,8 @@ Stage 1 builds `AttributeValues` and `SdkDiagnostics`, but nothing converts valu
 "Add at most the first SDK exception event to the SERVER representation without duplicating an already-observed equivalent instrumentation event" leaves "equivalent" undefined, which invites comparing type, message and stack.
 
 **Recommendation:** "Skip the SDK exception event if the SERVER activity already has an `exception` event."
+
+**Decision (2026-09-28):** adopt. Applied to plan section 7 and design section 8.
 
 ### B12. Guidance that no code acts on
 
@@ -155,6 +177,8 @@ Stage 1 builds `AttributeValues` and `SdkDiagnostics`, but nothing converts valu
 
 **Recommendation:** delete the first two, define or delete the third, and reword the fourth to "Keep each shared name, pattern and limit in the module that uses it."
 
+**Decision (2026-09-28):** adopt; delete the third. Declared minimum versions plus CI on the .NET 8/9/10 matrix qualify the resolved graph, so no separate artifact is recorded. The plan keeps "qualify the entire resolved graph" in section 2.
+
 ### B13. Repeated decisions and POC details in the design
 
 **Where:** design top table, section bodies, and section 15 table.
@@ -162,6 +186,8 @@ Stage 1 builds `AttributeValues` and `SdkDiagnostics`, but nothing converts valu
 Most decisions appear three times with slightly different wording, and section 15 repeats a row ("Log callback type" and "Log-mask record type"). POC details such as assertion counts and the 1.3-second abort timing sit next to requirements. Agents try to satisfy every restatement and may turn POC observations into tests of upstream behavior.
 
 **Recommendation:** add one line to the plan's scope section: "This plan is the implementation authority; design.md records rationale and evidence." Optionally drop the section 15 table.
+
+**Decision (2026-09-28):** add the authority line to plan section 1 and merge the duplicate section 15 rows. Keep the section 15 table as the register of departures from the shared design.
 
 ## Keep these
 

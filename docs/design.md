@@ -36,7 +36,7 @@ This document distinguishes:
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
-| Metric capacity | Use a generous, internally selected fixed capacity through native OTel views and reclamation. Select the number after memory and collection-cost measurements; no public capacity setting or runtime resizing. |
+| Metric capacity | A fixed capacity of 10,000 per request histogram through native OTel views and reclamation; no public capacity setting or runtime resizing. |
 | Individually oversized records | Split ordinary batches to fit the spool cap. Drop an indivisible encoded record that still cannot fit, with a deduplicated actionable warning, and continue with other records. |
 | Span-based callbacks | All request/response sampling and body-masking callbacks receive the same complete span snapshot type, populated for the callback's stage. It exposes read-only interfaces and native .NET/OTel types but is the SDK-owned record itself, with no isolation guarantee. |
 | Sampling callback result | Both sampling callbacks return `double?`: a keep probability in `[0, 1]`, or `null` to abstain. |
@@ -82,7 +82,7 @@ Log capture becoming enabled by default must be called out in the migration guid
 
 **Confirmed dependency policy:** use OTel SDK 1.19.0, the tested baseline, as the minimum for v1 and qualify it through integrated testing. Document that applications with older OpenTelemetry dependencies may need to upgrade them. The initial release will not introduce compatibility paths for older OTel SDK releases. This leaves the .NET 8/9/10 runtime support unchanged; a selected dependency baseline is not evidence that the complete SDK integration already works.
 
-**Confirmed:** one `net8.0` package assembly built with C# 12 serves all supported runtimes; tests run on .NET 8/9/10. The qualified dependency graph is recorded in plan stage 8.
+**Confirmed:** one `net8.0` package assembly built with C# 12 serves all supported runtimes; tests run on .NET 8/9/10.
 
 ## 2. Integration with existing OpenTelemetry setups
 
@@ -106,7 +106,6 @@ When the application owns tracing:
 - Its sampler governs recorded request detail. Metrics and eligible error capture remain independent.
 - Reuse its request activities and adapt to existing instrumentation without duplicate SERVER spans.
 - Keep the default outbound-instrumentation decision scoped to Apitally-owned tracing.
-- Inspect sampler settings only through available supported APIs. A lack of introspection is not itself a warning condition.
 - Do not dispose the user's provider during Apitally shutdown.
 
 **POC evidence:** the [provider experiment](../pocs/provider-registration/README.md) preserves explicit and implicit user sampling in both DI registration orders by contributing configuration without enabling a host provider itself. At startup-filter construction it resolves an enabled user provider or constructs a private owned fallback. This also captures a request issued before `ApplicationStarted`. Repeated same-name ASP.NET instrumentation registration is deduplicated in the tested version. The fallback does not apply host tracing callbacks that were registered without enabling a provider.
@@ -164,11 +163,12 @@ Precedence, highest first:
 
 1. Values explicitly assigned through code options.
 2. Values present in the `Apitally` configuration section, treated as setup options.
-3. Shared `APITALLY_*` environment-variable fallbacks.
-4. Semantically equivalent `OTEL_*` fallbacks allowed by the shared design.
-5. Apitally defaults.
+3. `APITALLY_WRITE_TOKEN` and `APITALLY_ENV` environment-variable fallbacks.
+4. Apitally defaults.
 
-An omitted value must remain distinguishable from an explicit `false`, `0`, or `dev`. The application configuration providers resolve precedence within the section; Apitally resolves precedence between the layers above.
+No `OTEL_*` variable maps to an option, matching the Python and JavaScript SDKs. `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` apply through the standard resource builder.
+
+Layering satisfies the shared absent-versus-default rule: an unassigned value keeps the value of the layer below. The application configuration providers resolve precedence within the section; Apitally resolves precedence between the layers above.
 
 The SDK is disabled when the resolved `Disabled` option is true, or either `APITALLY_DISABLED` or `OTEL_SDK_DISABLED` is truthy. A code-level `false` cannot override those environment variables. Shared truthy values are `1`, `true`, and `yes`, ignoring case and surrounding whitespace.
 
@@ -178,7 +178,7 @@ The write token must match `apt_` followed by 24 alphanumeric characters. Missin
 
 ### Options and immutability
 
-**Confirmed:** code configuration callbacks receive populated options rather than an override-only object. Apply defaults, allowed `OTEL_*` fallbacks, `APITALLY_*` fallbacks and the `Apitally` section in increasing precedence, then run the collected code callbacks in registration order. Each callback sees the populated values and earlier callbacks' changes. Unassigned settings retain their existing values; ordinary boolean and numeric settings do not require nullable properties or assignment tracking to distinguish omission from an explicit value.
+**Confirmed:** code configuration callbacks receive populated options rather than an override-only object. Apply defaults, `APITALLY_*` fallbacks and the `Apitally` section in increasing precedence, then run the collected code callbacks in registration order. Each callback sees the populated values and earlier callbacks' changes. Unassigned settings retain their existing values; ordinary boolean and numeric settings do not require nullable properties or assignment tracking to distinguish omission from an explicit value.
 
 **Confirmed mechanism:** use the standard .NET Options pattern rather than a custom callback store. The first `AddApitally` call registers one base `IConfigureOptions<ApitallyOptions>` that applies the fallbacks and binds the section; each `AddApitally` callback is registered as `PostConfigure`, so the options factory runs callbacks after all configuration steps and in registration order. A direct `services.Configure<ApitallyOptions>(...)` follows standard .NET ordering relative to the base step and is documented as such. Read `IOptions<ApitallyOptions>.Value` once at startup preparation; it is computed once and never reloaded. Apply the additive environment disable controls, validate the resulting settings and copy them into immutable runtime configuration before activation. Later mutations to the options object or configuration sources must not alter the running SDK.
 
@@ -242,9 +242,11 @@ Host lifetime integration is the default direction. Python fork handling and Jav
 
 **Inherited:** Apitally exports request-rooted telemetry only. The SERVER span is the request boundary even when an upstream service supplies a remote parent.
 
-At activity start, classify recording activities by their local parent relationship. A local-root SERVER activity is a candidate request; descendants inherit its request identity; unrelated roots and missing-parent associations are dropped from Apitally's path. A user-provider SERVER activity must be associated with a request observed by this integration before export.
+At activity start, classify recording activities by their local parent relationship. Only the ASP.NET Core hosting activity (source `Microsoft.AspNetCore`, operation `Microsoft.AspNetCore.Hosting.HttpRequestIn`) is a candidate request; descendants inherit its request identity; unrelated roots and missing-parent associations are dropped from Apitally's path. A user-provider SERVER activity must be associated with a request observed by this integration before export.
 
-Apply shared exclusions before request sampling: `OPTIONS`, websocket requests, excluded paths, and excluded user agents. Normalize stable and legacy HTTP attribute forms, deriving missing path/query fields from full URLs where necessary. Keep stable HTTP semantic conventions on Apitally's exported representation without changing the user's original representation.
+Apply shared exclusions before request sampling: `OPTIONS`, websocket requests, excluded paths, and excluded user agents.
+
+**.NET adaptation:** there is no stable/legacy HTTP attribute normalization. Exclusions and final SERVER enrichment read `HttpContext`, and the ASP.NET Core and HttpClient instrumentations at the 1.19.0 minimum emit stable names only. Query redaction still covers stable and legacy query-bearing keys.
 
 **Confirmed:** maintain host-owned request state associated with `HttpContext` through an internal feature, plus an activity-to-request association for processors and log linkage. The state exists even when no recording SERVER activity exists. Its responsibilities are:
 
@@ -256,7 +258,7 @@ Apply shared exclusions before request sampling: `OPTIONS`, websocket requests, 
 
 Consumer identity must survive sampling and be adoptable when set before the SERVER handle is available. Request helpers resolve this state rather than writing indiscriminately to `Activity.Current`.
 
-Suppress framework per-message spans at the source where supported and filter their known kind/name/scope combinations in Apitally's processor. Do not treat websocket messages as HTTP requests.
+**.NET adaptation:** there is no per-message span filter. Stock ASP.NET Core instrumentation emits no per-message websocket spans. SignalR on .NET 9+ starts a parentless SERVER activity per hub invocation when its `Microsoft.AspNetCore.SignalR.Server` source is enabled; the hosting-activity rule above classifies it as an unrelated root, so it drops locally.
 
 Plan section 5 specifies the association mechanics. Isolate concurrent and keep-alive requests without a blanket context reset that destroys legitimate upstream propagation.
 
@@ -296,7 +298,7 @@ Each invocation receives SDK-owned data appropriate to its stage, not a shared l
 
 Python constructs a new instance of its standard OTel `ReadableSpan` class; JavaScript constructs a plain object implementing the standard `ReadableSpan` interface. Both preserve full span metadata while supplying private attributes. The .NET-owned snapshot is an explicit adaptation to preserve that behavior and consistency across .NET callbacks when the standard SDK lacks an equivalent abstraction.
 
-Attributes are an `IReadOnlyDictionary<string, object?>`. Values follow the exporter-aligned normalization selected in section 9 and use the plain CLR types OTel .NET users see on activity tags, including `string[]`, `long[]`, `double[]`, `bool[]` and `byte[]`.
+Attributes are an `IReadOnlyDictionary<string, object?>`. Values follow the exporter-aligned normalization selected in section 9 and use the plain CLR types OTel .NET users see on activity tags, including `string[]`, `long[]`, `double[]`, `bool[]`, `byte[]` and one-level `Dictionary<string, object?>` maps.
 
 Exact members are listed in plan section 4. Log masking operates on a different signal and uses the separate `LogRecordSnapshot` type described in section 9.
 
@@ -318,7 +320,7 @@ The body-mask callback sees the export snapshot after query/header redaction and
 
 Header attributes are list-valued, lowercase, and retain dashes. A masked header exports one `[REDACTED]` value. Redact query strings in request URLs and captured `Location`/`Content-Location` values, including stable/legacy query-bearing attributes on descendant spans and attributes supplied by user instrumentation. Defaults and allowlists come from the shared specification, not a separately maintained .NET variant.
 
-**Confirmed transport direction:** transparently observe ordinary request reads and response writes through ASP.NET Core stream/body features, including `BodyReader` and `BodyWriter`. Preserve streaming and backpressure; read only request bytes the application consumes. Copy leased pipe memory before returning it, and commit capture counts only after successful acceptance. Whole-response buffering is not the implementation.
+**Confirmed transport direction:** transparently observe ordinary request reads and response writes through ASP.NET Core stream/body features, including `BodyReader` and `BodyWriter`. The request side replaces only `Request.Body`: Kestrel's `IRequestBodyPipeFeature` and the default feature used by IIS and HttpSys create `BodyReader` over the current `Request.Body`, so `BodyReader` consumers such as gRPC read through a stream adapter instead of the native pipe. Preserve streaming and backpressure; read only request bytes the application consumes. Copy written response pipe memory into capture at `Advance`, and commit capture counts only after successful acceptance. Whole-response buffering is not the implementation.
 
 **Confirmed completeness boundary:** finalize ordinary capture at transport completion using the observed bytes, an applicable declared length and a simple incomplete flag. Set that flag for directly observed read/write/advance/flush failures and escaped request errors, and for explicit abort or writer-completion errors through existing wrappers or a lightweight hook. Honor cancellation already visible at completion. A fully consumed request is established by applicable length or observed EOF; retain an ordinary response only when all counted bytes are available and no known incompleteness remains. Handled error status codes do not themselves make their complete response bodies ineligible.
 
@@ -348,15 +350,15 @@ Route resolution must produce parameterized endpoint templates with applicable p
 
 **POC evidence:** the [error/integration experiments](../pocs/error-integrations/README.md) observe automatic MVC validation by wrapping the existing `ApiBehaviorOptions.InvalidModelStateResponseFactory`, preserving its behavior. `ProblemDetailsOptions.CustomizeProblemDetails` exposes typed validation objects when the registered problem-details service runs. Registering these options callbacks does not itself install MVC; Minimal-only hosts remain without MVC services.
 
-Known response shapes provide a conservative fallback. `TypedResults.ValidationProblem` bypasses the problem-details service on net8 but uses it on net9/net10. Built-in Minimal API parameter validation appears with `AddValidation` on net10; without problem-details services its tested response is compact 400 JSON containing title/errors. The probe recognizes tested 400/422 defaults, preserves opaque field strings and skips ordinary 400s. Recognizing bytes does not prove their transport capture is bounded or complete.
+Known response shapes provide a conservative fallback. MVC's `DefaultProblemDetailsFactory` applies `CustomizeProblemDetails` to every MVC problem response, but Minimal API `ProblemHttpResult` does so only through `IProblemDetailsService`, which only `AddProblemDetails` registers. Without it, `Results.ValidationProblem` writes JSON directly, so the fallback is the only Minimal API capture path on every runtime. `TypedResults.ValidationProblem` bypasses the problem-details service on net8 but uses it on net9/net10. Built-in Minimal API parameter validation appears with `AddValidation` on net10; without problem-details services its tested response is compact 400 JSON containing title/errors. The probe recognizes tested 400/422 defaults, preserves opaque field strings and skips ordinary 400s. Recognizing bytes does not prove their transport capture is bounded or complete.
 
 **Confirmed v1 scope:** capture MVC and Minimal API validation from framework-provided details and known standard response shapes. Preserve available metadata and opaque field/message strings, including localized or customized message text within a supported shape. Do not infer arbitrary custom/localized schemas or guess unavailable binding sources or fields. An unfamiliar response format without framework-provided validation details skips dedicated validation aggregation; ordinary request monitoring and existing error eligibility remain unchanged.
 
-Validation response observation is independent of trace sampling and response-body logging. Parsing requires a complete eligible response and retains at most 50,000 bytes. Retaining bytes for validation never enables exporting those bytes as a captured response body.
+Validation response observation is independent of trace sampling and response-body logging. Parsing requires a complete eligible response and retains at most 50,000 bytes in the response body-capture buffer, which is retained for 400/422 JSON responses even when body capture is off. Retaining bytes for validation never enables exporting those bytes as a captured response body.
 
 Normalize `source`, `field`, `message`, and `type` at the adapter boundary. Preserve useful field strings; do not split and reconstruct dotted model keys. Use empty values when source/field information is genuinely unavailable.
 
-Request-local error state retains the first captured exception, independent of a recording span. Automatic hooks and `IApitally.CaptureException(...)` update the same state and record at most the first SDK exception event on the SERVER span. Exclude request cancellation and unwrap a single-leaf aggregate where appropriate. Commit error data once at transport completion:
+Request-local error state retains the first captured exception, independent of a recording span. Automatic hooks and `IApitally.CaptureException(...)` update the same state and record at most the first SDK exception event on the SERVER span, skipping it if the span already has an `exception` event. Exclude request cancellation and unwrap a single-leaf aggregate where appropriate. Commit error data once at transport completion:
 
 - Validation details contribute their normalized groups for eligible routed requests.
 - A captured exception contributes a server error only when final status is exactly 500.
@@ -375,7 +377,7 @@ Request-local error state retains the first captured exception, independent of a
 
 Provider-independent minimum/category rules apply to the adapter, and the alias lets users narrow capture with standard `Logging:Apitally:LogLevel` configuration. Filters targeting the user's OTel provider remain specific to that provider. Third-party logging-factory replacements remain untested.
 
-Resolve `apitally.request.server_span_id` through the activity-to-request association, preserving the emitting child span ID separately. Application logs without a request association are dropped. Exclude Apitally's and the OTel SDK's own diagnostic logs from capture to prevent feedback loops. Capture code-location attributes when supplied by the logging interface; do not invent stack inspection solely to manufacture them.
+Resolve `apitally.request.server_span_id` through the activity-to-request association, preserving the emitting child span ID separately. Application logs without a request association are dropped. Exclude Apitally's and the OTel SDK's own diagnostic logs from capture to prevent feedback loops.
 
 Run `MaskLogRecord` synchronously on the captured record before buffering. It may return the supplied record or drop it; exceptions, a different instance or a null/empty `Body` drop the record. Normalize values before the callback so it cannot change what other application logging providers receive, and so it sees the values that will be exported before truncation. Truncate string bodies and string attributes to 2,048 characters after masking, when the batch worker encodes the record.
 
@@ -409,7 +411,7 @@ Run `MaskLogRecord` synchronously on the captured record before buffering. It ma
 
 A failing ordinary fallback conversion omits that attribute; a failing array-element conversion omits the whole array attribute. Key/value conversion can omit individual entries, while enumeration failures can reject the containing value. These are source findings, not runtime validation of an Apitally normalizer. They do not adopt every stock serializer limit or override shared payload requirements.
 
-**Confirmed callback value policy:** use the type mapping of the inspected standard OTel .NET export conversions for span and log callback attribute values. Normalize before callbacks and detach arrays/maps from application-owned data. Ordinary lists and opaque objects use the standard string fallback rather than expanding their contents or cloning object properties. Applications can supply arrays explicitly when they want element values captured. Convert values a log callback added when the batch worker encodes the record. Conversion failures omit the value, never passing through raw mutable values as a fallback; the stock converter's internal edge-case behavior is not an Apitally contract. This selects value conversion, not every stock serializer limit; shared Apitally payload requirements still apply.
+**Confirmed callback value policy:** use the type mapping of the inspected standard OTel .NET export conversions for span and log callback attribute values. Normalize before callbacks and detach arrays/maps from application-owned data. Maps convert one level deep, with nested dictionaries using the string fallback; the stock three-level recursion is not adopted. Ordinary lists and opaque objects use the standard string fallback rather than expanding their contents or cloning object properties. Applications can supply arrays explicitly when they want element values captured. Convert values a log callback added when the batch worker encodes the record. Conversion failures omit the value, never passing through raw mutable values as a fallback; the stock converter's internal edge-case behavior is not an Apitally contract. This selects value conversion, not every stock serializer limit; shared Apitally payload requirements still apply.
 
 This is an explicit .NET qualification of the shared design's non-string pass-through wording: a CLR value converted to a log string before masking is subject to the existing 2,048-character string limit after masking. The same applies to a string produced while encoding accepted callback output. Span attributes follow their own spec-defined limits. The limit counts UTF-16 code units, matching the JavaScript SDK; a split surrogate pair is harmless because Google.Protobuf encodes strings with replacement. Array and map values pass through untruncated, as the shared design specifies for non-string values.
 
@@ -515,11 +517,9 @@ Observe normalized process CPU utilization, RSS-equivalent bytes, and uptime usi
 
 **Research finding:** the tested OTel SDK defaults to 2,000 distinct attribute combinations per metric stream, with separate reserved slots for zero-attribute and overflow points. The public view's `CardinalityLimit` configures this at stream creation. Storage is partly allocated upfront and existing streams cannot be resized through public APIs. Delta collection resets measurements, not every dimension slot; active combinations retain slots until a later collection can reclaim them.
 
-**Confirmed capacity policy:** use one generous, internally selected fixed limit for each of the three request histograms, configured through OTel's native views. Keep native aggregation and inactive-point reclamation. There is no user-facing capacity setting, runtime resizing, adaptive provider replacement or custom aggregation. Select a capacity intended to accommodate most applications by measuring startup/active memory and collection costs with representative consumer, route and status combinations across supported runtimes. Neither the SDK default of 2,000 nor the POC limit of two is an approved production value.
+**Confirmed capacity policy:** use one fixed limit for each of the three request histograms, configured through OTel's native views. Keep native aggregation and inactive-point reclamation. There is no user-facing capacity setting, runtime resizing, adaptive provider replacement or custom aggregation. The limit is 10,000 per histogram, five times the SDK default that the Python and JavaScript SDKs use. Upfront allocation scales with the limit, at roughly 100-200 bytes per slot, while each active series lazily allocates its histogram buckets; with delta reclamation the limit bounds distinct combinations within about one collection interval.
 
 At capacity, retain native behavior for accepted combinations. Detect overflow during collection, omit the invalid overflow point from Apitally export and issue a deduplicated warning explaining that some request metrics are missing, with capacity documentation and support guidance. Preserve the required dimensions on valid points rather than reducing attribution to hide the limit. This remains a finite bound, not a promise of lossless metrics under arbitrary cardinality.
-
-The capacity is selected by measurement when the request histograms are implemented (plan stage 5).
 
 ## 12. Error handling and logging posture
 
@@ -628,15 +628,14 @@ The [error-integrations POC](../pocs/error-integrations/README.md) retains the S
 | Body completeness | Finalize ordinary bounded capture with directly observed failure, visible cancellation and applicable length checks; omit known incomplete bytes without certifying transport success. | Confirmed scope and mechanism boundary. |
 | Native file response bodies | Delegate native file sends and omit their entire body capture, including mixed output; retain incidental eligible capture through ordinary observed streams. | Confirmed v1 scope deviation; no SDK file rereading or replacement copy path. |
 | Validation recognition | Framework-provided details and known standard response shapes; opaque field/message strings and available metadata, with unknown source/field empty. | Confirmed v1 boundary; arbitrary schema and binding-source inference are outside scope. |
-| Log callback type | Apitally-owned mutable `LogRecordSnapshot`, built by the logger adapter and masked synchronously; no private OTel logger provider. | Confirmed .NET deviation from the shared ecosystem log-record rule. |
+| Log callback type | Apitally-owned mutable `LogRecordSnapshot` instead of the ecosystem log-record type, built by the logger adapter and masked synchronously; no private OTel logger provider. `ILogger` has no record type, and an OTel `LogRecord` would carry misleading semantics on this path. | Confirmed .NET deviation from the shared ecosystem log-record rule. |
 | Callback attribute values | Standard .NET OTLP value type mapping before span/log callbacks; accepted log output is converted and truncated at encoding. | Confirmed .NET adaptation. |
 | Log exception representation | Private exception type/message/stacktrace string attributes available to masking; the callback type has no exception object. | Confirmed .NET adaptation; preserves maskable exception metadata without sharing the application object. |
 | Log message representation | Rendered text in `Body`, with the original message template omitted from callback input. | Confirmed .NET adaptation; structured attributes remain separately maskable. |
-| Log-mask record type | Apitally-owned `LogRecordSnapshot` instead of the ecosystem log-record type, because `ILogger` has no record type and an OTel `LogRecord` would carry misleading semantics on this path. | Confirmed .NET deviation. |
 | Structured log scopes | Flatten private scope fields into attributes before masking; explicit log fields override inner scopes, then outer scopes. | Confirmed .NET adaptation; no separate scope chain or post-mask restoration. |
 | Plain log scope labels | Omit unstructured labels while preserving log messages and structured scope fields. | Confirmed boundary, matching the official .NET OTLP exporter. |
 | Encoding | Official OTLP schemas/protobuf encoding with SDK-owned mapping. | Confirmed .NET mechanism; no change to HTTP/protobuf delivery. |
-| Metric capacity | Internally selected fixed capacity through native OTel views and reclamation, with visible overflow degradation. | Confirmed policy; numeric capacity requires measurement. |
+| Metric capacity | Fixed capacity of 10,000 per request histogram through native OTel views and reclamation, with visible overflow degradation. | Confirmed. |
 | Runtime-specific fork and signal mechanics | Use .NET host lifecycle instead. | Platform adaptation. |
 | Sentry event-ID correlation | Defer the integration beyond v1 while retaining ordinary exception/error capture. | Confirmed v1 scope deviation. |
 | Startup endpoint documentation | Populate native summaries/descriptions in `paths`; omit full OpenAPI JSON on all runtimes, including .NET 10. | Confirmed v1 scope deviation. |

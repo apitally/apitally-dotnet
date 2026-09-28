@@ -9,7 +9,7 @@ Status: Proposed, 2026-09-28. This document plans implementation; it does not au
 
 ## 1. Scope and approach
 
-Implement [the .NET design](design.md) as one ASP.NET Core distribution in the existing `Apitally` NuGet package. Use the official OpenTelemetry SDK for instrumentation, native metric aggregation and batch processing. Apitally owns request decisions, private snapshots, payload privacy, OTLP mapping, the spool and HTTP delivery.
+Implement [the .NET design](design.md) as one ASP.NET Core distribution in the existing `Apitally` NuGet package. This plan is the implementation authority; design.md records rationale and evidence. Use the official OpenTelemetry SDK for instrumentation, native metric aggregation and batch processing. Apitally owns request decisions, private snapshots, payload privacy, OTLP mapping, the spool and HTTP delivery.
 
 The simplest appropriate architecture is:
 
@@ -33,7 +33,7 @@ Use the shared [specification](../../cloud/docs/sdks/spec.md) for wire contracts
 - Start with OTel SDK and hosting packages at the tested 1.19.0 minimum, and ASP.NET Core and HTTP instrumentation 1.19.0. Qualify the entire resolved graph, including `System.Diagnostics.DiagnosticSource`, rather than equating the target framework with the loaded dependency versions.
 - Use `Google.Protobuf` and vendored official OTLP v1.11.0 schemas. Generate internal message classes at build time with build-only `Grpc.Tools`, with gRPC service generation disabled. Keep schema provenance, hashes and license in the repository; generated files belong in `obj/`, not the source tree or public API.
 - Use framework `System.Text.Json`, compression, HTTP and process APIs. Remove legacy-only dependencies, including the Hub retry library. There is no stock OTLP network exporter in the production delivery path.
-- Keep selected versions explicit and record the qualified dependency graph. Do not add older-OTel compatibility branches or a new dependency-management framework for one library.
+- Keep selected versions explicit. Do not add older-OTel compatibility branches or a new dependency-management framework for one library.
 
 ## 3. Proposed folder, file and class structure
 
@@ -82,7 +82,7 @@ src/Apitally/
     ApitallyMiddleware.cs               HTTP observation and completion
     BodyCapture.cs                     bounded capture state and shared size result
     ObservedStream.cs                  transparent read/write observation
-    ObservedBodyFeatures.cs            reader/writer, response and abort wrappers
+    ObservedBodyFeatures.cs            response body and abort wrappers
     EndpointMetadata.cs                 route resolution and startup enumeration
     ValidationCapture.cs                MVC/problem-details hooks and known shapes
   Tracing/
@@ -240,11 +240,11 @@ Ordinary booleans and numbers need no assignment-tracking wrappers: configuratio
 
 Use the standard .NET Options pattern; there is no custom callback store or resolver.
 
-1. The first `AddApitally` call registers one base `IConfigureOptions<ApitallyOptions>` with `TryAddEnumerable`. It applies the applicable `OTEL_*` fallbacks, then the `APITALLY_*` fallbacks, then binds the `Apitally` configuration section. Property initializers supply the defaults.
+1. The first `AddApitally` call registers one base `IConfigureOptions<ApitallyOptions>` with `TryAddEnumerable`. It maps `APITALLY_WRITE_TOKEN` to `WriteToken` and `APITALLY_ENV` to `Env`, then binds the `Apitally` configuration section. No `OTEL_*` variable maps to an option. Property initializers supply the defaults.
 2. Each `AddApitally(configure)` call registers its callback with `PostConfigure`, so code callbacks run after all configuration steps, in registration order, each seeing earlier changes.
 3. A direct `services.Configure<ApitallyOptions>(...)` runs in the ordinary configure phase with standard .NET ordering: after the base step if registered after `AddApitally`, before it otherwise. Document this; the `AddApitally` callback remains the recommended path because it always wins.
 4. During startup preparation, read `IOptions<ApitallyOptions>.Value` once. Apply additive disable environment controls, validate credentials/settings and copy into the private immutable `RuntimeConfiguration`. Copy collections; never retain the mutable options object, use `IOptionsMonitor` or reread configuration during operation. Do not use `ValidateOnStart` or `IValidateOptions`, so invalid settings cannot fail host startup.
-5. Default host builders read unprefixed environment variables into configuration, so keys such as `Apitally__SampleRate` populate the section without Apitally code. Only the shared `APITALLY_*` and `OTEL_*` fallback names need explicit mapping in the base step.
+5. Default host builders read unprefixed environment variables into configuration, so keys such as `Apitally__SampleRate` populate the section without Apitally code. Only the two shared `APITALLY_*` fallback names need explicit mapping in the base step.
 6. Invalid token disables telemetry with an error and no host-startup failure. Invalid static rate becomes `1.0`; reject invalid regexes individually. Compile/precompute patterns once, using case-insensitive search plus the caller's inline options. Built-in redaction and exclusion defaults use `[GeneratedRegex]`; user patterns use runtime `Regex` instances. Use a finite match timeout; privacy-boundary failures drop affected telemetry instead of exporting raw data.
 7. Freeze the testing-only `APITALLY_OTLP_ENDPOINT` here, and capture `HttpClient.DefaultProxy` once as the delivery proxy. Generic OTel exporter variables never configure Apitally delivery.
 
@@ -264,7 +264,7 @@ Activate in the same startup filter, immediately after `next(app)` returns. `Gen
 
 `TelemetryRuntime` has a small lifecycle: active, stopping and stopped, or disabled. Preparation or activation failure logs an error and leaves that runtime disabled; the application keeps serving without telemetry.
 
-Register `TelemetryRuntime` as a DI singleton implementing `IAsyncDisposable`. If the host fails after activation, for example because Kestrel cannot bind, `StoppedAsync` may never run; container disposal then stops the workers and disposes owned resources without a final delivery. Disposal after the normal shutdown sequence is a no-op.
+Register `TelemetryRuntime` as a DI singleton implementing `IAsyncDisposable`. If the host fails after activation, for example because Kestrel cannot bind, `StoppedAsync` may never run; container disposal then stops the workers and disposes owned resources without a final delivery. Once the shutdown cleanup task has started, disposal does nothing (section 10).
 
 Construct workers with execution-context flow suppressed, so activation carries no ambient activity or execution context into background work. Avoid DI/logging cycles: the additive logging provider starts as an inert adapter; diagnostic logger resolution happens during preparation/activation, not while the application's logger factory is constructing its providers.
 
@@ -274,7 +274,7 @@ Reuse the mechanism established by the [request-association POC](../pocs/request
 
 - Register `IHttpContextAccessor`. At SERVER activity start, HTTP tags may be absent; use the early context to create/adopt `RequestState` in a private feature and, only when `SampleOnRequest` is configured, populate the request-stage snapshot. Middleware later retrieves that same state.
 - Retain a SERVER handle separately from `Activity.Current`. State exists for metrics, errors and consumers even when the user sampler provides no recorded SERVER span.
-- Key associations by trace/span identity, never trace ID alone. A local-root SERVER activity, including one with a remote parent, starts a request association. Children inherit through their parent ID, including explicit parent contexts. Missing/unrelated associations drop locally.
+- Key associations by trace/span identity, never trace ID alone. Only the ASP.NET Core hosting activity (source `Microsoft.AspNetCore`, operation `Microsoft.AspNetCore.Hosting.HttpRequestIn`), including one with a remote parent, starts a request association; other local roots, such as .NET 9+ SignalR hub invocation SERVER activities, are unrelated. Children inherit through their parent ID, including explicit parent contexts. Missing/unrelated associations drop locally.
 - Require the request to be observed by this integration before releasing user-provider detail. Check `Activity.Recorded` explicitly; generic batch processing does not apply that policy.
 - Apply exclusions before request sampling. Both sampling stages compare the same low 64 trace-ID bits with the rounded threshold, with explicit handling of zero/one. Request abstention uses the static rate; response abstention preserves the request decision. Throwing or invalid callbacks warn and fail open for that stage; they cannot restore previously dropped detail.
 - Serialize request-local changes with a short lock. Under it, update flags and claim the once-only finalization/release. Run callbacks, snapshot processing and queue submission outside locks, using a claimed finalization state so late arrivals cannot bypass the initial release.
@@ -289,13 +289,13 @@ Bound captured payloads and queued detail as specified; do not claim an absolute
 
 ### Common value representation
 
-`AttributeValues` implements the selected stock-exporter-aligned CLR conversion once for both signals. Normalize and detach before any callback. Scalars become the corresponding OTLP-compatible CLR scalar; bytes, arrays and maps are copied. Ordinary lists/objects use invariant string conversion, not reflection-based object traversal. Implement this type mapping; do not reproduce or test the stock converter's internal edge-case behavior, such as its failure omission rules or map depth, as an Apitally contract.
+`AttributeValues` implements the selected stock-exporter-aligned CLR conversion once for both signals. Normalize and detach before any callback. Scalars become the corresponding OTLP-compatible CLR scalar; bytes and arrays are copied. A value implementing `IDictionary` becomes an owned `Dictionary<string, object?>` one level deep: keys use invariant string conversion, values convert as scalars or arrays, and a nested dictionary uses the string fallback. Ordinary lists/objects use invariant string conversion, not reflection-based object traversal. Implement this type mapping; do not reproduce or test the stock converter's internal edge-case behavior, such as its failure omission rules or map depth, as an Apitally contract.
 
 The public snapshot representations (exact members in section 4) are:
 
 - Native activity IDs, flags, kind and status types; start time and nullable duration; optional status description and trace state.
 - Events as `IReadOnlyList<ActivityEvent>`, links as `IReadOnlyList<ActivityLink>`, resource as OTel `Resource`, and scope as `ScopeName` and `ScopeVersion` properties. No Apitally-specific event, link or scope types.
-- Attributes as `IReadOnlyDictionary<string, object?>` over the owned dictionary. Values use the plain CLR types OTel .NET users see on activity tags: scalars, `string[]`, `long[]`, `double[]`, `bool[]`, `byte[]` and normalized maps.
+- Attributes as `IReadOnlyDictionary<string, object?>` over the owned dictionary. Values use the plain CLR types OTel .NET users see on activity tags: scalars, `string[]`, `long[]`, `double[]`, `bool[]`, `byte[]` and one-level `Dictionary<string, object?>` maps.
 
 Snapshots contain the available identity, parent, name, timing, status, attributes, events, links, resource and scope at that stage. Unknown data stays unset. A `SpanSnapshot` is the SDK-owned span record itself, not a per-callback copy. Copy from the `Activity` once for the request stage when `SampleOnRequest` is configured and once at final completion, then reuse the final record for response sampling, redaction, body masking and export. Read-only interfaces state intent only: the SDK does not defend against callbacks that cast and mutate values, or that retain a snapshot and observe later enrichment. Preserve available metadata without fabricating information that public OTel APIs do not expose.
 
@@ -307,21 +307,21 @@ Request-serving work is limited to association, decisions, bounded observation/c
 
 `SpanRedaction` processes every exported span, including descendants and user-produced attributes:
 
-1. Normalize stable/legacy HTTP fields and redact all query-bearing URL forms and captured header attributes, including `Location` and `Content-Location` query strings.
+1. Redact all stable and legacy query-bearing URL attributes and captured header attributes, including `Location` and `Content-Location` query strings.
 2. Attach private redacted headers as lowercase, dash-preserving, list-valued attributes. A masked header has exactly one `[REDACTED]` value.
 3. Pass the redacted owned record to the body masks at this point, before body attributes are attached.
 4. Handle capture sentinels; otherwise bound decompression, call the body mask, parse JSON regardless of allowed content type, redact matching string-valued fields recursively, then serialize. Preserve non-JSON UTF-8 text or permitted body bytes.
 5. Use callback output directly; it is consumed in this step and only the serialized result is retained. Dropped/throwing masks produce `[REDACTED]`; oversized input, decoded or replacement bodies produce `[BODY_TOO_LARGE]`. Unsupported/failed decompression never passes through original bytes.
 6. A failure of the overall privacy boundary drops that span. No captured payload is ever attached to a live user activity.
 
-Centralize shared names, patterns, content types and limits with their owning modules and verify them against the canonical spec. Do not port the older .NET allowlist or masking rules unchanged. OTel .NET applies attribute limits only inside its OTLP exporter, so owned span records are never clipped by OTel limits and there is nothing to pin or inspect. Owned body attributes are added after activity copying and must not be clipped by generic attribute normalization.
+Keep each shared name, pattern, content type and limit in the module that uses it, and verify it against the canonical spec. Do not port the older .NET allowlist or masking rules unchanged. OTel .NET applies attribute limits only inside its OTLP exporter, so owned span records are never clipped by OTel limits and there is nothing to pin or inspect. Owned body attributes are added after activity copying and must not be clipped by generic attribute normalization.
 
 ## 7. Transport, routes and errors
 
 Adapt only the ordinary observation paths from the transport POCs:
 
-- Wrap request reads and response writes through stream/body features, covering `BodyReader` and `BodyWriter` without double-counting shared stream paths. Preserve sync/async behavior, cancellation, flushes, backpressure and application exceptions.
-- Observe only request bytes the application consumes. Check headers before allocating capture storage or doing body I/O. Copy leased pipe memory before returning it and commit capture/counts only for successfully accepted operations.
+- Replace `Request.Body` with an observing stream; do not wrap `IRequestBodyPipeFeature`. Kestrel and the default feature used by IIS and HttpSys build `BodyReader` over the current `Request.Body`, so pipe reads pass through the same stream. Wrap `IHttpResponseBodyFeature` so its stream and `BodyWriter` are observed. Preserve sync/async behavior, cancellation, flushes, backpressure and application exceptions.
+- Observe only request bytes the application consumes. Check headers before allocating capture storage or doing body I/O. Copy written pipe memory into capture at `Advance` and commit capture/counts only for successfully accepted operations.
 - Keep independent byte counts and capture state. A disallowed or sampled-out body can still have a known size; discarded oversized bytes do not erase size observations.
 - At transport completion, freeze the applicable content length, observed counts, EOF and simple incomplete flag. Mark directly observed read/write/advance/flush/completion failures, escaped errors, explicit aborts and already-visible cancellation. Omit known incomplete bytes; complete handled error responses remain eligible. Do not add transport-success certification or cancellation settling.
 - Delegate `SendFileAsync` unchanged and invalidate the entire response capture, including mixed output. Do not reread files or replace native dispatch. Ordinary observed stream output remains eligible even if the application generated it from a file.
@@ -331,9 +331,9 @@ Use `OnCompleted` for final transport observation, not as proof of client receip
 
 `EndpointMetadata` resolves parameterized routes, group/path prefixes and original endpoints exposed by exception re-execution. Unmatched requests keep route unset. Read scheme/client address from the framework's trusted-forwarding result at the appropriate final observation point; do not parse forwarding headers independently. At startup, enumerate finalized route/method pairs and native summary/description metadata without an OpenAPI dependency.
 
-`ValidationCapture` wraps existing MVC invalid-model-state and problem-details callbacks without changing their output or installing MVC in Minimal-only applications. Prefer typed details; otherwise recognize only the tested standard complete 400/422 response shapes, allowing localized/custom message strings. Share a bounded response observation buffer where useful, but keep validation eligibility separate from trace/body-capture flags. Validation-only bytes never become exported body attributes. Skip unknown formats and preserve opaque fields; use empty unavailable source/field values.
+`ValidationCapture` wraps existing MVC invalid-model-state and problem-details callbacks without changing their output or installing MVC in Minimal-only applications. Prefer typed details; otherwise recognize only the tested standard complete 400/422 response shapes, allowing localized/custom message strings. This fallback covers Minimal API validation responses written without a registered `IProblemDetailsService`. When the response starts with status 400 or 422 and a JSON media type, the response `BodyCapture` retains up to 50,000 bytes even if response body capture is off or the trace is sampled out; parse them only when neither hook supplied typed details. Validation-only bytes never become exported body attributes. Skip unknown formats and preserve opaque fields; use empty unavailable source/field values.
 
-The request state preserves the first eligible exception from helpers, escaped errors or exception-handler features. Exclude request cancellation and unwrap a single-leaf aggregate. Add at most the first SDK exception event to the SERVER representation without duplicating an already-observed equivalent instrumentation event. Later transport enrichment uses the private copy if the activity has ended.
+The request state preserves the first eligible exception from helpers, escaped errors or exception-handler features. Exclude request cancellation and unwrap a single-leaf aggregate. Add at most the first SDK exception event to the SERVER representation, and skip it if the SERVER activity already has an `exception` event. Later transport enrichment uses the private copy if the activity has ended.
 
 At completion, aggregate validation details and captured exceptions only for eligible routed requests. A server error requires final status exactly 500 plus a captured exception. Pattern exclusions, sampling and application-log settings do not change this path; OPTIONS, websockets and unmatched routes contribute neither error category.
 
@@ -365,7 +365,7 @@ For each associated application record:
 - Record the three request histograms at final transport completion, independent of activities, passing dimensions as a `TagList`. Skip `OPTIONS`, websockets and unmatched routes; excluded and sampled-out requests are still recorded. Use the same method, parameterized route, status, optional consumer, scheme and 5xx `error.type` tuple for duration and known sizes.
 - Use histogram-specific `Base2ExponentialBucketHistogramConfiguration` views, delta temporality, `MaxScale = 3` and native inactive-series reclamation. Preserve the accepted wire scale range; validate measured value ranges without implementing custom aggregation/downscaling.
 - Use a non-periodic reader. The export worker performs ordinary collections; terminal reader `Shutdown(Timeout.Infinite)` performs the final collection in the cleanup task before spool sealing. Its one-shot shutdown guard prevents another collection during provider disposal. Map/encode metric points synchronously inside the exporter before reusable native storage is released.
-- Measure startup allocation, active memory and collection time for representative route/status/consumer cardinalities, comparing candidate fixed limits such as 10,000, 20,000 and 50,000. Select and document one internal limit when the request histograms land; the POC's two-point limit and OTel's default are not product decisions.
+- Set `CardinalityLimit = 10,000` on each of the three request histogram views.
 - Omit native overflow points, preserve valid dimensional points and warn once with the consequence and capacity/support guidance. There is no public capacity setting or adaptive provider replacement.
 - Read CPU, working set and uptime through direct process APIs. Normalize CPU by elapsed time and available CPUs; observe CPU/memory together. Uptime is always available so idle collections remain nonempty if CPU/memory observation is unavailable.
 
@@ -373,15 +373,15 @@ For each associated application record:
 
 ### Stock intake and safe spool closure
 
-Use one generic `ApitallyBatchProcessor<T>` subclass of `BatchExportProcessor<T>`, instantiated once for owned span entries and once for owned log entries, initially with explicit queue size 2,048, batch size 512 and 1,000 ms delay. Pass all remaining constructor settings explicitly and qualify memory/throughput in stage 8 before fixing release values. User OTel batch environment variables do not tune these processors.
+Use one generic `ApitallyBatchProcessor<T>` subclass of `BatchExportProcessor<T>`, instantiated once for owned span entries and once for owned log entries, with queue size 2,048, batch size 512 and 1,000 ms delay, matching the Python and JavaScript SDKs. Pass all remaining constructor settings explicitly. User OTel batch environment variables do not tune these processors.
 
 Resolve [review finding R4](design-review.md#r4-spool-closure-needs-completed-export-not-only-a-successful-flush) with spool synchronization and terminal worker completion, rather than another queue or acknowledgement protocol:
 
 - The cutoff's adapter detachment is the admission boundary; there is no admission lock or closed flag. A record submitted concurrently with terminal shutdown is either drained or left unsent, which the best-effort shutdown contract permits. Submitting after stock `Shutdown` only buffers the record. Keep native bounded-queue behavior.
 - Encode outside the spool lock. Inside that lock, select the current file, append, or rotate/seal it. Exporters must not retain a current-file reference across this boundary. Only a fully finalized gzip file becomes sendable, and HTTP runs outside the lock.
 - In ordinary cycles, `ForceFlush` prompts stock processing; it is not proof that every batch finished. Rotate under the append lock so all bytes in the closed file are complete. A batch still encoding appends to the next current file when it acquires the lock and remains eligible for a later cycle. This preserves safe best-effort delivery without making request intake wait for a flush barrier.
-- In the final cycle, stop producers, emit final internal events while budget remains and call stock terminal `Shutdown(Timeout.Infinite)` in the cleanup task before sealing remaining files. This joins the batch worker; `Shutdown(0)` can return true without joining, and a finite timeout cannot be retried to obtain a later join. Do not use standalone `Dispose` as a drain.
-- Establish the cleanup task before any cancellable wait, even if the host token is already canceled. The host token cancels awaiting that task and further delivery, not its scheduling or terminal shutdown. The task retains ownership of resource disposal until existing synchronous work returns, as described below.
+- In the final cycle, stop producers, emit final internal events and call stock terminal `Shutdown(Timeout.Infinite)` in the cleanup task before sealing remaining files. This joins the batch worker; `Shutdown(0)` can return true without joining, and a finite timeout cannot be retried to obtain a later join. Do not use standalone `Dispose` as a drain.
+- The shutdown sequence below runs these steps in the cleanup task.
 
 Prove these rules with production exporters in integrated tests: encoding overlapping rotation and a blocked append still produce complete, decodable files, and a write failure discards only the current file. Do not test stock queue overflow.
 
@@ -400,11 +400,11 @@ Build bounded protobuf requests, starting with at most 32 records per chunk and 
 | Storage selection | Probe temp storage at construction; choose file streams or memory streams once. Warn once on fallback. |
 | File permissions | On non-Windows, create probe and spool files with `FileMode.CreateNew` and `UnixCreateMode = UserRead \| UserWrite` (`0600`), matching the Python and JavaScript SDKs; the .NET default is `0666` before umask. Windows `%TEMP%` is already per-user. |
 | File rotation | Check 4,000,000 raw-byte limit before append. At send time rotate a signal's current file only if that signal has no closed backlog. |
-| Storage bounds | Account compressed current and closed storage: 50 MB disk or 10 MB memory. Evict oldest closed non-metrics first, then metrics. If open storage alone needs reclamation, close a current file under the same lock so the absolute bound remains enforceable. |
+| Storage bounds | Account compressed current and closed storage: 50 MB disk or 10 MB memory. Evict oldest closed non-metrics first, then metrics; stop when no closed files remain, matching Python. |
 | Write failure | Discard the affected current file, deduplicate warnings until recovery; keep the selected storage mode. |
 | Retention | Expire 59 minutes after first attempt; no age expiry before the first attempt. |
 | Orphans | Recognizable filenames; delete only files untouched for two hours at construction and refresh owned file times each cycle. No restart replay protocol. |
-| Concurrency | Serialize short metadata/append/close operations; pin a selected closed file while sending so storage reclamation cannot invalidate the active read. |
+| Concurrency | Serialize short metadata/append/close operations. Each send reads from its own handle: a new `FileStream` with `FileShare.Read \| FileShare.Delete`, or the memory buffer. Eviction during a send therefore does not affect it, and removing an already-evicted file afterward is a no-op. |
 
 ### Worker and HTTP
 
@@ -423,15 +423,15 @@ Connection failures, timeouts, 408, 429 and 5xx retain the file and stop that se
 Use `IHostedLifecycleService.StoppedAsync` as the final phase after server/service stop calls, validated in both hosting compositions. Keep SDK intake active while the host drains requests; stopping the server is not itself the final detail cutoff.
 
 1. Stop ordinary scheduling and perform the short atomic request cutoff even if the host token is already canceled. Preserve already-finalized releases; discard detail still missing transport completion or SERVER end, clear raw capture, and detach the tracing/logging adapters. Completed metrics/errors remain eligible. Do not invoke application callbacks while holding the cutoff lock.
-2. Always establish one shutdown/cleanup task before any cancellable wait, including when the host token is already canceled. Do not pass that token as cancellation of task scheduling. This task owns the remaining sequence and resource disposal; the host awaits it with its existing token, not a new timeout per phase.
-3. In that task, wait for any in-progress ordinary cycle to finish before the final cycle. Host cancellation ends the host's wait and prevents new POSTs, but does not cancel this serialization or terminal cleanup.
-4. While budget remains, drain error aggregates into the log batch processor. Run both batch processors' terminal `Shutdown(Timeout.Infinite)` calls. Use the owned metric reader's `Shutdown(Timeout.Infinite)` as the final metric collection, rather than a separate `Collect`. Complete these terminal operations before sealing current files.
-5. While budget remains, seal and deliver remaining files without pauses or the ordinary ten-file cap, using the same failure rules. Cancellation initiates no further delivery.
-6. Dispose only owned providers/resources after the ordinary worker and terminal operations finish. The metric reader's one-shot shutdown guard prevents another collection during provider disposal. Application tracing remains application-owned.
+2. Start one cleanup task with `Task.Run` and await it with `WaitAsync(cancellationToken)`, even if the token is already canceled. The task runs steps 3-6 in order. The host token only ends the host's wait and prevents new POSTs.
+3. Wait for any in-progress ordinary cycle.
+4. Drain error aggregates into the log batch processor. Call terminal `Shutdown(Timeout.Infinite)` on both batch processors and on the metric reader, which performs the final metric collection, then seal current files.
+5. Unless canceled, deliver remaining files without pauses or the ten-file cap, using the ordinary failure rules.
+6. Dispose owned providers and resources. Application tracing remains application-owned.
 
-Host cancellation, including cancellation already present on entry, only ends the host's wait and prevents new POSTs; exporters and the spool have no separate abandoned state. Drain, sealing and disposal finish in the cleanup task in the background, or end with the process. Orphaned spool files are not sent by later processes, so nothing is gained by discarding local work early. Cancellation cannot interrupt an already-running synchronous user mask callback or filesystem call, so resources stay alive until that work returns rather than being disposed underneath it.
+`TelemetryRuntime.DisposeAsync` does nothing once the cleanup task has started. Otherwise it stops the worker and disposes owned resources without delivery.
 
-The host's shutdown budget takes precedence over completing cleanup before returning. Cleanup is best effort while the process remains alive: a callback that never returns can retain its resources until process exit. The one-off cleanup task adds neither a delivery worker nor an extra export window. Validate through integrated tests that shutdown with an already-canceled token returns promptly without throwing, and that an idle host still delivers the uptime gauge in the final cycle.
+Cleanup is best effort: a callback that never returns keeps its resources until process exit. Validate through integrated tests that shutdown with an already-canceled token returns promptly without throwing, and that an idle host still delivers the uptime gauge in the final cycle.
 
 ## 11. Implementation sequence
 
@@ -447,10 +447,10 @@ Implement the stages in order on `v1`. Each stage depends only on earlier stages
 | 2. Encoding, export privacy and storage | Generate the internal protobuf types. Define the owned span export entry, a `SpanSnapshot` plus its captured headers and bodies, and `LogSnapshot`. Implement the process resource, `SpanRedaction`, `OtlpEncoder` with the trace and log mappers, `SpoolFile`, `TelemetrySpool` and `ExportHttpClient`. | 1 |
 | 3. Host runtime and delivery | Implement `AddApitally` in both hosting styles; the startup filter's preparation and activation, with TestServer suppression; the `TelemetryRuntime` lifecycle and container disposal; both `ApitallyBatchProcessor<T>` instances; the private meter provider with its non-periodic reader, `OtlpMetricMapper` and `ProcessMetrics`; `ExportWorker`; `InternalEvents` with the startup event and its route enumeration; and the hosted-service shutdown sequence. A host now delivers its startup event and process metrics. | 1, 2 |
 | 4. Request tracing and helpers | Implement `TracingIntegration` for all provider ownership modes, the private fallback and the detachable forwarding processor; `ApitallySpanProcessor`, `RequestState`, `RequestRegistry` and `RequestSampling`; `ApitallyMiddleware`, installed by the startup filter, with transport completion, final route and status, and exception capture; request-stage and final span snapshots; two-completion release into the span batch processor with per-request span caps; `IApitally`, `RequestHelpers` and `ConsumerUpdates`; and the request cutoff at shutdown. | 1-3 |
-| 5. Transport observation and request metrics | Implement stream and pipe observation with byte counts, bounded body capture, incomplete-body marking, native file omission, header capture and size resolution. Add sizes, headers and bodies to the final span record. Record the three request histograms and select the fixed metric capacity by measurement (section 9). | 1-4 |
+| 5. Transport observation and request metrics | Implement request stream and response body observation with byte counts, bounded body capture, incomplete-body marking, native file omission, header capture and size resolution. Add sizes, headers and bodies to the final span record. Record the three request histograms with the fixed metric capacity (section 9). | 1-4 |
 | 6. Validation and error aggregates | Implement `ValidationCapture` over the MVC hooks and the stage 5 response observation, and `ErrorAggregates` with the final-500 rule, drained into internal events in ordinary and final cycles. | 1-5 |
 | 7. Application logs | Implement `ApitallyLoggerProvider` with scope merging and SDK category exclusion, `LogMasking`, request association and per-request log caps, release of logs after SERVER, and logging adapter detachment at cutoff. | 1-4 |
-| 8. Qualification and release readiness | Measure and fix the batch queue, batch size and delay. Record the qualified dependency graph. Add the `../sdk-tests` adapter, app and variants and assert real ingestion on the backend; package-consumer validation belongs to that harness, and this repository has no packed-package tests. Update the README, migration guide and publishing workflows. | 1-7 |
+| 8. Qualification and release readiness | Add the `../sdk-tests` adapter, app and variants and assert real ingestion on the backend; package-consumer validation belongs to that harness, and this repository has no packed-package tests. Update the README, migration guide and publishing workflows. | 1-7 |
 
 A few modules grow across stages by addition: `AddApitally` registers the runtime services in stage 3, `IHttpContextAccessor` and `IApitally` in stage 4 and the logger provider in stage 7; `EndpointMetadata` enumerates startup routes in stage 3 and resolves request routes in stage 4; `ApitallyMetrics` has process gauges from stage 3 and request histograms from stage 5; the startup filter, final span enrichment and shutdown cutoff gain the steps of each later stage. The worker's instrumentation suppression lands in stage 3 and is first testable in stage 4, when tracing exists.
 
@@ -466,7 +466,7 @@ Cover these contract groups without multiplying every case across every hosting 
 
 - Setup precedence, repeated registration, callback order, invalid credentials, both disable variables, no activation for a built but unstarted host, activation before the first request, and worker cleanup through container disposal after a failed server bind.
 - Early/ordinary requests, unsampled remote parents, user sampling/RecordOnly, external provider lifetime, suppressed TestServer and one request SERVER despite instrumentation reuse.
-- Nested/explicit-parent associations, helpers under children, concurrent/keep-alive requests, shared trace IDs, both completion orders, response sampling, per-request caps and dropping telemetry that arrives after release.
+- Nested/explicit-parent associations, SignalR hub invocation roots on .NET 9+, helpers under children, concurrent/keep-alive requests, shared trace IDs, both completion orders, response sampling, per-request caps and dropping telemetry that arrives after release.
 - Matched/unmatched, OPTIONS, websocket, excluded and sampled-out requests with exact independent metric/error/consumer eligibility.
 - Request stream/reader and response stream/writer paths, app-consumed-only request capture, allowed content types, size boundaries, bounded compression, known incomplete bodies, handled errors, unchanged native file delivery/mixed omission and incidental streamed files.
 - Value mapping for scalars, arrays, dictionaries and string fallback; detachment of arrays before callbacks; conversion of callback-added log values; stage-appropriate callback snapshot contents, other logging providers, scopes and exception objects left unchanged, user-export privacy, callback-proof linkage, scope precedence, 2,048-unit truncation and canonical Body/exception output.
