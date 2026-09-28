@@ -1,58 +1,73 @@
 namespace Apitally;
 
-using System.ComponentModel.DataAnnotations;
-using Apitally.Models;
-
-public class ApitallyOptions
+/// <summary>
+/// Options for the Apitally SDK. Values are read from the <c>Apitally</c> configuration
+/// section and can be overridden in code through <c>AddApitally(options => ...)</c>.
+/// </summary>
+public sealed class ApitallyOptions
 {
-    [Required]
-    [RegularExpression(
-        @"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-        ErrorMessage = "Client ID must be a valid UUID"
-    )]
-    public string ClientId { get; set; } = string.Empty;
+    /// <summary>Write token for the Apitally app. Falls back to <c>APITALLY_WRITE_TOKEN</c>.</summary>
+    public string? WriteToken { get; set; }
 
-    [RegularExpression(
-        @"^[\w-]{1,32}$",
-        ErrorMessage = "Env must be 1-32 characters long and contain only word characters and hyphens"
-    )]
-    public string Env { get; set; } = "default";
+    /// <summary>Environment name. Falls back to <c>APITALLY_ENV</c>, then <c>dev</c>.</summary>
+    public string Env { get; set; } = "dev";
 
-    public RequestLoggingOptions RequestLogging { get; set; } = new RequestLoggingOptions();
-}
+    /// <summary>Version of the application, included in the startup event.</summary>
+    public string? AppVersion { get; set; }
 
-public class RequestLoggingOptions
-{
-    public bool Enabled { get; set; } = false;
-    public bool IncludeQueryParams { get; set; } = true;
-    public bool IncludeRequestHeaders { get; set; } = false;
-    public bool IncludeRequestBody { get; set; } = false;
-    public bool IncludeResponseHeaders { get; set; } = true;
-    public bool IncludeResponseBody { get; set; } = false;
-    public bool IncludeException { get; set; } = true;
-    public bool CaptureLogs { get; set; } = false;
-    public bool CaptureTraces { get; set; } = false;
-    public List<string> QueryParamMaskPatterns { get; set; } = [];
-    public List<string> HeaderMaskPatterns { get; set; } = [];
-    public List<string> BodyFieldMaskPatterns { get; set; } = [];
-    public List<string> PathExcludePatterns { get; set; } = [];
+    /// <summary>Disables all Apitally telemetry.</summary>
+    public bool Disabled { get; set; }
+
+    /// <summary>Captures application logs emitted during requests.</summary>
+    public bool CaptureLogs { get; set; } = true;
+
+    public bool CaptureRequestHeaders { get; set; }
+
+    public bool CaptureRequestBody { get; set; }
+
+    public bool CaptureResponseHeaders { get; set; } = true;
+
+    public bool CaptureResponseBody { get; set; }
+
+    /// <summary>Probability in [0, 1] that a request's trace and logs are captured.</summary>
+    public double SampleRate { get; set; } = 1.0;
 
     /// <summary>
-    /// Function to mask sensitive data in the request body.
-    /// Return null to mask the whole body.
+    /// Returns a keep probability in [0, 1] when a request starts, or <c>null</c> to use
+    /// <see cref="SampleRate"/>.
     /// </summary>
-    public Func<Request, byte[]?> MaskRequestBody { get; set; } = request => request.Body;
+    public Func<SpanSnapshot, double?>? SampleOnRequest { get; set; }
 
     /// <summary>
-    /// Function to mask sensitive data in the response body.
-    /// Return null to mask the whole body.
+    /// Returns a keep probability in [0, 1] after the response completes, or <c>null</c> to
+    /// keep the request-stage decision.
     /// </summary>
-    public Func<Request, Response, byte[]?> MaskResponseBody { get; set; } =
-        (request, response) => response.Body;
+    public Func<SpanSnapshot, double?>? SampleOnResponse { get; set; }
 
     /// <summary>
-    /// Function to determine whether a request should be excluded from logging.
-    /// Return true to exclude the request.
+    /// Returns replacement bytes for a captured request body, or <c>null</c> to redact it.
+    /// May run later on another thread.
     /// </summary>
-    public Func<Request, Response, bool> ShouldExclude { get; set; } = (request, response) => false;
+    public Func<SpanSnapshot, byte[], byte[]?>? MaskRequestBody { get; set; }
+
+    /// <summary>
+    /// Returns replacement bytes for a captured response body, or <c>null</c> to redact it.
+    /// May run later on another thread.
+    /// </summary>
+    public Func<SpanSnapshot, byte[], byte[]?>? MaskResponseBody { get; set; }
+
+    /// <summary>Returns the supplied log record to keep it, or <c>null</c> to drop it.</summary>
+    public Func<LogRecordSnapshot, LogRecordSnapshot?>? MaskLogRecord { get; set; }
+
+    /// <summary>Additional query parameter name patterns to redact.</summary>
+    public List<string> MaskQueryParams { get; set; } = [];
+
+    /// <summary>Additional header name patterns to redact.</summary>
+    public List<string> MaskHeaders { get; set; } = [];
+
+    /// <summary>Additional JSON body field name patterns to redact.</summary>
+    public List<string> MaskBodyFields { get; set; } = [];
+
+    /// <summary>Additional path patterns of requests whose traces and logs are not captured.</summary>
+    public List<string> ExcludePaths { get; set; } = [];
 }

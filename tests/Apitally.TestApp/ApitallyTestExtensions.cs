@@ -1,43 +1,59 @@
 namespace Apitally.TestApp;
 
-using Apitally;
-using Microsoft.AspNetCore.Mvc;
-
 public static class ApitallyTestExtensions
 {
-    public static IServiceCollection AddApitallyWithoutBackgroundServices(
-        this IServiceCollection services,
-        Action<ApitallyOptions>? configureOptions = null
-    )
+    public static IEndpointRouteBuilder MapTestRoutes(this IEndpointRouteBuilder endpoints)
     {
-        services.AddOptions<ApitallyOptions>();
-        if (configureOptions != null)
-        {
-            services.PostConfigure(configureOptions);
-        }
-
-        services.AddHttpClient(
-            "Apitally",
-            client =>
+        endpoints.MapGet("/hello", () => "Hello").WithDescription("Says hello");
+        endpoints.MapGet(
+            "/items/{id:int}",
+            (int id, IApitally apitally) =>
             {
-                client.BaseAddress = new Uri("http://test");
-                client.Timeout = TimeSpan.FromSeconds(1);
+                using var activity = apitally.StartActivity("load-item");
+                apitally.SetRequestAttribute("item.id", id);
+                return Results.Ok(new { id });
             }
         );
-
-        services.AddSingleton<ApitallyLoggerProvider>();
-        services.AddSingleton<ILoggerProvider>(sp =>
-            sp.GetRequiredService<ApitallyLoggerProvider>()
+        endpoints.MapPost("/items", (Item item) => Results.Created($"/items/{item.Id}", item));
+        endpoints.MapGet(
+            "/consumers/{identifier}",
+            (string identifier, IApitally apitally) =>
+            {
+                apitally.SetConsumer(
+                    identifier,
+                    name: $"Consumer {identifier}",
+                    group: "customers",
+                    attributes: new Dictionary<string, string?> { ["plan"] = "pro" }
+                );
+                return "OK";
+            }
         );
-
-        services.Configure<MvcOptions>(options =>
-        {
-            var filter = (TypeFilterAttribute)
-                options.Filters.Add<ValidationErrorFilter>(ValidationErrorFilter.FilterOrder);
-            filter.IsReusable = true;
-        });
-        services.AddSingleton<RequestLogger>();
-        services.AddSingleton<ApitallyClient>();
-        return services;
+        endpoints.MapGet("/error", string () => throw new InvalidOperationException("Test error"));
+        endpoints.MapGet("/status/{code:int}", (int code) => Results.StatusCode(code));
+        endpoints.MapGet(
+            "/validation",
+            () =>
+                Results.ValidationProblem(
+                    new Dictionary<string, string[]> { ["items[a.b].name"] = ["Name is required."] }
+                )
+        );
+        endpoints.MapGet(
+            "/validation/422",
+            () =>
+                Results.ValidationProblem(
+                    new Dictionary<string, string[]> { ["email"] = ["Ungültige E-Mail-Adresse."] },
+                    statusCode: 422
+                )
+        );
+        endpoints.MapGet(
+            "/validation/custom",
+            () => Results.BadRequest(new { errors = new { name = new[] { "Not a known shape" } } })
+        );
+        var group = endpoints.MapGroup("/api/v1");
+        group.MapGet("/", () => "API");
+        group.MapGet("/orders/{orderId}", (string orderId) => Results.Ok(new { orderId }));
+        return endpoints;
     }
 }
+
+public sealed record Item(int Id, string Name);

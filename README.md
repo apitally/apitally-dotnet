@@ -47,8 +47,7 @@ of each request, making troubleshooting faster and easier.
 ### Error tracking
 
 Understand which validation rules in your endpoints cause client errors. Capture
-error details and stack traces for 500 error responses, and have them linked to
-Sentry issues automatically.
+error details and stack traces for 500 error responses.
 
 ### API monitoring & alerts
 
@@ -58,13 +57,13 @@ email, Slack and Microsoft Teams.
 
 ## Supported frameworks
 
-This SDK supports [**ASP.NET Core**](https://github.com/dotnet/aspnetcore) on .NET 6, 7, 8, and 9.
+This SDK supports [**ASP.NET Core**](https://github.com/dotnet/aspnetcore) on .NET 8, 9, and 10, with both Minimal APIs and MVC controllers.
 
 Apitally also supports many other web frameworks in [JavaScript](https://github.com/apitally/apitally-js), [Python](https://github.com/apitally/apitally-py), [Go](https://github.com/apitally/apitally-go), and [Java](https://github.com/apitally/apitally-java) via our other SDKs.
 
 ## Getting started
 
-If you don't have an Apitally account yet, first [sign up here](https://app.apitally.io/?signup). Create an app in the Apitally dashboard and select **ASP.NET Core** as your framework. You'll see detailed setup instructions with code snippets you can copy and paste. These also include your client ID.
+If you don't have an Apitally account yet, first [sign up here](https://app.apitally.io/?signup). Create an app in the Apitally dashboard and select **ASP.NET Core** as your framework. You'll see detailed setup instructions with code snippets you can copy and paste. These also include your write token.
 
 Install the NuGet package:
 
@@ -72,41 +71,77 @@ Install the NuGet package:
 dotnet add package Apitally
 ```
 
-Then add Apitally to your ASP.NET Core application by registering the required
-services and middleware in your `Program.cs` file:
+Then add Apitally to your ASP.NET Core application in your `Program.cs` file. This is all
+that's required: the SDK registers its middleware automatically.
 
 ```csharp
 using Apitally;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add Apitally services
 builder.Services.AddApitally(options =>
 {
-    options.ClientId = "your-client-id";
+    options.WriteToken = "apt_..."; // or set the APITALLY_WRITE_TOKEN environment variable
     options.Env = "dev"; // or "prod" etc.
-
-    // Optional: Configure request logging
-    options.RequestLogging.Enabled = true;
-    options.RequestLogging.IncludeRequestHeaders = true;
-    options.RequestLogging.IncludeRequestBody = true;
-    options.RequestLogging.IncludeResponseBody = true;
-    options.RequestLogging.CaptureLogs = true;
-    options.RequestLogging.CaptureTraces = true;
 });
 
 var app = builder.Build();
-
-// Add Apitally middleware
-app.UseApitally();
-
-// ... rest of your middleware configuration
 ```
+
+If your application uses a `Startup` class, call `services.AddApitally()` in `ConfigureServices`.
+
+Options can also be set in the `Apitally` section of your application's configuration, such as
+`appsettings.json`. Values set in code take precedence.
+
+```json
+{
+  "Apitally": {
+    "WriteToken": "apt_...",
+    "Env": "prod",
+    "CaptureRequestBody": true,
+    "CaptureResponseBody": true
+  }
+}
+```
+
+If you use Serilog, pass `writeToProviders: true` when registering it. Otherwise Serilog doesn't
+forward logs to other logging providers, and Apitally can't capture application logs:
+
+```csharp
+builder.Services.AddSerilog(
+    (services, configuration) => configuration.WriteTo.Console(),
+    writeToProviders: true
+);
+```
+
+### Identifying consumers and adding custom spans
+
+Inject the `IApitally` service to identify the consumer of a request, add attributes, capture
+handled exceptions, or create custom spans:
+
+```csharp
+app.MapGet("/orders/{id}", (string id, IApitally apitally) =>
+{
+    apitally.SetConsumer("acme-corp", name: "Acme Corp", group: "enterprise");
+    apitally.SetRequestAttribute("order.id", id);
+    using var activity = apitally.StartActivity("load-order");
+    return Results.Ok(new { id });
+});
+```
+
+### Existing OpenTelemetry setups
+
+The SDK is built on OpenTelemetry. If your application registers a tracer provider with
+`AddOpenTelemetry().WithTracing(...)`, the SDK uses it automatically, and your sampler, exporters
+and instrumentation remain unchanged. Otherwise, the SDK traces incoming requests, outgoing
+`HttpClient` calls and activities from any `ActivitySource` during requests on its own.
 
 For further instructions, see our
 [setup guide for ASP.NET Core](https://docs.apitally.io/frameworks/aspnet-core).
 
 See the [SDK reference](https://docs.apitally.io/sdk-reference/dotnet) for all available configuration options, including how to mask sensitive data, customize request logging, and more.
+
+Upgrading from version 0.x? See the [migration guide](https://docs.apitally.io/sdk-reference/dotnet/v1/migration).
 
 ## Getting help
 

@@ -1,112 +1,27 @@
-using System.ComponentModel.DataAnnotations;
-using System.Diagnostics;
-using Apitally;
-using Apitally.TestApp;
-using Microsoft.AspNetCore.Mvc;
+namespace Apitally.TestApp;
 
-var testActivitySource = new ActivitySource("TestApp");
-
-var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddControllers();
-builder.Services.AddApitallyWithoutBackgroundServices();
-builder.Services.Configure<ApitallyOptions>(options =>
+public static class Program
 {
-    options.ClientId = "00000000-0000-0000-0000-000000000000";
-    options.Env = "test";
-    options.RequestLogging.Enabled = true;
-    options.RequestLogging.CaptureLogs = true;
-    options.RequestLogging.CaptureTraces = true;
-    options.RequestLogging.ShouldExclude = (request, response) =>
+    public static void Main(string[] args) => CreateMinimalApp(args).Run();
+
+    // Modern hosting with WebApplicationBuilder.
+    public static WebApplication CreateMinimalApp(
+        string[] args,
+        Action<WebApplicationBuilder>? configure = null
+    )
     {
-        return false;
-    };
-});
+        var builder = WebApplication.CreateBuilder(args);
+        builder.Services.AddApitally();
+        builder.Services.AddControllers().AddApplicationPart(typeof(Program).Assembly);
+        configure?.Invoke(builder);
+        var app = builder.Build();
+        app.MapTestRoutes();
+        app.MapControllers();
+        return app;
+    }
 
-var app = builder.Build();
-app.MapControllers();
-app.UseExceptionHandler(errorApp =>
-{
-    errorApp.Run(context =>
-    {
-        context.Response.StatusCode = 500;
-        context.Response.ContentLength = 0;
-        return Task.CompletedTask;
-    });
-});
-app.UseApitally();
-
-app.MapGet(
-        "/items",
-        (
-            HttpContext context,
-            ILogger<Program> logger,
-            [FromQuery] [StringLength(10, MinimumLength = 2)] string? name
-        ) =>
-        {
-            logger.LogInformation("Retrieving items with filter: {Name}", name ?? "none");
-
-            context.Items["ApitallyConsumer"] = new ApitallyConsumer
-            {
-                Identifier = "tester",
-                Name = "Tester",
-                Group = "Test Group",
-            };
-
-            logger.LogDebug("Consumer set for request");
-            var items = new[] { new Item(1, "bob"), new Item(2, "alice") };
-            logger.LogInformation("Returning {Count} items", items.Length);
-            return items;
-        }
-    )
-    .WithName("GetItems");
-
-app.MapGet(
-        "/items/{id:min(1)}",
-        (int id) =>
-        {
-            using var activity = testActivitySource.StartActivity("FetchItemFromDatabase");
-            activity?.SetTag("item.id", id);
-            return new Item(id, "bob");
-        }
-    )
-    .WithName("GetItem");
-
-app.MapPost("/items", (Item item) => Results.Created($"/items/{item.Id}", item))
-    .WithName("CreateItem");
-
-app.MapPut(
-        "/items/{id:min(1)}",
-        (int id, Item item) =>
-        {
-            return Results.NoContent();
-        }
-    )
-    .WithName("UpdateItem");
-
-app.MapDelete(
-        "/items/{id:min(1)}",
-        (int id) =>
-        {
-            return Results.NoContent();
-        }
-    )
-    .WithName("DeleteItem");
-
-app.MapGet(
-        "/throw",
-        () =>
-        {
-            throw new TestException("an expected error occurred");
-        }
-    )
-    .WithName("ThrowError");
-
-app.Run();
-
-public partial class Program { }
-
-class TestException : Exception
-{
-    public TestException(string? message)
-        : base(message) { }
+    // Generic Host with a Startup class.
+    public static IHostBuilder CreateStartupHostBuilder(string[] args) =>
+        Host.CreateDefaultBuilder(args)
+            .ConfigureWebHostDefaults(webBuilder => webBuilder.UseStartup<Startup>());
 }

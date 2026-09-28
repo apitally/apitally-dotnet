@@ -1,96 +1,66 @@
-namespace Apitally;
-
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Configuration;
+using Apitally.AspNetCore;
+using Apitally.Hosting;
+using Apitally.Logging;
+using Apitally.Requests;
+using Apitally.Tracing;
+using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace Apitally;
 
 public static class ApitallyExtensions
 {
-    public static IServiceCollection AddApitally(this IServiceCollection services)
-    {
-        return services.AddApitally(null);
-    }
-
+    /// <summary>
+    /// Adds Apitally monitoring to an ASP.NET Core application. Options are read from the
+    /// <c>Apitally</c> configuration section; <paramref name="configure"/> runs afterwards and
+    /// takes precedence. Calling this more than once registers Apitally only once.
+    /// </summary>
     public static IServiceCollection AddApitally(
         this IServiceCollection services,
-        Action<ApitallyOptions>? configureOptions
+        Action<ApitallyOptions>? configure = null
     )
     {
-        // Configure options from appsettings.json first
-        services
-            .AddOptions<ApitallyOptions>()
-            .Configure<IConfiguration>(
-                (options, configuration) =>
-                {
-                    configuration.GetSection("Apitally").Bind(options);
-                }
+        var isFirstCall = !services.Any(service => service.ServiceType == typeof(TelemetryRuntime));
+        services.AddOptions();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IConfigureOptions<ApitallyOptions>,
+                BaseOptionsConfiguration
+            >()
+        );
+        if (configure is not null)
+            services.PostConfigure(configure);
+        services.TryAddSingleton<TelemetryRuntime>();
+        services.AddHttpContextAccessor();
+        services.TryAddSingleton<IApitally, RequestHelpers>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<
+                IDeveloperPageExceptionFilter,
+                DeveloperPageExceptionCapture
+            >()
+        );
+        services.TryAddSingleton<ApitallyLoggerProvider>();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<ILoggerProvider, ApitallyLoggerProvider>(serviceProvider =>
+                serviceProvider.GetRequiredService<ApitallyLoggerProvider>()
             )
-            .ValidateDataAnnotations();
-
-        // If options are provided directly, they take precedence
-        if (configureOptions != null)
+        );
+        if (isFirstCall)
         {
-            services.PostConfigure(configureOptions);
+            TracingIntegration.Register(services);
+            ValidationCapture.Register(services);
         }
-
-        // Register IHttpClientFactory which is required by ApitallyClient
-        services.AddHttpClient(
-            "Apitally",
-            client =>
-            {
-                client.BaseAddress = new Uri(
-                    Environment.GetEnvironmentVariable("APITALLY_HUB_BASE_URL")
-                        ?? "https://hub.apitally.io"
-                );
-                client.Timeout = TimeSpan.FromSeconds(10);
-            }
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IStartupFilter, ApitallyStartupFilter>()
         );
-
-        // Register custom logger provider for log capture
-        services.AddSingleton<ApitallyLoggerProvider>();
-        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(sp =>
-            sp.GetRequiredService<ApitallyLoggerProvider>()
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHostedService, ApitallyHostedService>()
         );
-
-        // Inert unless the user calls AddControllers() — keeps minimal-API apps free of MVC services.
-        services.Configure<MvcOptions>(options =>
-        {
-            var filter = (TypeFilterAttribute)
-                options.Filters.Add<ValidationErrorFilter>(ValidationErrorFilter.FilterOrder);
-            filter.IsReusable = true;
-        });
-
-        // Register RequestLogger and ApitallyClient
-        services.AddSingleton<RequestLogger>();
-        services.AddSingleton<ApitallyClient>();
-        services.AddHostedService(sp => sp.GetRequiredService<ApitallyClient>());
-        services.AddHostedService(sp => sp.GetRequiredService<RequestLogger>());
-
         return services;
-    }
-
-    public static IApplicationBuilder UseApitally(this IApplicationBuilder builder)
-    {
-        // Defer path collection until after application has fully started
-        builder
-            .ApplicationServices.GetRequiredService<IHostApplicationLifetime>()
-            .ApplicationStarted.Register(() =>
-            {
-                var client = builder.ApplicationServices.GetRequiredService<ApitallyClient>();
-                var endpointSources = builder.ApplicationServices.GetServices<EndpointDataSource>();
-                var paths = ApitallyUtils.GetPaths(endpointSources);
-                var versions = ApitallyUtils.GetVersions();
-
-                client.SetStartupData(
-                    paths: paths,
-                    versions: versions,
-                    client: "dotnet:aspnetcore"
-                );
-            });
-
-        return builder.UseMiddleware<ApitallyMiddleware>();
     }
 }
