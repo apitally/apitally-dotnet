@@ -1,8 +1,8 @@
 # Apitally .NET v1 design
 
-Status: Draft with first-round POC results, 2026-09-23. Production SDK implementation is not yet approved.
+Status: Decided, 2026-09-28. The [implementation plan](implementation-plan.md) describes how to build it.
 
-This document adapts the shared SDK design to ASP.NET Core and the .NET OpenTelemetry SDK. It is a living design for interviews, reviews, and focused POCs, not an implementation plan.
+This document adapts the shared SDK design to ASP.NET Core and the .NET OpenTelemetry SDK. It records the .NET decisions and the facts behind them; it is not an implementation plan.
 
 ## Sources and decision status
 
@@ -14,10 +14,6 @@ This draft distinguishes:
 
 - **Confirmed:** agreed during the design interview.
 - **Inherited:** a requirement from the shared documents, unless an adaptation is explicitly identified.
-- **Proposed:** a .NET mechanism requiring review or validation.
-- **Open:** a decision or technical question not yet resolved.
-
-An approved product/API direction does not establish that its proposed implementation works. Focused POC results are recorded below; combining middleware, provider integration and export lifetimes still requires validation.
 
 ### Confirmed decisions
 
@@ -27,7 +23,7 @@ An approved product/API direction does not establish that its proposed implement
 | OpenTelemetry compatibility | Use the tested OTel SDK 1.19.0 baseline as the minimum for v1, subject to integrated qualification. Applications using older OTel dependencies may need to upgrade. |
 | Native AOT | Outside the initial support guarantee. Prefer compatibility-friendly choices when they add no complexity. |
 | Hosting | Support modern `WebApplicationBuilder` hosting and Generic Host with `Startup`. Modern hosting is the primary documented path. |
-| Setup | One `IServiceCollection.AddApitally` registration call with automatic middleware registration, subject to integrated-pipeline validation. |
+| Setup | One `IServiceCollection.AddApitally` registration call with automatic middleware registration. |
 | Existing tracing | Automatic integration with DI-registered tracing; register separately constructed providers as existing `TracerProvider` instances in DI. |
 | Hosting support boundary | Normal single-host ASP.NET Core integration is the v1 baseline. Additional hosts are not prohibited; special multi-host coordination is outside v1 implementation and release requirements. Independent sampling across overlapping providers is not guaranteed. |
 | Configuration | Use the standard .NET Options pattern: one base step applies environment fallbacks and binds the `Apitally` section, and `AddApitally` callbacks run as `PostConfigure`. Read `IOptions<ApitallyOptions>` once at startup preparation, then validate and freeze before activation. |
@@ -36,7 +32,7 @@ An approved product/API direction does not establish that its proposed implement
 | Options layout | Use flat properties on `ApitallyOptions` and directly under the `Apitally` configuration section. |
 | Unfinished requests at shutdown | At the final SDK cutoff, discard detail for requests still awaiting transport completion or SERVER activity end. Flush finalized requests normally; recorded metrics and eligible error aggregates remain independent. |
 | Shutdown budget | Use the host's remaining shutdown budget and honor its cancellation. Add no separate Apitally flush window; final delivery may remain incomplete when the budget expires. |
-| Test-host activation | Automatically suppress Apitally for the standard in-memory TestServer by recognizing the resolved server's exact type and assembly. Real Kestrel tests use the existing disable configuration. The candidate runtime passed .NET 8/9/10 validation; full SDK integration remains open. |
+| Test-host activation | Automatically suppress Apitally for the standard in-memory TestServer by recognizing the resolved server's exact type and assembly. Real Kestrel tests use the existing disable configuration. |
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically. Database instrumentation is opt-in. |
 | Tracing customization | Use standard OTel provider registration for database instrumentation and additional activity sources. Apitally-specific tracing-configuration callbacks are outside the initial API. |
@@ -86,7 +82,7 @@ Log capture becoming enabled by default must be called out in the migration guid
 
 **Confirmed dependency policy:** use OTel SDK 1.19.0, the tested baseline, as the minimum for v1 and qualify it through integrated testing. Document that applications with older OpenTelemetry dependencies may need to upgrade them. The initial release will not introduce compatibility paths for older OTel SDK releases. This leaves the .NET 8/9/10 runtime support unchanged; a selected dependency baseline is not evidence that the complete SDK integration already works.
 
-**Open:** exact NuGet target frameworks, C# language version, the complete instrumentation/dependency graph and its integrated qualification. Testing runtimes 8/9/10 does not by itself require three target frameworks in the package.
+**Confirmed:** one `net8.0` package assembly built with C# 12 serves all supported runtimes; tests run on .NET 8/9/10. The qualified dependency graph is recorded in plan stage 8.
 
 ## 2. Integration with existing OpenTelemetry setups
 
@@ -94,9 +90,9 @@ Log capture becoming enabled by default must be called out in the migration guid
 
 **Confirmed:** use the host's normal tracing registration when available. Register a separately constructed provider as an existing `TracerProvider` instance in the host's DI container. Preserve user-owned providers, processors, exporters, resources, samplers, and instrumentation configuration.
 
-**Proposed:** participate in provider construction through the supported .NET builder/DI APIs. Prefer one additive registration path over creating a competing provider. The OTel library registration API, `ConfigureOpenTelemetryTracerProvider`, can add configuration without independently creating a provider.
+**Confirmed:** participate in provider construction through the supported .NET builder/DI APIs. Prefer one additive registration path over creating a competing provider. The OTel library registration API, `ConfigureOpenTelemetryTracerProvider`, can add configuration without independently creating a provider.
 
-The registration POC must establish ownership in both registration orders. The presence of a `TracerProvider` service alone is not sufficient evidence that the user configured tracing: Apitally's own registration may have added it. In particular, do not apply an always-on sampler to an existing user pipeline simply because both configurations reach the same builder.
+The presence of a `TracerProvider` service alone is not sufficient evidence that the user configured tracing: Apitally's own registration may have added it. In particular, do not apply an always-on sampler to an existing user pipeline simply because both configurations reach the same builder.
 
 When Apitally owns tracing:
 
@@ -121,7 +117,7 @@ When the application owns tracing:
 
 Public post-build `AddProcessor` works for an official SDK provider that already subscribes to the required sources. It cannot add missing source subscriptions, and there is no public processor-detachment counterpart. Disabling the attached path preserves the external provider's lifetime, but does not remove its retained processor.
 
-**Open:** minimum instrumentation versions and the provider-selection/attachment timing boundary. The external-provider POC used an explicit experimental parameter; the exact existing-instance DI path still needs integration verification, including shutdown and retained-processor state. The confirmed public configuration paths do not by themselves validate the full activation implementation.
+**Confirmed:** ASP.NET Core and HTTP instrumentation 1.19.0 are the minimum. The provider is selected during startup-filter preparation, and an existing instance receives a detachable forwarding processor (plan section 5).
 
 ### Multiple hosts
 
@@ -131,9 +127,9 @@ Public post-build `AddProcessor` works for an official SDK provider that already
 
 **Confirmed:** normal single-host ASP.NET Core integration is the v1 baseline. Additional hosts are not prohibited. Coordinating startup events, process gauges, aggregate/spool budgets or tracing across multiple hosts is outside v1 implementation and release requirements. Independent sampling across providers listening to the same sources is not guaranteed, even within a single host. Retain host-owned configuration and lifecycle without a global host coordinator or process-global Apitally configuration singleton.
 
-This boundary follows the distinction in official OTel guidance: repeated hosting registration creates one provider per service collection, while separately constructed providers are supported without establishing host or sampling isolation. Real Azure Monitor reports describe overlapping test hosts and multiple providers; they establish actual usage, not its production prevalence. See the research references below.
+This boundary follows the distinction in official OTel guidance: repeated hosting registration creates one provider per service collection, while separately constructed providers are supported without establishing host or sampling isolation.
 
-**Open:** the tested middleware association does not establish ownership of descendants ending before middleware entry or children with only an explicit parent context. These request-association questions also matter in a single host. Do not treat the POC's association filter as a complete request algorithm.
+**Confirmed:** request state is created at SERVER activity start, so descendants that end before middleware entry are associated, and children with only an explicit parent context inherit through their parent span ID (plan section 5).
 
 If the public APIs cannot preserve the agreed ownership and tracing behavior within the supported single-host integration, document the limitation and bring the decision back for review. Do not silently substitute a process-global configuration singleton.
 
@@ -156,7 +152,7 @@ On the Apitally-only export of user-owned spans, override the instance ID and en
 
 **Inherited:** use one process instance identity across all signals, regenerated on process restart. Host-owned state does not change the shared process-wide event, gauge or aggregate/spool requirements into per-host requirements. Implement these contracts for the single-host baseline and preserve private-pipeline isolation; special multi-host coordination is outside v1 scope as described above.
 
-**Inherited:** captured bodies must not be silently truncated by OTel limits. **Open:** verify which length settings the supported .NET SDK actually exposes and where limits apply to export snapshots. Pin applicable owned settings to 65,536 and warn about observable lower user limits as required by the shared design; do not invent a .NET equivalent of Python's `SpanLimits` or use private APIs solely to inspect it.
+**Inherited:** captured bodies must not be silently truncated by OTel limits. In OTel .NET 1.19.0, attribute limits (`SdkLimitOptions`) exist only inside the OTLP exporter package and are applied during its serialization; `Activity` tags are never clipped. Apitally copies activities and encodes them itself, so no OTel limit applies to its export and there is nothing to pin or inspect.
 
 ## 3. Configuration
 
@@ -188,7 +184,7 @@ The write token must match `apt_` followed by 24 alphanumeric characters. Missin
 
 **Confirmed layout:** keep the configuration surface as flat properties on `ApitallyOptions`, such as `SampleRate` and `CaptureRequestBody`. The same keys appear directly under the `Apitally` configuration section. Sampling, capture and redaction do not introduce nested options groups.
 
-**Proposed names:** use PascalCase names corresponding to the shared settings: `WriteToken`, `Env`, `AppVersion`, `Disabled`, `CaptureLogs`, the four directional capture toggles, `SampleRate`, the sampling and masking callbacks, and the redaction/exclusion pattern collections.
+**Confirmed names:** use PascalCase names corresponding to the shared settings: `WriteToken`, `Env`, `AppVersion`, `Disabled`, `CaptureLogs`, the four directional capture toggles, `SampleRate`, the sampling and masking callbacks, and the redaction/exclusion pattern collections.
 
 Callbacks are configured in code. The startup event serializes their presence as `true`, not their implementation. Pattern serialization includes their effective flags where relevant.
 
@@ -200,7 +196,7 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 Invalid settings disable telemetry rather than failing startup, so the SDK uses neither `ValidateOnStart` nor `IValidateOptions`. Default host builders also read unprefixed environment variables such as `Apitally__SampleRate` into the section without Apitally code.
 
-**Open:** exact option property names and genuinely optional values. The deferred resolution and freezing behavior still requires integrated validation.
+Exact public names and types are listed in plan section 4.
 
 **Confirmed:** repeated registration within one host composes code configuration callbacks in registration order. Later explicit assignments override earlier assignments; a later callback or setup call leaves settings it does not assign unchanged. Resolve the composed code overrides using the source precedence and additive disable rules above, then freeze runtime configuration before activation. Repeated setup must not duplicate middleware, processors, workers or logging providers.
 
@@ -210,7 +206,7 @@ Invalid settings disable telemetry rather than failing startup, so the SDK uses 
 
 **Inherited:** configuration and serving activation are separate. Registration must not start Apitally export workers, send telemetry, or report the process online. Route metadata preparation may happen once the framework has finalized that information.
 
-**Proposed lifecycle:**
+**Lifecycle:**
 
 1. `AddApitally` on `IServiceCollection` wires options, services, tracing registration, logging capture, and middleware/lifecycle hooks.
 2. In the startup filter, read the resolved options once, apply additive disable controls, validate and freeze the resulting settings, and prepare tracing.
@@ -218,19 +214,17 @@ Invalid settings disable telemetry rather than failing startup, so the SDK uses 
 4. There is no first-request fallback or concurrent activation gate. The runtime is active, stopping, stopped, or disabled.
 5. On ordinary host shutdown, flush finalized requests and run the shared final export cycle before disposing owned providers and transport resources. At the final SDK cutoff, discard request detail that still lacks transport completion or SERVER activity end, as described in section 6.
 
-**POC evidence:** the [transport/lifecycle experiment](../pocs/transport-lifecycle/README.md) observes an early Generic Host request before `ApplicationStarted`, which is why activation does not wait for that event. The separate provider experiment establishes tracing readiness for an early request. Real worker activation is not yet proven.
+**POC evidence:** the [transport/lifecycle experiment](../pocs/transport-lifecycle/README.md) observes an early Generic Host request before `ApplicationStarted`, which is why activation does not wait for that event. The separate provider experiment establishes tracing readiness for an early request.
 
 **Confirmed adaptation:** one activation attempt per host runtime. A preparation or activation failure logs an error and leaves that host serving without telemetry. This follows host ownership rather than Python's process-global activation state. `TelemetryRuntime` is a DI singleton implementing `IAsyncDisposable`: if the host fails after activation, for example because the server cannot bind, container disposal stops workers and releases owned resources without final delivery.
 
-**POC evidence:** ordinary hosted-service `StopAsync` ordering relative to Kestrel differs between the two tested hosting compositions. `IHostedLifecycleService.StoppedAsync` follows all service stop calls and is a candidate final-drain phase. A request ignoring cancellation can remain unfinished after host stop returns; a 300 ms host budget took about 1.3 seconds in the tested Kestrel abort path. The final phase receives the already-canceled token in that case. Host cancellation is not an exact wall-clock termination guarantee.
+**POC evidence:** ordinary hosted-service `StopAsync` ordering relative to Kestrel differs between the two tested hosting compositions. `IHostedLifecycleService.StoppedAsync` follows all service stop calls and is the final-drain phase. A request ignoring cancellation can remain unfinished after host stop returns; a 300 ms host budget took about 1.3 seconds in the tested Kestrel abort path. The final phase receives the already-canceled token in that case. Host cancellation is not an exact wall-clock termination guarantee.
 
 **Confirmed shutdown budget:** the application host controls the available shutdown time. Apitally uses the remaining host budget and honors its cancellation rather than starting an additional SDK flush window. Drain, flush and delivery share that budget; each phase does not receive a fresh allowance. If request draining exhausts it, final telemetry delivery may remain incomplete. This is cooperative cancellation, not a guarantee that framework or blocking synchronous operations terminate at an exact wall-clock deadline.
 
-**Open:** actual OTel provider/worker disposal ordering, completed-spool-write coordination within the host budget, and implementation of the confirmed unfinished-request cutoff. The lifecycle POC's drain is a counter/cancellable delay, not export evidence. Validate that blocking processor/export work and cleanup do not introduce deliberate extra waiting beyond host cancellation.
+Plan section 10 specifies the shutdown sequence, including disposal ordering, completed spool writes and the unfinished-request cutoff.
 
 **Confirmed test-suppression direction:** automatically suppress telemetry activation for application integration tests when a reliable, straightforward detector is available. Requiring users to disable every test host explicitly is not the preferred default. Bring any complex mechanism back for review rather than adding broad test-framework detection. The SDK's own tests must remain able to exercise real activation deliberately.
-
-**Reference behavior:** Python checks `PYTEST_CURRENT_TEST` and the Django `manage.py test` argument shape at activation. Its telemetry tests deliberately clear the pytest marker. This is targeted coverage, not a universal detector for every test runner.
 
 **Research finding:** no documented marker that is generally set across ordinary VSTest and Microsoft.Testing.Platform runs was established. Debug/runtime-selection settings and mode-specific controller variables do not establish a general test environment. This is not proof that every runner-specific marker is absent.
 
@@ -242,8 +236,6 @@ The guard covers standard in-memory TestServer tests; it does not identify real 
 
 Application-owned tracing continues exporting real completed SERVER spans in suppressed TestServer cases, including after candidate disposal. Loopback Kestrel in Development activates and exports through the private fallback even with TestHost loaded; .NET 10 factory Kestrel mode also passes. Export and disposal assertions await observed completion rather than assuming `ForceFlush` establishes it.
 
-**Still unproven:** full SDK configuration/logging/metrics/worker integration, other tracing-registration modes and concurrent early-request activation. The request-only probe omits the startup activation hook but sends requests after the host has started. Active Kestrel controls use private tracing; application-owned tracing is exercised in the suppressed path. The selected guard remains limited to the exact TestServer identity.
-
 Host lifetime integration is the default direction. Python fork handling and JavaScript signal re-delivery are not mechanisms to port into this SDK.
 
 ## 5. Request model: span filtering and exclusion
@@ -254,7 +246,7 @@ At activity start, classify recording activities by their local parent relations
 
 Apply shared exclusions before request sampling: `OPTIONS`, websocket requests, excluded paths, and excluded user agents. Normalize stable and legacy HTTP attribute forms, deriving missing path/query fields from full URLs where necessary. Keep stable HTTP semantic conventions on Apitally's exported representation without changing the user's original representation.
 
-**Proposed:** maintain host-owned request state associated with `HttpContext` through an internal feature, plus an activity-to-request association for processors and log linkage. The state exists even when no recording SERVER activity exists. Its responsibilities are:
+**Confirmed:** maintain host-owned request state associated with `HttpContext` through an internal feature, plus an activity-to-request association for processors and log linkage. The state exists even when no recording SERVER activity exists. Its responsibilities are:
 
 - The request's SERVER activity handle and identity, independent of `Activity.Current` becoming a child.
 - Consumer identity and request attributes.
@@ -266,7 +258,7 @@ Consumer identity must survive sampling and be adoptable when set before the SER
 
 Suppress framework per-message spans at the source where supported and filter their known kind/name/scope combinations in Apitally's processor. Do not treat websocket messages as HTTP requests.
 
-**Open:** full SDK integration of association mechanics and early request context, plus concurrency and lifecycle validation. Verify isolation across concurrent and keep-alive requests without adding a blanket context reset that destroys legitimate upstream propagation.
+Plan section 5 specifies the association mechanics. Isolate concurrent and keep-alive requests without a blanket context reset that destroys legitimate upstream propagation.
 
 ## 6. Sampling and per-request buffering
 
@@ -292,13 +284,13 @@ In ASP.NET Core, Kestrel awaits the application pipeline, finishes the response,
 
 **Research finding:** .NET `Activity` is not a detached immutable span representation, and public APIs do not provide a faithful clone with the same IDs, source, and kind. A retained, stopped activity remains usable; the problem is shared mutable state and the inability to represent a privately enriched export view without changing the original. The tested .NET SDK has no equivalent public `ReadableSpan` abstraction. The specialized `BatchActivityExportProcessor` accepts `Activity` objects, not an arbitrary export snapshot.
 
-**Proposed:** copy the data required for Apitally export into an SDK-owned snapshot. Preserve IDs, parents, times, status, events, links, scope, and resource. Apply late enrichment and privacy processing to that owned representation. Do not fabricate a second live activity to represent the original request or modify user-owned activities to finish export.
+**Confirmed:** copy the data required for Apitally export into an SDK-owned snapshot. Preserve IDs, parents, times, status, events, links, scope, and resource. Apply late enrichment and privacy processing to that owned representation. Do not fabricate a second live activity to represent the original request or modify user-owned activities to finish export.
 
-**POC evidence:** the [snapshot experiment](../pocs/activity-snapshots/README.md) demonstrates public generic `BatchExportProcessor<T>` intake of owned records, tested metadata/value copying, and private 50,000-byte body processing without changing a simultaneous user export. Mutable array values are copied rather than shared. Worker construction suppresses execution-context flow so activation does not carry ambient context into body processing. Arbitrary value types and full scope metadata remain unproven.
+**POC evidence:** the [snapshot experiment](../pocs/activity-snapshots/README.md) demonstrates public generic `BatchExportProcessor<T>` intake of owned records, tested metadata/value copying, and private 50,000-byte body processing without changing a simultaneous user export. Mutable array values are copied rather than shared. Worker construction suppresses execution-context flow so activation does not carry ambient context into body processing.
 
-Generic batching does not enforce span sampling semantics: an explicit `Activity.Recorded` check is needed to match the specialized activity processor's treatment of `RecordOnly`. The request-buffer checks are a sequential model, not proof of concurrent framework completion. Log ownership, production lifecycle guards, and detailed snapshot ownership/value semantics remain open.
+Generic batching does not enforce span sampling semantics: an explicit `Activity.Recorded` check is needed to match the specialized activity processor's treatment of `RecordOnly`. The request-buffer checks are a sequential model, not proof of concurrent framework completion.
 
-**Confirmed callback shape:** all four span-based callbacks (`SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody`, `MaskResponseBody`) receive the same complete span snapshot type. `SpanSnapshot` is the working name. Expose available identity/parent, name, kind, timestamps, status, attributes, events, links, resource and instrumentation-scope metadata. Events and links use `ActivityEvent` and `ActivityLink`, the resource uses OTel `Resource`, and the scope is flat `ScopeName`/`ScopeVersion` properties; there are no Apitally-specific event, link or scope types. This is an inspection type, not another span-creation or mutation API.
+**Confirmed callback shape:** all four span-based callbacks (`SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody`, `MaskResponseBody`) receive the same complete span snapshot type, `SpanSnapshot`. Expose available identity/parent, name, kind, timestamps, status, attributes, events, links, resource and instrumentation-scope metadata. Events and links use `ActivityEvent` and `ActivityLink`, the resource uses OTel `Resource`, and the scope is flat `ScopeName`/`ScopeVersion` properties; there are no Apitally-specific event, link or scope types. This is an inspection type, not another span-creation or mutation API.
 
 Each invocation receives SDK-owned data appropriate to its stage, not a shared live `Activity` or `HttpContext`. Request sampling sees currently available information; response sampling includes final transport and custom attributes, including values learned after span end; body masking sees query/header redaction and captured headers before body attributes are attached. Information not yet available is represented as unset. The snapshot is the SDK-owned span record itself, reused from response sampling through export, not a per-callback copy. Read-only interfaces state intent only; the SDK does not defend against callbacks that cast and mutate values or that retain a snapshot and observe later enrichment. User telemetry is unaffected either way because the record is private. The same public type is used throughout rather than mixing `Activity`, request-specific contexts and snapshots.
 
@@ -306,11 +298,11 @@ Python constructs a new instance of its standard OTel `ReadableSpan` class; Java
 
 Attributes are an `IReadOnlyDictionary<string, object?>`. Values follow the exporter-aligned normalization selected in section 9 and use the plain CLR types OTel .NET users see on activity tags, including `string[]`, `long[]`, `double[]`, `bool[]` and `byte[]`.
 
-**Open:** final member names, full normalization validation, and complete scope/resource copying. The existing POC does not establish the complete public callback implementation. Log masking operates on a different signal and uses the separate `LogRecordSnapshot` type described in section 9.
+Exact members are listed in plan section 4. Log masking operates on a different signal and uses the separate `LogRecordSnapshot` type described in section 9.
 
 **Confirmed unfinished-request shutdown policy:** at the final SDK cutoff, discard trace and application-log detail for requests still awaiting either transport completion or SERVER activity end. Discard their buffered descendants/logs together, release captured payloads unprocessed and ensure later telemetry cannot revive those requests. Do not create partial SERVER exports or synthetic end times, and leave application-owned activities untouched.
 
-Requests finalized before the cutoff follow the normal response-sampling, complete-body and once-only release rules and remain eligible for the final export cycle. Already-recorded metrics and eligible error aggregates remain independent of the request-detail discard policy. The cutoff's coordination with completion callbacks, adapter detachment and exporter/spool shutdown still requires integrated validation. This is a permitted per-SDK choice under the shared best-effort shutdown contract.
+Requests finalized before the cutoff follow the normal response-sampling, complete-body and once-only release rules and remain eligible for the final export cycle. Already-recorded metrics and eligible error aggregates remain independent of the request-detail discard policy. This is a permitted per-SDK choice under the shared best-effort shutdown contract.
 
 ## 7. Capture pipeline: bodies, headers, sizes, redaction
 
@@ -320,7 +312,7 @@ For in-scope ordinary body capture, apply the canonical content-type allowlist a
 
 Process bodies in the shared order: bounded decompression, mask callback, parse, field redaction, and serialization. Parse to identify JSON regardless of content type once capture is allowed. Unsupported/failed decompression must not export the original bytes. A failed or dropping mask callback yields `[REDACTED]`; an oversized masked result yields `[BODY_TOO_LARGE]`. The oversized sentinel bypasses body processing.
 
-**Confirmed .NET body-mask signature:** `MaskRequestBody` and `MaskResponseBody` both use `Func<SpanSnapshot, byte[], byte[]?>`, with `SpanSnapshot` as the working name. The first argument is the complete span snapshot; the second is the decompressed body bytes before JSON parsing. The returned array replaces those bytes, and `null` produces `[REDACTED]`. Ordinary byte arrays keep the two callbacks consistent without another buffer abstraction. The returned array is consumed immediately and not copied; only the serialized result is retained.
+**Confirmed .NET body-mask signature:** `MaskRequestBody` and `MaskResponseBody` both use `Func<SpanSnapshot, byte[], byte[]?>`. The first argument is the complete span snapshot; the second is the decompressed body bytes before JSON parsing. The returned array replaces those bytes, and `null` produces `[REDACTED]`. Ordinary byte arrays keep the two callbacks consistent without another buffer abstraction. The returned array is consumed immediately and not copied; only the serialized result is retained.
 
 The body-mask callback sees the export snapshot after query/header redaction and captured-header attachment, but before body attributes are attached. Document that execution may happen later on another thread. A failure in the export redaction boundary drops the affected span rather than sending raw sensitive data.
 
@@ -336,9 +328,9 @@ Header attributes are list-valued, lowercase, and retain dashes. A masked header
 
 Body size observations are independent of content capture. Use trustworthy declared lengths or complete observed byte counts as the shared design allows; do not read a body or inspect a file merely to determine its size. Unknown size remains unknown. The same resolved sizes feed spans and histograms, including when captured bytes have been discarded after crossing the cap.
 
-**POC evidence:** the original bounded stream/feature wrappers and the [transport-completeness follow-up](../pocs/transport-completeness/README.md) observe tested request `Body`/`BodyReader` and response `Body`/`BodyWriter` paths without whole-response buffering. The follow-up passed 3564 assertions per exact .NET/ASP.NET 8.0.13, 9.0.2 and 10.0.9 pair across fresh and pooled connections. Clients receive ordinary and gzip-decoded prefixes while endpoints remain gated, and outer observation includes the gzip trailer. The original native file omission also clears mixed output. The follow-up's second file read can capture different bytes from those served; its single-pass comparison bypasses native dispatch. Both file-capture alternatives and the richer diagnostic failure tracker remain research, not production requirements.
+**POC evidence:** the original bounded stream/feature wrappers and the [transport-completeness follow-up](../pocs/transport-completeness/README.md) observe tested request `Body`/`BodyReader` and response `Body`/`BodyWriter` paths without whole-response buffering. The follow-up passed 3564 assertions per exact .NET/ASP.NET 8.0.13, 9.0.2 and 10.0.9 pair across fresh and pooled connections. Clients receive ordinary and gzip-decoded prefixes while endpoints remain gated, and outer observation includes the gzip trailer. The original native file omission also clears mixed output. The follow-up's second file read can capture different bytes from those served; its single-pass comparison bypasses native dispatch.
 
-**Open:** integration of the selected simple checks with capture/privacy processing, supported body-feature compositions/protocols, and size semantics for incomplete observations. The probes do not establish the full shared capture/privacy pipeline or resolve an earlier unexplained development timeout. Native file payload capture and exhaustive server-internal failure detection are outside the v1 implementation and release criteria.
+Native file payload capture and exhaustive server-internal failure detection are outside the v1 implementation and release criteria.
 
 ## 8. Transport observation, routes, frameworks
 
@@ -373,8 +365,6 @@ Request-local error state retains the first captured exception, independent of a
 
 **POC evidence:** `IExceptionHandlerFeature.Error` remains available after handled responses even when net10 suppresses handled-exception diagnostics. A non-handling `IExceptionHandler` observer depends on registration order, and an outer catch sees no escaping exception for these handled requests. Feature observation therefore avoids relying solely on either mechanism. Tests preserve the first exception, distinguish request cancellation from an unrelated `OperationCanceledException`, and apply the exact final-500 eligibility predicate.
 
-**Open:** composition with transport completion, response-started failures and duplicate exception events from user instrumentation. These experiments establish capture/eligibility, not production aggregation or OTel exception-event emission.
-
 ## 9. Logs
 
 ### Application logs
@@ -401,13 +391,9 @@ Run `MaskLogRecord` synchronously on the captured record before buffering. It ma
 
 **Confirmed plain-scope handling:** omit unstructured scope labels such as `BeginScope("Importing orders")` from both callback input and exported application logs. Do not synthesize a `Scope` attribute or append labels to `Body`. For formatted scopes, retain their structured fields while omitting the template and rendered label. This matches the official .NET OTLP exporter's treatment of empty-key scope values and `{OriginalFormat}`. Actual log messages and structured scope fields remain captured, and other logging providers are unchanged.
 
-**POC evidence:** the [native-log-masking follow-up](../pocs/native-log-masking/README.md) passes 828 assertions on each of .NET 8.0.13, 9.0.2 and 10.0.9, using SDK 10.0.301 and OTel 1.19.0. Its adapter-side results still apply: both provider orders preserve the independent sink's original state, scopes, formatter output and exception, and body/attribute edits and removals, supplied-record acceptance, null/throw/replacement drops and 12 concurrent scope contexts pass. Its native-record findings, such as pool reuse and `IncludeFormattedMessage` behavior, no longer affect the design. The tested value set is deliberately finite: selected scalar values, `int[]`, `string[]` and `List<int>`.
+**POC evidence:** the [native-log-masking follow-up](../pocs/native-log-masking/README.md) passes 828 assertions on each of .NET 8.0.13, 9.0.2 and 10.0.9, using SDK 10.0.301 and OTel 1.19.0. Its adapter-side results still apply: both provider orders preserve the independent sink's original state, scopes, formatter output and exception, and body/attribute edits and removals, supplied-record acceptance, null/throw/replacement drops and 12 concurrent scope contexts pass. The tested value set is deliberately finite: selected scalar values, `int[]`, `string[]` and `List<int>`.
 
 **Scope comparison:** the official OTel .NET 1.19.0 provider keeps scopes separate in `LogRecord` when `IncludeScopes` is enabled; it is off by default. Its OTLP exporter flattens structured scope fields into log attributes, skips empty keys and `{OriginalFormat}`, and deliberately preserves duplicate keys. It does not establish a general event-over-scope precedence rule.
-
-Serilog.Extensions.Logging 10.0.0 merges structured scope fields into Serilog event properties before Serilog.Sinks.OpenTelemetry 4.2.0 maps properties to OTLP attributes. The bridge's own scopes use inner-to-outer traversal and add-if-absent, so existing event properties win, then inner scopes. Its external-scope path instead adds or updates properties and can overwrite event fields. Plain/formatted scope text can also appear in a `Scope` array. These are Serilog events, not native OTel SDK `LogRecord` objects.
-
-The third-party NLog.Targets.OpenTelemetryProtocol 1.2.9 target merges captured `ScopeContext` properties into attributes before its OTel `EmitLog` call when `IncludeScopeProperties` is enabled. With the investigated NLog 6.2.1 merge, event/scope collisions retain the event key and rename the conflicting scope key. Outer-versus-inner collision precedence was not established by this review. Plain nested scope states are not automatically exported by this path. These comparisons are source-based; no Serilog/NLog runtime comparison was performed.
 
 **CLR-value source findings:** the pinned OTel 1.19.0 log and span exporters use the same internal attribute writer. Native records/activities retain CLR values until export; their values are not automatically owned or normalized before an Apitally callback. The writer and protobuf serializers are internal, not a supported public conversion service.
 
@@ -425,11 +411,9 @@ A failing ordinary fallback conversion omits that attribute; a failing array-ele
 
 **Confirmed callback value policy:** use the type mapping of the inspected standard OTel .NET export conversions for span and log callback attribute values. Normalize before callbacks and detach arrays/maps from application-owned data. Ordinary lists and opaque objects use the standard string fallback rather than expanding their contents or cloning object properties. Applications can supply arrays explicitly when they want element values captured. Convert values a log callback added when the batch worker encodes the record. Conversion failures omit the value, never passing through raw mutable values as a fallback; the stock converter's internal edge-case behavior is not an Apitally contract. This selects value conversion, not every stock serializer limit; shared Apitally payload requirements still apply.
 
-This is an explicit .NET qualification of the shared design's non-string pass-through wording: a CLR value converted to a log string before masking is subject to the existing 2,048-character string limit after masking. The same applies to a string produced while encoding accepted callback output. Span attributes retain their separate limits. The limit counts UTF-16 code units, matching the JavaScript SDK; a split surrogate pair is harmless because Google.Protobuf encodes strings with replacement. Array and map values pass through untruncated, as the shared design specifies for non-string values. The selected normalizer requires runtime validation beyond the finite POC value set.
+This is an explicit .NET qualification of the shared design's non-string pass-through wording: a CLR value converted to a log string before masking is subject to the existing 2,048-character string limit after masking. The same applies to a string produced while encoding accepted callback output. Span attributes retain their separate limits. The limit counts UTF-16 code units, matching the JavaScript SDK; a split surrogate pair is harmless because Google.Protobuf encodes strings with replacement. Array and map values pass through untruncated, as the shared design specifies for non-string values.
 
 **Confirmed duplicate-key rule:** within one attribute or key/value collection, the last occurrence of a key wins, including accepted callback output. The selected log-entry-over-inner-scope-over-outer-scope precedence remains unchanged.
-
-**Open:** full normalizer validation, production request association and integration with other logging factories.
 
 ### Startup event
 
@@ -442,13 +426,11 @@ Emit `apitally.app.startup` through the private logs pipeline with scope `apital
 
 **Confirmed v1 scope deviation:** omit the startup event's `openapi` field. Full OpenAPI document capture is deferred on all supported runtimes, including .NET 10. Endpoint registration and native summary/description enrichment remain in scope.
 
-**POC evidence:** finalized `EndpointDataSource` entries retain tested nested group prefixes, route constraints and method metadata. Built-in net8 OpenAPI exposes operation metadata rather than full document generation. The tested net9 document-generation providers are internal; net10 exposes keyed `IOpenApiDocumentProvider` for in-process document generation, including transformers. Swashbuckle's public `ISwaggerProvider` generates a document on all three tested runtimes without an HTTP endpoint or self-request.
+**POC evidence:** finalized `EndpointDataSource` entries retain tested nested group prefixes, route constraints and method metadata.
 
 **Additional POC evidence:** the [native endpoint-metadata probe](../pocs/endpoint-metadata/README.md) passed eight path/method cases on .NET 8/9/10 without OpenAPI package references or loaded generator assemblies. `IEndpointSummaryMetadata` and `IEndpointDescriptionMetadata` supply strings during existing route enumeration, including Minimal API group inheritance/endpoint overrides and MVC action annotations. Unannotated endpoints have no values. The two attributes are method-only; controller-class placement failed compilation on all three targets. This is metadata-read evidence, not integrated startup-event export validation. XML-only comments and OpenAPI-only transformer changes do not populate these route metadata interfaces: .NET 10's generated XML-comment transformer writes the OpenAPI operation during document generation.
 
-**Confirmed implementation direction:** read `IEndpointSummaryMetadata.Summary` and `IEndpointDescriptionMetadata.Description` during existing startup route enumeration and copy available values into each corresponding method/path entry. Leave unavailable metadata absent. This uses the ASP.NET Core shared framework on .NET 8/9/10, with no additional generator dependencies or per-request documentation work. Documentation supplied only through XML comments or OpenAPI transformers is outside v1 capture. The full-schema POCs remain future research rather than release requirements.
-
-**Deferred full-schema research:** the native .NET 10 public provider lives in the optional OpenAPI package, not the ASP.NET Core shared framework. Typed integration introduces package dependencies; dependency-free invocation/serialization still needs a reflection path. Standard DI's `GetKeyedServices(Type, KeyedService.AnyKey)` offers provider enumeration without names, but does not identify document keys or deduplicate repeated registrations. Serialization requires an OpenAPI specification version, whose configured value belongs to named options. These costs must be assessed together rather than treating generation as one method call. The existing generation experiments use a known `v1` document name, not automatic discovery. HTTP self-requests and schema reconstruction from routes are not the intended approach.
+**Confirmed implementation direction:** read `IEndpointSummaryMetadata.Summary` and `IEndpointDescriptionMetadata.Description` during existing startup route enumeration and copy available values into each corresponding method/path entry. Leave unavailable metadata absent. This uses the ASP.NET Core shared framework on .NET 8/9/10, with no additional generator dependencies or per-request documentation work. Documentation supplied only through XML comments or OpenAPI transformers is outside v1 capture.
 
 Emit once per serving process under the shared contract. Cross-host startup coordination is outside the v1 scope defined in section 2.
 
@@ -466,7 +448,7 @@ Detect changes with a 10,000-identifier LRU cache of hashes of the canonical nor
 
 **Confirmed:** internal events do not pass through the logger adapter. `InternalEvents` builds owned log entries directly, with the event name, scope `apitally`, empty trace/span context and a string or structured body, and submits them to the log batch processor. They bypass application masking and truncation by construction, even with application capture disabled.
 
-**POC evidence:** the encoding POC round-trips native event names, startup string bodies and structured error bodies through official protobuf messages. Implementing full aggregate/startup behavior remains unproven.
+**POC evidence:** the encoding POC round-trips native event names, startup string bodies and structured error bodies through official protobuf messages.
 
 ## 10. Export pipeline
 
@@ -478,13 +460,13 @@ Detect changes with a 10,000-identifier LRU cache of hashes of the canonical nor
 
 **POC evidence:** generated official OTLP v1.11.0 message classes and `Google.Protobuf` round-trip the tested trace, log and real SDK metric data, including binary bodies and structured internal events. Metric points are mapped and serialized synchronously before exporter return, avoiding retention of reusable SDK storage. Two unframed requests per signal merge correctly from a single continuous gzip stream, independently checked with Python zlib.
 
-A 32-record trace chunk exceeds the 4,000,000-byte cap in the experiment; exact encoded-size checks and splitting preserve the tested records within it. The POC also rejects an indivisible oversized encoded request. Generated messages are a demonstrated encoding mechanism; the full mapper, package layout, memory bounds and backend acceptance remain open.
+A 32-record trace chunk exceeds the 4,000,000-byte cap in the experiment; exact encoded-size checks and splitting preserve the tested records within it. The POC also rejects an indivisible oversized encoded request.
 
 **Confirmed oversized-record policy:** after ordinary exact-size batch splitting, drop an indivisible encoded telemetry record that still exceeds the 4,000,000-byte spool cap, issue a deduplicated actionable warning and continue with the other records. Do not invent fragments or rewrite the record to force it to fit. The warning explains the lost item and how to reduce its size without logging its contents. This is separate from the existing 50,000-byte body-capture limit and `[BODY_TOO_LARGE]` behavior; ordinary records are not discarded with the oversized item.
 
 Use stock batch queue/worker machinery with explicit settings and approximately one-second intake delay. The snapshot POC demonstrates `BatchExportProcessor<T>` intake without private reflection. Bound encoded appends by actual size; a record-count chunk limit alone is not proof that a file stays below the cap.
 
-**POC evidence:** in the tested stock batch processor, `ForceFlush` can return true after dequeue but before synchronous `Export` finishes. Its export timeout does not cancel a blocked synchronous exporter. Successful `Shutdown` drains and joins; standalone `Dispose` alone does not. Generic intake does not reject calls after shutdown; such records are only buffered, and the SDK accepts that a record racing shutdown may be left unsent rather than adding an admission lock. The production design still needs completed-spool-write coordination and lifecycle handling. Do not treat a successful flush as proof a file is ready to close and send.
+**POC evidence:** in the tested stock batch processor, `ForceFlush` can return true after dequeue but before synchronous `Export` finishes. Its export timeout does not cancel a blocked synchronous exporter. Successful `Shutdown` drains and joins; standalone `Dispose` alone does not. Generic intake does not reject calls after shutdown; such records are only buffered, and the SDK accepts that a record racing shutdown may be left unsent rather than adding an admission lock. Plan section 10 specifies the spool closure and terminal shutdown that account for this. Do not treat a successful flush as proof a file is ready to close and send.
 
 ### Delivery contract to preserve
 
@@ -492,7 +474,7 @@ Use stock batch queue/worker machinery with explicit settings and approximately 
 | --- | --- |
 | Endpoint | `/v1/traces`, `/v1/metrics`, `/v1/logs` at `https://otlp.apitally.io`, subject to the testing override. |
 | Authentication | `Authorization: Bearer <write token>` and the resolved `Apitally-Env` on every POST. |
-| Encoding | Protobuf, stored/sent with gzip. The server caps wire payloads at 4 MiB and drops decompressed payloads above 16 MiB. |
+| Encoding | Protobuf (`Content-Type: application/x-protobuf`), stored and sent gzip-compressed (`Content-Encoding: gzip`). The server caps wire payloads at 4 MiB and drops decompressed payloads above 16 MiB. |
 | Spool format | One continuous gzip stream per file containing concatenated same-signal protobuf requests. Retries replay identical stored bytes. |
 | Rotation | At most 4 MB uncompressed per file, checked before append. Rotate a signal's current file at send time only when no closed files are already waiting. |
 | Schedule | First attempt about two seconds after activation; subsequent cycles wait 15 seconds by default, with +/-10% jitter, after the preceding cycle completes. |
@@ -509,11 +491,9 @@ Use stock batch queue/worker machinery with explicit settings and approximately 
 
 Send through one private `HttpClient` over a `SocketsHttpHandler`, not `IHttpClientFactory`, so application-wide client defaults such as resilience handlers cannot add retries beneath the worker. Capture `HttpClient.DefaultProxy` once and assign it to the handler; .NET already implements `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`, plus the system proxy on Windows. Run collection, flushing, and export POSTs under OTel instrumentation suppression. This is especially important with default `HttpClient` instrumentation and with a user's own exporter observing application activities.
 
-**POC evidence:** four physical loopback POSTs replay identical persisted gzip bytes and preserve the required synthetic headers. Stock HTTP instrumentation exports the unsuppressed requests and none inside `SuppressInstrumentationScope`. Explicit proxy-object binding survives a later environment change, but physical proxying and full proxy-variable semantics are untested. Retry classification, spool durability/retention, scheduling and shutdown coordination are not implemented by this experiment.
+**POC evidence:** four physical loopback POSTs replay identical persisted gzip bytes and preserve the required synthetic headers. Stock HTTP instrumentation exports the unsuppressed requests and none inside `SuppressInstrumentationScope`. Explicit proxy-object binding survives a later environment change, but physical proxying and full proxy-variable semantics are untested.
 
-**Proposed:** a host-owned worker drives metric collection and spool delivery. Use .NET background execution appropriate to the work: HTTP sends may be asynchronous, while CPU-bound body processing must remain outside request-serving execution. Keep concurrency close to the shared model rather than introducing a task or thread per request/span.
-
-**Open:** exact batch processor settings, protobuf generation/distribution, metric snapshot lifetime, spool concurrency, and integration with the confirmed host-controlled shutdown budget. Preserve the shared process-wide limits for the single-host baseline.
+**Confirmed:** a host-owned worker drives metric collection and spool delivery. Use .NET background execution appropriate to the work: HTTP sends may be asynchronous, while CPU-bound body processing must remain outside request-serving execution. Keep concurrency close to the shared model rather than introducing a task or thread per request/span.
 
 ## 11. Metrics
 
@@ -539,7 +519,7 @@ Observe normalized process CPU utilization, RSS-equivalent bytes, and uptime usi
 
 At capacity, retain native behavior for accepted combinations. Detect overflow during collection, omit the invalid overflow point from Apitally export and issue a deduplicated warning explaining that some request metrics are missing, with capacity documentation and support guidance. Preserve the required dimensions on valid points rather than reducing attribution to hide the limit. This remains a finite bound, not a promise of lossless metrics under arbitrary cardinality.
 
-**Open:** the exact fixed capacity and its measured memory/collection costs. Ordinary process-gauge implementation remains in scope; cross-host coordination does not gate v1.
+The capacity is selected by measurement when the request histograms are implemented (plan stage 5).
 
 ## 12. Error handling and logging posture
 
@@ -549,7 +529,7 @@ Use SDK-namespaced .NET logging for diagnostics. Operational initialization fail
 
 A missing token disables telemetry rather than failing options validation during host startup. Documented API misuse may fail synchronously with an actionable message.
 
-**Proposed:** diagnostics go through the application's logging infrastructure while the Apitally capture adapter excludes them. Verify export failures cannot re-enter the telemetry pipeline through `ILogger` or HTTP instrumentation.
+**Confirmed:** diagnostics go through the application's logging infrastructure while the Apitally capture adapter excludes them. Verify export failures cannot re-enter the telemetry pipeline through `ILogger` or HTTP instrumentation.
 
 ## 13. Public API
 
@@ -583,15 +563,15 @@ builder.Services.AddSingleton<TracerProvider>(existingProvider);
 builder.Services.AddApitally();
 ```
 
-The provider's instrumentation and source subscriptions must be configured before it is built, as described in section 2. The exact combined integration remains to be verified.
+The provider's instrumentation and source subscriptions must be configured before it is built, as described in section 2.
 
 ### Span-based callbacks
 
-**Confirmed:** `SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody` and `MaskResponseBody` use one complete span snapshot type, with `SpanSnapshot` as its working name. The body callbacks additionally receive the body to mask. The snapshot's shape is consistent across callbacks while its available data follows the stages described in section 6. Both sampling callbacks return `double?`, with probabilities and stage-specific abstention as described there. Both body callbacks use `Func<SpanSnapshot, byte[], byte[]?>`, with the snapshot first and decompressed body bytes second; a returned array replaces the body and `null` produces `[REDACTED]`. Attribute values use the exporter-aligned normalization in section 9. Events, links and resource use native `ActivityEvent`, `ActivityLink` and OTel `Resource` types; final member names remain open. Log masking uses the separate `LogRecordSnapshot` type because it processes a different signal.
+**Confirmed:** `SampleOnRequest`, `SampleOnResponse`, `MaskRequestBody` and `MaskResponseBody` use one complete span snapshot type, `SpanSnapshot`. The body callbacks additionally receive the body to mask. The snapshot's shape is consistent across callbacks while its available data follows the stages described in section 6. Both sampling callbacks return `double?`, with probabilities and stage-specific abstention as described there. Both body callbacks use `Func<SpanSnapshot, byte[], byte[]?>`, with the snapshot first and decompressed body bytes second; a returned array replaces the body and `null` produces `[REDACTED]`. Attribute values use the exporter-aligned normalization in section 9. Events, links and resource use native `ActivityEvent`, `ActivityLink` and OTel `Resource` types; plan section 4 lists the exact members. Log masking uses the separate `LogRecordSnapshot` type because it processes a different signal.
 
 ### Log masking
 
-**Confirmed direction:** `MaskLogRecord` is a `Func<LogRecordSnapshot, LogRecordSnapshot?>` invoked synchronously; it may return the supplied record or drop it. `LogRecordSnapshot` exposes read-only `Timestamp`, `CategoryName`, `LogLevel` and `EventId`, and mutable `Body` and `Attributes`. The callback receives rendered message text in `Body` with the original message template omitted, and exception metadata as string attributes that masking can change or remove. Message and exception content are exported from accepted `Body` and `Attributes` only. Structured scope fields are merged into `Attributes`, with explicit log-entry fields taking precedence over inner scopes, then outer scopes. No separate scope chain is exposed, and removed values are not restored after masking. Unstructured scope labels are omitted; actual log messages and structured scope fields remain captured. Trace context and request linkage are SDK-owned and added after masking. Section 9 records the remaining normalization and production-integration work.
+**Confirmed direction:** `MaskLogRecord` is a `Func<LogRecordSnapshot, LogRecordSnapshot?>` invoked synchronously; it may return the supplied record or drop it. `LogRecordSnapshot` exposes read-only `Timestamp`, `CategoryName`, `LogLevel` and `EventId`, and mutable `Body` and `Attributes`. The callback receives rendered message text in `Body` with the original message template omitted, and exception metadata as string attributes that masking can change or remove. Message and exception content are exported from accepted `Body` and `Attributes` only. Structured scope fields are merged into `Attributes`, with explicit log-entry fields taking precedence over inner scopes, then outer scopes. No separate scope chain is exposed, and removed values are not restored after masking. Unstructured scope labels are omitted; actual log messages and structured scope fields remain captured. Trace context and request linkage are SDK-owned and added after masking.
 
 ### Request helpers
 
@@ -604,7 +584,7 @@ The provider's instrumentation and source subscriptions must be configured befor
 | `CaptureException(...)` | Retain the first eligible exception in request-local state and add its SERVER exception event when possible. |
 | `StartActivity(...)` | Create an INTERNAL child activity under scope `apitally.otel`, usable with `using` across synchronous or asynchronous code. |
 
-**Proposed:** `StartActivity` returns `Activity?`, matching native .NET behavior when instrumentation is inactive. Other request helpers are safe no-ops outside an active request or when disabled. Determine the service's DI lifetime and current-request resolution without retaining a completed `HttpContext` in a host singleton.
+**Confirmed:** `StartActivity` returns `Activity?`, matching native .NET behavior when instrumentation is inactive. Other request helpers are safe no-ops outside an active request or when disabled. The service is a singleton that resolves the current request through `IHttpContextAccessor` and never retains an `HttpContext`.
 
 **Confirmed adaptation:** native activity scopes are the manual-tracing surface. The shared function-wrapper recommendation is satisfied differently for C#: additional `Trace`/`TraceAsync` delegate wrappers are not part of the initial API direction. Users can use native activity tags; a second SDK span abstraction is unnecessary.
 
@@ -620,11 +600,7 @@ Document the write-token replacement, enabled-by-default logging, capture option
 
 The shared target remains a reference for future integration: automatically detect a usable Sentry integration without an Apitally enable flag and attach its exception event ID to the SERVER export snapshot and eligible undrained server-error aggregate. This includes events processed after activity end; already-exported telemetry is not updated retroactively. Preserve the latest-nonempty enrichment rule if the integration is revisited.
 
-**POC evidence:** Sentry.AspNetCore 6.11.1 supports typed `ISentryEventProcessor` registration through DI or through `PostConfigure<SentryAspNetCoreOptions>` with `AddEventProcessor`, in either builder registration order. Both hooks correlate the tested concurrent handled exceptions during request scope. The options hook also correlates an explicitly captured exception after SERVER activity end; the DI-only hook does not run for that out-of-request capture. Association uses the retained exception, not a process-wide last-event-ID lookup.
-
-Event processors run before `BeforeSend`, so an observed event ID does not prove the event was ultimately sent. All tests use a fake transport. No package-neutral discovery/registration hook was found: a typed companion is feasible, but automatic activation merely because Sentry is installed is not demonstrated.
-
-**Deferred research:** dependency/package strategy, activation, supported versions, simultaneous-host behavior and later Sentry initialization/replacement. Retain the POC findings without selecting reflection, a hard dependency or a companion package. Bounded association retention and SDK export enrichment also remain unimplemented future work.
+The [error-integrations POC](../pocs/error-integrations/README.md) retains the Sentry event-processor findings for future work.
 
 ## 15. Cross-language posture and explicit adaptations
 
@@ -632,42 +608,42 @@ Event processors run before `BeforeSend`, so an observed event ID does not prove
 | --- | --- | --- |
 | Process-global configuration/runtime | Host-owned DI runtime with independently owned shutdown. | Confirmed adaptation. |
 | Code options and environment fallbacks | Add the standard `Apitally` configuration section as setup options below explicit code values. | Confirmed adaptation. |
-| Unified setup | One `IServiceCollection.AddApitally` registration for both supported hosting styles; automatic transport integration. | Confirmed API direction; combined pipeline remains open. |
-| Provider activation/attachment | Standard DI provider registration; externally built providers use existing-instance registration and retain original ownership. | Confirmed API path; combined activation and lifetime validation remain open. |
+| Unified setup | One `IServiceCollection.AddApitally` registration for both supported hosting styles; automatic transport integration. | Confirmed API direction. |
+| Provider activation/attachment | Standard DI provider registration; externally built providers use existing-instance registration and retain original ownership. | Confirmed API path. |
 | Tracing customization | Standard OTel provider registration selects application-owned tracing; configure-only hooks do not customize the private default provider. | Confirmed boundary. |
 | Multi-host integration | Single-host support baseline; additional hosts are not prohibited. Preserve the documented cross-provider sampling limitation. | Confirmed support boundary; special cross-host coordination is outside v1 implementation and release requirements. |
 | Manual block and function forms | Native `Activity` scope via `IApitally.StartActivity`. | Confirmed adaptation of the shared SHOULD. |
 | Activation trigger and failure scope | Activate in the startup filter after the application pipeline is built, before the server starts; one attempt per host runtime, with no first-request fallback. | Confirmed consequence of host ownership and the shared pre-request signal. |
-| Test-host suppression | Recognize the resolved server's exact TestServer type/assembly without a test-framework dependency; real Kestrel tests use explicit disabling. | Confirmed scope; candidate runtime passed .NET 8/9/10 checks, full SDK integration remains open. |
+| Test-host suppression | Recognize the resolved server's exact TestServer type/assembly without a test-framework dependency; real Kestrel tests use explicit disabling. | Confirmed scope. |
 | Options layout | Flat `ApitallyOptions` properties, matching keys directly under the `Apitally` configuration section. | Confirmed .NET API layout. |
-| Configuration timing and repeated calls | Standard Options pattern: a base configure step, then `AddApitally` callbacks as `PostConfigure` in registration order. Read once at startup preparation, register components once and freeze before activation. | Confirmed behavior; integration remains to be validated. |
+| Configuration timing and repeated calls | Standard Options pattern: a base configure step, then `AddApitally` callbacks as `PostConfigure` in registration order. Read once at startup preparation, register components once and freeze before activation. | Confirmed behavior. |
 | Process identity, startup frequency, limits, process gauges | Preserve shared process-wide contracts and one process identity across all signals under host-owned state. | Inherited requirements for the single-host baseline; no global host coordinator. |
-| Ordinary final drain | Share the host's remaining shutdown budget and honor host cancellation, without an additional SDK flush window. | Confirmed budget policy; exporter/spool and disposal coordination remain to be validated. |
-| Unfinished-request detail | Discard requests still awaiting transport completion or SERVER activity end at the final SDK cutoff; retain normal flushing for finalized requests and independent recorded metrics/error aggregates. | Confirmed per-SDK policy permitted by the shared shutdown contract; integration remains to be validated. |
+| Ordinary final drain | Share the host's remaining shutdown budget and honor host cancellation, without an additional SDK flush window. | Confirmed budget policy. |
+| Unfinished-request detail | Discard requests still awaiting transport completion or SERVER activity end at the final SDK cutoff; retain normal flushing for finalized requests and independent recorded metrics/error aggregates. | Confirmed per-SDK policy permitted by the shared shutdown contract. |
 | Late request telemetry | Drop spans and logs arriving after release; no completed-request cache. | Confirmed .NET choice, permitted by shared spec section 6.5. |
-| SDK span/log representations | Owned export snapshots and generic stock batch processors. | Exercised in POCs; detailed ownership and production lifecycle integration remain open. |
-| Span callback type | One complete span snapshot type for all sampling and body-masking callbacks, using native event, link and resource types. It is the SDK-owned record, with read-only interfaces but no isolation guarantee. | Confirmed .NET adaptation; final member names remain open. |
+| SDK span/log representations | Owned export snapshots and generic stock batch processors. | Confirmed .NET mechanism. |
+| Span callback type | One complete span snapshot type for all sampling and body-masking callbacks, using native event, link and resource types. It is the SDK-owned record, with read-only interfaces but no isolation guarantee. | Confirmed .NET adaptation. |
 | Sampling result type | `double?` represents the keep probability or abstention for both callbacks; boolean choices use zero or one. | Confirmed typed C# adaptation; shared sampling semantics preserved. |
 | Custom pattern inputs | `List<string>` of .NET regex patterns for both code options and configuration files, case-insensitive by default with explicit inline options respected. | Confirmed input type and matching convention; user patterns extend built-in defaults. |
-| Body completeness | Finalize ordinary bounded capture with directly observed failure, visible cancellation and applicable length checks; omit known incomplete bytes without certifying transport success. | Confirmed scope and mechanism boundary; production integration remains to be validated. |
+| Body completeness | Finalize ordinary bounded capture with directly observed failure, visible cancellation and applicable length checks; omit known incomplete bytes without certifying transport success. | Confirmed scope and mechanism boundary. |
 | Native file response bodies | Delegate native file sends and omit their entire body capture, including mixed output; retain incidental eligible capture through ordinary observed streams. | Confirmed v1 scope deviation; no SDK file rereading or replacement copy path. |
 | Validation recognition | Framework-provided details and known standard response shapes; opaque field/message strings and available metadata, with unknown source/field empty. | Confirmed v1 boundary; arbitrary schema and binding-source inference are outside scope. |
-| Log callback type | Apitally-owned mutable `LogRecordSnapshot`, built by the logger adapter and masked synchronously; no private OTel logger provider. | Confirmed .NET deviation from the shared ecosystem log-record rule; full normalizer/integration validation open. |
-| Callback attribute values | Standard .NET OTLP value type mapping before span/log callbacks; accepted log output is converted and truncated at encoding. | Confirmed .NET adaptation; full normalizer validation remains open. |
+| Log callback type | Apitally-owned mutable `LogRecordSnapshot`, built by the logger adapter and masked synchronously; no private OTel logger provider. | Confirmed .NET deviation from the shared ecosystem log-record rule. |
+| Callback attribute values | Standard .NET OTLP value type mapping before span/log callbacks; accepted log output is converted and truncated at encoding. | Confirmed .NET adaptation. |
 | Log exception representation | Private exception type/message/stacktrace string attributes available to masking; the callback type has no exception object. | Confirmed .NET adaptation; preserves maskable exception metadata without sharing the application object. |
 | Log message representation | Rendered text in `Body`, with the original message template omitted from callback input. | Confirmed .NET adaptation; structured attributes remain separately maskable. |
 | Log-mask record type | Apitally-owned `LogRecordSnapshot` instead of the ecosystem log-record type, because `ILogger` has no record type and an OTel `LogRecord` would carry misleading semantics on this path. | Confirmed .NET deviation. |
 | Structured log scopes | Flatten private scope fields into attributes before masking; explicit log fields override inner scopes, then outer scopes. | Confirmed .NET adaptation; no separate scope chain or post-mask restoration. |
 | Plain log scope labels | Omit unstructured labels while preserving log messages and structured scope fields. | Confirmed boundary, matching the official .NET OTLP exporter. |
-| Encoding | Official OTLP schemas/protobuf encoding with SDK-owned mapping. | Proposed .NET mechanism; no change to HTTP/protobuf delivery. |
+| Encoding | Official OTLP schemas/protobuf encoding with SDK-owned mapping. | Confirmed .NET mechanism; no change to HTTP/protobuf delivery. |
 | Metric capacity | Internally selected fixed capacity through native OTel views and reclamation, with visible overflow degradation. | Confirmed policy; numeric capacity requires measurement. |
 | Runtime-specific fork and signal mechanics | Use .NET host lifecycle instead. | Platform adaptation. |
-| Sentry event-ID correlation | Defer the integration beyond v1 while retaining ordinary exception/error capture. | Confirmed v1 scope deviation; POC retained as future research. |
-| Startup endpoint documentation | Populate native summaries/descriptions in `paths`; omit full OpenAPI JSON on all runtimes, including .NET 10. | Confirmed v1 scope deviation; native metadata probe passed, combined startup export remains to be validated. |
+| Sentry event-ID correlation | Defer the integration beyond v1 while retaining ordinary exception/error capture. | Confirmed v1 scope deviation. |
+| Startup endpoint documentation | Populate native summaries/descriptions in `paths`; omit full OpenAPI JSON on all runtimes, including .NET 10. | Confirmed v1 scope deviation. |
 
 The wire attributes, scope names, default redaction/exclusion rules, sampling convention, intact-or-omit body/privacy rules, error identities, and transport behavior remain shared requirements subject to the explicit adaptations above. The native file-send exclusion narrows capture coverage; it does not permit exporting a partial captured prefix. A proposed .NET mechanism does not override other shared requirements by implication.
 
-Native AOT support is a product scope decision, not a shared-contract deviation. The vendor comparison found no universal support expectation, while Sentry and upstream OTel provide relevant examples of in-process compatibility. Revisit demand before expanding the supported deployment matrix; do not use profiler-agent limitations as proof that AOT is inherently impractical for this SDK.
+Native AOT support is a product scope decision, not a shared-contract deviation. Revisit demand before expanding the supported deployment matrix.
 
 ## 16. Code style and testing
 
@@ -675,7 +651,7 @@ Write small, idiomatic C# components following the shared naming and testing rul
 
 ### Test structure
 
-**Proposed:** retain xUnit as the test framework, with focused shared-module tests and small real ASP.NET Core applications. Cover controller and Minimal API behavior, modern hosting, and Generic Host with `Startup` without multiplying identical business scenarios across every configuration.
+**Confirmed:** retain xUnit as the test framework, with focused shared-module tests and small real ASP.NET Core applications. Cover controller and Minimal API behavior, modern hosting, and Generic Host with `Startup` without multiplying identical business scenarios across every configuration.
 
 Use in-memory OTel-side observation for SDK behavior, and a local HTTP endpoint when testing physical OTLP delivery. Permanent tests assert Apitally behavior, not upstream internals. POCs may investigate dependency behavior to choose the design; that does not require turning every probe into a permanent regression test.
 
@@ -710,35 +686,13 @@ The current v0 reference is commit `65e25ed13e15c6d6b77125749eba5cece6aa008f`. P
 
 A stable implementation is a useful baseline, not evidence that every existing behavior is appropriate for v1. Review reused code and tests against the shared requirements before porting them.
 
-## 18. POCs required before implementation choices are settled
+## 18. POCs
 
-The first feasibility round is complete and independently checked across the installed .NET 8/9/10 runtimes. Its six experiment groups cover the topics below, combining transport and host lifecycle. Each report distinguishes tested mechanisms, reproduced limitations and remaining gaps; this is not a complete integrated SDK or proof of every acceptance case. See [the POC index](../pocs/README.md) for results and reproducible checks.
+The completed experiments are listed in the [POC index](../pocs/README.md). They are research code outside the solution and package. The [request-association](../pocs/request-association/README.md) and [transport-completeness](../pocs/transport-completeness/README.md) POCs contain the mechanisms plan sections 5 and 7 adapt.
 
-| POC | Questions and acceptance evidence |
-| --- | --- |
-| Provider registration and host ownership | Both DI registration orders; explicit external provider; default HTTP instrumentation; existing instrumentation; user's sampler/exporters unchanged; first request captured. Two-host association, shutdown and sampling-interference experiments remain evidence, not additional v1 release requirements. |
-| Middleware placement and completion | Modern and `Startup` hosting; controllers and Minimal APIs; exception-handler final responses and route re-execution; streamed responses, `BodyWriter`, and native file delegation with capture omission; both transport/activity completion orders; directly observed abort/cancellation behavior. |
-| Private export snapshots and batching | Preserve span identity/events/links/resource; late enrichment without original mutation; no captured payloads in user exports; maximum-size complete bodies; bounded release/drop and late descendants; public stock batching over the selected representation. |
-| Private logging and internal events | Additive `ILogger` capture; category filtering, scopes, mutable state isolation, masking/drop; request linkage through child activities; startup JSON string versus structured error bodies; event names and context-free internal records. |
-| Encoding, metrics, and delivery | Official protobuf round trips for all signals; binary bodies and exponential histograms; concatenated request decoding; actual encoded-byte rotation limits; delta collection/reclamation and capacity behavior; idle liveness; immutable retries, proxy binding, and instrumentation suppression. |
-| Error and optional integration hooks | Conservative MVC/Minimal API validation; first exception and final-500 rule; .NET 10 handled-exception diagnostics; request cancellation; finalized routes and native summary/description metadata. Sentry and full-OpenAPI evidence is retained for future work outside v1. |
-| Host shutdown | Server/request draining relative to SDK/provider disposal; ordinary final cycle; host cancellation budget; unfinished request policy; no duplicate release or retained host state after disposal. |
+## 19. Remaining decisions
 
-Follow-up probes independently validate [native endpoint metadata](../pocs/endpoint-metadata/README.md), [TestServer activation suppression](../pocs/test-host-suppression/README.md) and [native log masking](../pocs/native-log-masking/README.md) on .NET 8/9/10. Their reports distinguish candidate-runtime evidence and limited value sets from full SDK integration. The [transport-completeness follow-up](../pocs/transport-completeness/README.md) informs the simple completeness checks and native file exclusion in section 7; its experimental file-capture alternatives are not v1 release requirements.
-
-## 19. Next design decisions
-
-The interview has settled support scope and the main user-facing direction. Further design discussion should focus on material architecture, application impact and release-support decisions. Routine implementation details should follow the selected contracts and established .NET conventions rather than becoming individual interview questions. Most remaining items below are engineering validation work:
-
-1. Provider-selection/attachment timing, external-processor lifetime and full SDK integration of the verified TestServer guard for the confirmed standard DI integration paths.
-2. Implement and validate process identity, process-wide bounds, startup events and process measurements for the single-host baseline, plus measurement and selection of the fixed internal metric capacity. Special multi-host coordination is outside v1 scope.
-3. Detailed span-snapshot members and collection/value types, full normalizer validation and integration of the selected log-mask representation, remaining option types and validation of Options-based configuration resolution.
-4. Integration of the simple body-completeness checks and native file omission, implementation of the unfinished-request cutoff and exporter/spool completion within the host's shutdown budget.
-5. Package target frameworks, C# language version and integrated qualification of the selected OTel 1.19.0 baseline and instrumentation/dependency graph.
-
-After those decisions, focused integration probes should compose the verified mechanisms, especially startup-filter activation, final responses, private pipeline ownership and shutdown. Physical proxy/retry/storage-failure behavior and shared backend/harness acceptance also remain to be validated.
-
-These remain open rather than being filled with assumptions from another SDK. Implementation approval follows review of this document and the relevant POC results.
+None. Remaining work is implementation and validation, sequenced in plan section 11.
 
 ## Research references
 
@@ -768,8 +722,6 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [OTel .NET metric cardinality behavior](https://github.com/open-telemetry/opentelemetry-dotnet/blob/5fbeba3a3d8bbd4f4235170ddeb6329fe0b8b86e/docs/metrics/README.md#cardinality-limits)
 - [OTel hosting registration and one provider per service collection](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry.Extensions.Hosting/README.md#L24-L47)
 - [OTel guidance on separately constructed providers and the usual single-provider lifetime](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/docs/trace/customizing-the-sdk/README.md#L45-L59)
-- [Azure Monitor report involving concurrent WebApplicationFactory tests](https://github.com/Azure/azure-sdk-for-net/issues/58951#issuecomment-4387389627)
-- [Azure Monitor two-provider reproduction](https://github.com/Azure/azure-sdk-for-net/issues/58951#issuecomment-4445112258)
 - [.NET DI ownership of externally created singleton instances](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection-guidelines#services-not-created-by-the-service-container)
 - [OTel 1.19.0 per-view cardinality limit and default](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Metrics/View/MetricStreamConfiguration.cs#L69-L95)
 - [OTel fixed metric-capacity allocation](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Metrics/AggregatorStore.cs#L71-L179)
@@ -779,7 +731,6 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [.NET options configuration, post-configuration and deferred evaluation](https://learn.microsoft.com/en-us/dotnet/core/extensions/options)
 - [Native route summary/description conventions](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Http/Routing/src/Builder/OpenApiRouteHandlerBuilderExtensions.cs)
 - [.NET 10 XML comments enrich OpenAPI operations during transformation](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/OpenApi/gen/XmlCommentGenerator.Emitter.cs#L361-L386)
-- [Python activation guards](../../apitally-py/apitally/shared/activation.py) and [deliberate activation in SDK tests](../../apitally-py/tests/conftest.py)
 - [TestServer identity and features](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Hosting/TestHost/src/TestServer.cs#L13-L31) and [server registration](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Hosting/TestHost/src/WebHostBuilderExtensions.cs#L27-L50)
 - [WebApplicationFactory server selection](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Mvc/Mvc.Testing/src/WebApplicationFactory.cs#L341-L368)
 - [Request pipeline construction with the resolved server](https://github.com/dotnet/aspnetcore/blob/d34d7e49dbcc1f8318db7182819f0fe88b9ca7d2/src/Hosting/Hosting/src/GenericHost/GenericWebHostService.cs#L122-L143)
@@ -790,6 +741,3 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [OTLP empty values, bytes and structured key/value writing](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry.Exporter.OpenTelemetryProtocol/Implementation/Serializer/ProtobufOtlpTagWriter.cs#L153-L232)
 - [Span attributes use the shared writer](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry.Exporter.OpenTelemetryProtocol/Implementation/Serializer/ProtobufOtlpTraceSerializer.cs#L327-L395) and [log attributes use the same writer](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry.Exporter.OpenTelemetryProtocol/Implementation/Serializer/ProtobufOtlpLogSerializer.cs#L387-L412)
 - [Official .NET OTLP scope export and duplicate keys](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry.Exporter.OpenTelemetryProtocol/README.md#L65-L72)
-- [Serilog scope conversion and collision handling](https://github.com/serilog/serilog-extensions-logging/blob/d220ae75c7f1150d58f228f210f2ff8f6a36bcde/src/Serilog.Extensions.Logging/Extensions/Logging/SerilogLoggerScope.cs#L50-L129) and [own/external scope traversal](https://github.com/serilog/serilog-extensions-logging/blob/d220ae75c7f1150d58f228f210f2ff8f6a36bcde/src/Serilog.Extensions.Logging/Extensions/Logging/SerilogLoggerProvider.cs#L92-L126)
-- [Serilog OTLP property mapping](https://github.com/serilog/serilog-sinks-opentelemetry/blob/9c39ab59a1e4595dbbe20baffe72f5da994331e8/src/Serilog.Sinks.OpenTelemetry/Sinks/OpenTelemetry/OtlpEventBuilder.cs#L101-L125)
-- [NLog OTLP target scope-property mapping](https://github.com/juliuskoval/NLog.Targets.OpenTelemetryProtocol/blob/8d6da4b587c933ab5b5af9929691fafc2ab02c5f/NLog.Targets.OpenTelemetryProtocol/OtlpTarget.cs#L340-L435) and [NLog property collision handling](https://github.com/NLog/NLog/blob/b058028290f245d12c30cb2910c2a574558ed9c6/src/NLog/Targets/TargetWithContext.cs#L279-L357)
