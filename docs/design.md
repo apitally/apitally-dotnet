@@ -691,9 +691,9 @@ The runtime matrix is .NET 8/9/10. Native AOT publishing is not an initial relea
 
 ## 17. Rewrite approach and v0 reuse
 
-**Preferred approach, not authorization to delete code:** preserve a frozen v0 reference checkout at a known commit, then build the v1 implementation on the `v1` branch. Keep useful repository infrastructure. Selectively bring proven logic and behavioral test scenarios into the new architecture rather than modifying every legacy component in place.
+**Confirmed approach:** preserve v0 as a branch, remove the v0 code from `v1` and build v1 fresh. Keep useful repository infrastructure. Port proven logic and behavioral test scenarios from the branch into the new architecture rather than modifying legacy components in place.
 
-The current v0 reference is commit `65e25ed13e15c6d6b77125749eba5cece6aa008f`. Preserve it as a `v0` branch before `v1` replaces `main`; none has been created as part of this design work.
+The current v0 reference is commit `65e25ed13e15c6d6b77125749eba5cece6aa008f`. Preserve it as a `v0` branch before removing v0 code from `v1`; none has been created as part of this design work.
 
 | Existing area | Intended treatment |
 | --- | --- |
