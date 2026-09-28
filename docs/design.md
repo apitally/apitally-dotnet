@@ -10,9 +10,9 @@ The [shared specification](../../cloud/docs/sdks/spec.md) owns the ingestion con
 
 Python and JavaScript are implementation references, not additional requirements. Preserve shared telemetry behavior while choosing idiomatic .NET APIs, configuration, and lifecycle mechanisms. Record architectural departures explicitly rather than either copying another runtime's mechanisms or silently changing the contract.
 
-This draft distinguishes:
+This document distinguishes:
 
-- **Confirmed:** agreed during the design interview.
+- **Confirmed:** a decided .NET choice.
 - **Inherited:** a requirement from the shared documents, unless an adaptation is explicitly identified.
 
 ### Confirmed decisions
@@ -106,7 +106,7 @@ When the application owns tracing:
 - Its sampler governs recorded request detail. Metrics and eligible error capture remain independent.
 - Reuse its request activities and adapt to existing instrumentation without duplicate SERVER spans.
 - Keep the default outbound-instrumentation decision scoped to Apitally-owned tracing.
-- Inspect sampler and attribute-limit settings only through available supported APIs. A lack of introspection is not itself a warning condition.
+- Inspect sampler settings only through available supported APIs. A lack of introspection is not itself a warning condition.
 - Do not dispose the user's provider during Apitally shutdown.
 
 **POC evidence:** the [provider experiment](../pocs/provider-registration/README.md) preserves explicit and implicit user sampling in both DI registration orders by contributing configuration without enabling a host provider itself. At startup-filter construction it resolves an enabled user provider or constructs a private owned fallback. This also captures a request issued before `ApplicationStarted`. Repeated same-name ASP.NET instrumentation registration is deduplicated in the tested version. The fallback does not apply host tracing callbacks that were registered without enabling a provider.
@@ -131,7 +131,7 @@ This boundary follows the distinction in official OTel guidance: repeated hostin
 
 **Confirmed:** request state is created at SERVER activity start, so descendants that end before middleware entry are associated, and children with only an explicit parent context inherit through their parent span ID (plan section 5).
 
-If the public APIs cannot preserve the agreed ownership and tracing behavior within the supported single-host integration, document the limitation and bring the decision back for review. Do not silently substitute a process-global configuration singleton.
+Do not substitute a process-global configuration singleton.
 
 ### Private providers and resources
 
@@ -194,7 +194,7 @@ Callbacks are configured in code. The startup event serializes their presence as
 
 **Confirmed custom-pattern matching:** use case-insensitive regex search by default for all four collections, consistently across code and configuration files. Respect standard .NET inline options: for example, `secret` matches `Secret` and `SECRET`, while `(?-i:secret)` makes that expression case-sensitive. Inline options override conflicting constructor options for their applicable scope. User patterns still extend the built-in defaults rather than changing their flags or removing them. Startup pattern serialization must retain the effective default and explicit inline options.
 
-Invalid settings disable telemetry rather than failing startup, so the SDK uses neither `ValidateOnStart` nor `IValidateOptions`. Default host builders also read unprefixed environment variables such as `Apitally__SampleRate` into the section without Apitally code.
+Invalid settings never fail startup: a missing or invalid token disables telemetry and other invalid values degrade as described above, so the SDK uses neither `ValidateOnStart` nor `IValidateOptions`. Default host builders also read unprefixed environment variables such as `Apitally__SampleRate` into the section without Apitally code.
 
 Exact public names and types are listed in plan section 4.
 
@@ -224,7 +224,7 @@ Exact public names and types are listed in plan section 4.
 
 Plan section 10 specifies the shutdown sequence, including disposal ordering, completed spool writes and the unfinished-request cutoff.
 
-**Confirmed test-suppression direction:** automatically suppress telemetry activation for application integration tests when a reliable, straightforward detector is available. Requiring users to disable every test host explicitly is not the preferred default. Bring any complex mechanism back for review rather than adding broad test-framework detection. The SDK's own tests must remain able to exercise real activation deliberately.
+**Confirmed test-suppression direction:** automatically suppress telemetry activation for application integration tests through the TestServer guard below, without broad test-framework detection. The SDK's own tests must remain able to exercise real activation deliberately.
 
 **Research finding:** no documented marker that is generally set across ordinary VSTest and Microsoft.Testing.Platform runs was established. Debug/runtime-selection settings and mode-specific controller variables do not establish a general test environment. This is not proof that every runner-specific marker is absent.
 
@@ -232,9 +232,9 @@ Plan section 10 specifies the shutdown sequence, including disposal ordering, co
 
 The guard covers standard in-memory TestServer tests; it does not identify real Kestrel tests, including the explicit Kestrel mode in .NET 10 `WebApplicationFactory`. Such tests use the existing disable configuration. Do not add wrapper introspection or infer testing from the Development environment. No new public testing override is selected; SDK telemetry tests can use loopback Kestrel, with TestServer tests verifying suppression.
 
-**POC evidence:** the independently inspected and rerun [test-host-suppression probe](../pocs/test-host-suppression/README.md) passed 11 cases on .NET 8.0.13, 11 on 9.0.2 and 13 on 10.0.9, using SDK 10.0.301 and OTel 1.19.0. Its startup filter resolves the actual server during pipeline construction, before private fallback-provider creation. Default `WebApplicationFactory`, direct `WebApplicationBuilder` and Generic Host/`Startup` TestServer paths stay inactive for startup and request activation signals. The factory replaces the registration-time Kestrel server before the guard runs; no DI cycle occurred in the candidate. The guard assembly references neither TestHost nor Mvc.Testing.
+**POC evidence:** the independently inspected and rerun [test-host-suppression probe](../pocs/test-host-suppression/README.md) passed 11 cases on .NET 8.0.13, 11 on 9.0.2 and 13 on 10.0.9, using SDK 10.0.301 and OTel 1.19.0. Its startup filter resolves the actual server during pipeline construction, before private fallback-provider creation. Default `WebApplicationFactory`, direct `WebApplicationBuilder` and Generic Host/`Startup` TestServer paths stay inactive for startup and request activation signals. The factory replaces the registration-time Kestrel server before the guard runs; no DI cycle occurred in the probe. The guard assembly references neither TestHost nor Mvc.Testing.
 
-Application-owned tracing continues exporting real completed SERVER spans in suppressed TestServer cases, including after candidate disposal. Loopback Kestrel in Development activates and exports through the private fallback even with TestHost loaded; .NET 10 factory Kestrel mode also passes. Export and disposal assertions await observed completion rather than assuming `ForceFlush` establishes it.
+Application-owned tracing continues exporting real completed SERVER spans in suppressed TestServer cases, including after probe disposal. Loopback Kestrel in Development activates and exports through the private fallback even with TestHost loaded; .NET 10 factory Kestrel mode also passes. Export and disposal assertions await observed completion rather than assuming `ForceFlush` establishes it.
 
 Host lifetime integration is the default direction. Python fork handling and JavaScript signal re-delivery are not mechanisms to port into this SDK.
 
@@ -270,7 +270,7 @@ Response sampling runs once with final route, status, sizes, consumer, and custo
 
 **Confirmed .NET result type:** both sampling callbacks return `double?`. Zero means drop, one means keep, and a value between them is the keep probability. `null` at request stage falls back to the configured static rate; `null` at response stage preserves the earlier decision. Express boolean conditions as numeric probabilities, such as `condition ? 1.0 : 0.0`, rather than introducing a custom result type or a weakly typed boolean/numeric union. This adapts the shared API's return shape to C# without changing probability, abstention or invalid-result behavior. A response-stage keep cannot recover detail already dropped at request stage.
 
-Hold ended descendants and application logs until both transport observation and the SERVER activity complete. Keep at most 1,000 spans and 1,000 application log records per request, retaining the earliest arrivals. Release descendants, then the SERVER span, then the request's logs once. A drop discards buffered detail and raw payloads. Release and drop both remove the request's associations, so telemetry arriving afterwards drops locally.
+Hold ended descendants and application logs until both transport observation and the SERVER activity complete. Keep at most 1,000 spans and 1,000 application log records per request, retaining the earliest arrivals; the SERVER span is always retained. Release descendants, then the SERVER span, then the request's logs once. A drop discards buffered detail and raw payloads. Release and drop both remove the request's associations, so telemetry arriving afterwards drops locally.
 
 ### Late telemetry
 
@@ -391,7 +391,7 @@ Run `MaskLogRecord` synchronously on the captured record before buffering. It ma
 
 **Confirmed plain-scope handling:** omit unstructured scope labels such as `BeginScope("Importing orders")` from both callback input and exported application logs. Do not synthesize a `Scope` attribute or append labels to `Body`. For formatted scopes, retain their structured fields while omitting the template and rendered label. This matches the official .NET OTLP exporter's treatment of empty-key scope values and `{OriginalFormat}`. Actual log messages and structured scope fields remain captured, and other logging providers are unchanged.
 
-**POC evidence:** the [native-log-masking follow-up](../pocs/native-log-masking/README.md) passes 828 assertions on each of .NET 8.0.13, 9.0.2 and 10.0.9, using SDK 10.0.301 and OTel 1.19.0. Its adapter-side results still apply: both provider orders preserve the independent sink's original state, scopes, formatter output and exception, and body/attribute edits and removals, supplied-record acceptance, null/throw/replacement drops and 12 concurrent scope contexts pass. The tested value set is deliberately finite: selected scalar values, `int[]`, `string[]` and `List<int>`.
+**POC evidence:** the [native-log-masking follow-up](../pocs/native-log-masking/README.md) passes 828 assertions on each of .NET 8.0.13, 9.0.2 and 10.0.9, using SDK 10.0.301 and OTel 1.19.0. Its adapter-side results: both provider orders preserve the independent sink's original state, scopes, formatter output and exception, and body/attribute edits and removals, supplied-record acceptance, null/throw/replacement drops and 12 concurrent scope contexts pass. The tested value set is deliberately finite: selected scalar values, `int[]`, `string[]` and `List<int>`.
 
 **Scope comparison:** the official OTel .NET 1.19.0 provider keeps scopes separate in `LogRecord` when `IncludeScopes` is enabled; it is off by default. Its OTLP exporter flattens structured scope fields into log attributes, skips empty keys and `{OriginalFormat}`, and deliberately preserves duplicate keys. It does not establish a general event-over-scope precedence rule.
 
@@ -411,7 +411,7 @@ A failing ordinary fallback conversion omits that attribute; a failing array-ele
 
 **Confirmed callback value policy:** use the type mapping of the inspected standard OTel .NET export conversions for span and log callback attribute values. Normalize before callbacks and detach arrays/maps from application-owned data. Ordinary lists and opaque objects use the standard string fallback rather than expanding their contents or cloning object properties. Applications can supply arrays explicitly when they want element values captured. Convert values a log callback added when the batch worker encodes the record. Conversion failures omit the value, never passing through raw mutable values as a fallback; the stock converter's internal edge-case behavior is not an Apitally contract. This selects value conversion, not every stock serializer limit; shared Apitally payload requirements still apply.
 
-This is an explicit .NET qualification of the shared design's non-string pass-through wording: a CLR value converted to a log string before masking is subject to the existing 2,048-character string limit after masking. The same applies to a string produced while encoding accepted callback output. Span attributes retain their separate limits. The limit counts UTF-16 code units, matching the JavaScript SDK; a split surrogate pair is harmless because Google.Protobuf encodes strings with replacement. Array and map values pass through untruncated, as the shared design specifies for non-string values.
+This is an explicit .NET qualification of the shared design's non-string pass-through wording: a CLR value converted to a log string before masking is subject to the existing 2,048-character string limit after masking. The same applies to a string produced while encoding accepted callback output. Span attributes follow their own spec-defined limits. The limit counts UTF-16 code units, matching the JavaScript SDK; a split surrogate pair is harmless because Google.Protobuf encodes strings with replacement. Array and map values pass through untruncated, as the shared design specifies for non-string values.
 
 **Confirmed duplicate-key rule:** within one attribute or key/value collection, the last occurrence of a key wins, including accepted callback output. The selected log-entry-over-inner-scope-over-outer-scope precedence remains unchanged.
 
@@ -509,7 +509,7 @@ Duration is the count anchor. Its attribute tuple is shared with size observatio
 
 **POC evidence:** histogram-specific `Base2ExponentialBucketHistogramConfiguration` views and a manually collected `BaseExportingMetricReader` produce independent delta intervals with matching request dimensions and units. Public `MaxScale = 3` works in the tested package; the native exponential-view defaults are maximum scale 20 and bucket size 160. Tested duration/byte ranges adapt within ingestion's accepted scale range. Do not change unrelated instrument aggregation. The experiment serializes metric data before exporter return and does not prove every possible floating-point range or concurrent collection pattern.
 
-Observe normalized process CPU utilization, RSS-equivalent bytes, and uptime using direct .NET process/runtime APIs or suitable isolated instrumentation. CPU and memory need paired observation times within the server's one-second tolerance. Uptime keeps collections nonempty even without traffic or with CPU/memory disabled.
+Observe normalized process CPU utilization, RSS-equivalent bytes, and uptime using direct .NET process/runtime APIs. CPU and memory need paired observation times within the server's one-second tolerance. Uptime keeps collections nonempty even without traffic or with CPU/memory disabled.
 
 **POC evidence:** delta collection reclaims inactive dimension capacity after an idle collection. Before reclamation, new dimensions can overflow even while an existing dimension remains active. The overflow point has only `otel.metric.overflow=true`, losing the required request dimensions; it cannot preserve accepted endpoint/consumer counts. The deliberately low POC limit of two is a test setting, not a product limit. Idle collections also produce paired CPU/memory timestamps and uptime, including uptime alone with CPU/memory disabled.
 
@@ -641,7 +641,7 @@ The [error-integrations POC](../pocs/error-integrations/README.md) retains the S
 | Sentry event-ID correlation | Defer the integration beyond v1 while retaining ordinary exception/error capture. | Confirmed v1 scope deviation. |
 | Startup endpoint documentation | Populate native summaries/descriptions in `paths`; omit full OpenAPI JSON on all runtimes, including .NET 10. | Confirmed v1 scope deviation. |
 
-The wire attributes, scope names, default redaction/exclusion rules, sampling convention, intact-or-omit body/privacy rules, error identities, and transport behavior remain shared requirements subject to the explicit adaptations above. The native file-send exclusion narrows capture coverage; it does not permit exporting a partial captured prefix. A proposed .NET mechanism does not override other shared requirements by implication.
+The wire attributes, scope names, default redaction/exclusion rules, sampling convention, intact-or-omit body/privacy rules, error identities, and transport behavior remain shared requirements subject to the explicit adaptations above. The native file-send exclusion narrows capture coverage; it does not permit exporting a partial captured prefix. A .NET mechanism does not override other shared requirements by implication.
 
 Native AOT support is a product scope decision, not a shared-contract deviation. Revisit demand before expanding the supported deployment matrix.
 
@@ -655,7 +655,7 @@ Write small, idiomatic C# components following the shared naming and testing rul
 
 Use in-memory OTel-side observation for SDK behavior, and a local HTTP endpoint when testing physical OTLP delivery. Permanent tests assert Apitally behavior, not upstream internals. POCs may investigate dependency behavior to choose the design; that does not require turning every probe into a permanent regression test.
 
-Do not replace Apitally classes with mocks. Assert exact exported counts and attributes. Read responses to completion before asserting completed telemetry. Use real Kestrel coverage where test-server behavior cannot establish streaming, abort, or hosting correctness. Keep test state cleanup in shared fixtures; host ownership does not make process-wide activity listeners and environment variables disappear.
+Do not replace Apitally classes with mocks. Assert exact exported counts and attributes. Read responses to completion before asserting completed telemetry. Use real Kestrel for telemetry tests; TestServer tests verify automatic suppression. Keep test state cleanup in shared fixtures; host ownership does not make process-wide activity listeners and environment variables disappear.
 
 ### Required behavioral coverage
 
@@ -696,7 +696,7 @@ None. Remaining work is implementation and validation, sequenced in plan section
 
 ## Research references
 
-Local source snapshots used for the initial review:
+Local source snapshots used for the initial review. Decisions were last checked against cloud commit `f98007ae`.
 
 - Shared SDK documents: cloud commit `f22ee6c0`, `docs/sdks/spec.md` and `docs/sdks/design.md`.
 - Python reference: `ddf5127cd5e16fec6e89eed41b1965c202e03b73` (`v1.0.0b3`).
