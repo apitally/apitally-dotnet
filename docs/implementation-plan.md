@@ -299,7 +299,7 @@ For each associated application record:
 - Record the three request histograms at final transport completion, independent of activities, passing dimensions as a `TagList`. Skip `OPTIONS`, websockets and unmatched routes; excluded and sampled-out requests are still recorded. Use the same method, parameterized route, status, optional consumer, scheme and 5xx `error.type` tuple for duration and known sizes.
 - Use histogram-specific `Base2ExponentialBucketHistogramConfiguration` views, delta temporality, `MaxScale = 3` and native inactive-series reclamation. Preserve the accepted wire scale range; validate measured value ranges without implementing custom aggregation/downscaling.
 - Use a non-periodic reader. The export worker performs ordinary collections; terminal reader `Shutdown(Timeout.Infinite)` performs the final collection in the cleanup task before spool sealing. Its one-shot shutdown guard prevents another collection during provider disposal. Map/encode metric points synchronously inside the exporter before reusable native storage is released.
-- Measure startup allocation, active memory and collection time for representative route/status/consumer cardinalities, comparing candidate fixed limits such as 10,000, 20,000 and 50,000. Select and document one internal limit before release; the POC's two-point limit and OTel's default are not product decisions.
+- Measure startup allocation, active memory and collection time for representative route/status/consumer cardinalities, comparing candidate fixed limits such as 10,000, 20,000 and 50,000. Select and document one internal limit when the request histograms land; the POC's two-point limit and OTel's default are not product decisions.
 - Omit native overflow points, preserve valid dimensional points and warn once with the consequence and capacity/support guidance. There is no public capacity setting or adaptive provider replacement.
 - Read CPU, working set and uptime through direct process APIs. Normalize CPU by elapsed time and available CPUs; observe CPU/memory together. Uptime is always available so idle collections remain nonempty if CPU/memory observation is unavailable.
 
@@ -307,7 +307,7 @@ For each associated application record:
 
 ### Stock intake and safe spool closure
 
-Use one generic `ApitallyBatchProcessor<T>` subclass of `BatchExportProcessor<T>`, instantiated once for owned span entries and once for owned log entries, initially with explicit queue size 2,048, batch size 512 and 1,000 ms delay. Pass all remaining constructor settings explicitly and qualify memory/throughput before fixing release values. User OTel batch environment variables do not tune these processors.
+Use one generic `ApitallyBatchProcessor<T>` subclass of `BatchExportProcessor<T>`, instantiated once for owned span entries and once for owned log entries, initially with explicit queue size 2,048, batch size 512 and 1,000 ms delay. Pass all remaining constructor settings explicitly and qualify memory/throughput in stage 8 before fixing release values. User OTel batch environment variables do not tune these processors.
 
 Resolve [review finding R4](design-review.md#r4-spool-closure-needs-completed-export-not-only-a-successful-flush) with spool synchronization and terminal worker completion, rather than another queue or acknowledgement protocol:
 
@@ -367,23 +367,28 @@ Host cancellation, including cancellation already present on entry, only ends th
 
 The host's shutdown budget takes precedence over completing cleanup before returning. Cleanup is best effort while the process remains alive: a callback that never returns can retain its resources until process exit. The one-off cleanup task adds neither a delivery worker nor an extra export window. Validate through integrated tests that shutdown with an already-canceled token returns promptly without throwing, and that an idle host still delivers the uptime gauge in the final cycle.
 
-## 11. Implementation sequence and acceptance gates
+## 11. Implementation sequence
 
-Implement small vertical slices on `v1`, keeping each stage buildable. Tests use the production classes rather than reimplementing their algorithms.
+Implement the stages in order on `v1`. Each stage depends only on earlier stages, builds on the 8/9/10 matrix and is complete when the section 12 tests for the behavior it adds pass. Tests use the production classes rather than reimplementing their algorithms.
 
-| Stage | Work |
-| --- | --- |
-| 1. Establish the v1 foundation | Push a `v0` branch at `65e25ed13e15c6d6b77125749eba5cece6aa008f` before `v1` replaces `main`. Update project targets/dependencies and build/test CI together, explicitly installing the supported SDKs/runtimes and configuring the 8/9/10 matrix. Implement public options/helpers, frozen configuration, common value ownership and internal protobuf generation; generated protobuf types stay internal. Replace legacy components as their v1 replacements land. |
-| 2. Prove the integrated request path | Implement preparation/activation, the `IServiceCollection` entry point in both hosting styles, provider ownership, suppression, request associations, snapshots, minimal log capture and helpers. Add two-completion release. |
-| 3. Complete delivery and lifetime ownership | Implement owned batching, synchronized file closure, unconditional cleanup ownership and terminal batch/metric-reader shutdown, OTLP mapping, file/memory spool, worker/HTTP and final cutoff. Begin with small real span/log payloads and native metric collection. |
-| 4. Complete transport and privacy | Adapt bounded stream/pipe observation, final route/status/size metadata, headers, body processing, native file omission and exception/validation adapters. Add sampling-independent error aggregation. |
-| 5. Complete logs and internal events | Finish log-mask normalization, scopes, canonical messages, exception attributes, startup metadata and consumer update cache/events. |
-| 6. Qualify metrics and resource bounds | Finish native delta histograms/process gauges; measure fixed cardinality and queue settings. Exercise sustained consumer churn and spool pressure. |
-| 7. Validate the package and publish readiness | Add the sibling harness adapter/app/variants; run real ingestion and assert it on the backend. Package-consumer validation belongs to the harness; this repository has no packed-package tests. Update README, migration guide and publishing workflows; remove remaining legacy-only code/tests/dependencies. |
+- Implement each module completely for the behavior its stage owns. Later stages add call sites, inputs and data to earlier modules; they never fill in a placeholder.
+- Do not add no-op members, fake sinks, temporary interfaces or TODO paths for later stages. Tests drive earlier modules with real internal types, for example by submitting owned span and log entries directly to the batch processors.
+- Add each package reference and public API member in the stage that first uses or implements it. `ApitallyOptions` and the two callback snapshot types are the exception: they are plain data resolved in stage 1, and each option takes effect in the stage that consumes it.
 
-A stage is complete when it builds on the 8/9/10 matrix and the section 12 tests for its modules pass.
+| Stage | Work | Uses |
+| --- | --- | --- |
+| 1. Foundation | Push a `v0` branch at `65e25ed13e15c6d6b77125749eba5cece6aa008f`, then remove the v0 production code, tests, test application and legacy-only dependencies from `v1`. Update project targets and CI together, explicitly installing the supported SDKs/runtimes and configuring the 8/9/10 matrix. Implement `ApitallyOptions`, the public `SpanSnapshot` and `LogRecordSnapshot` types its callbacks take, resolution into `RuntimeConfiguration` (section 4), `AttributeValues` and `SdkDiagnostics`. | - |
+| 2. Encoding, export privacy and storage | Generate the internal protobuf types. Define the owned span export entry, a `SpanSnapshot` plus its captured headers and bodies, and `LogSnapshot`. Implement the process resource, `SpanRedaction`, `OtlpEncoder` with the trace and log mappers, `SpoolFile`, `TelemetrySpool` and `ExportHttpClient`. | 1 |
+| 3. Host runtime and delivery | Implement `AddApitally` in both hosting styles; the startup filter's preparation and activation, with TestServer suppression; the `TelemetryRuntime` lifecycle and container disposal; both `ApitallyBatchProcessor<T>` instances; the private meter provider with its non-periodic reader, `OtlpMetricMapper` and `ProcessMetrics`; `ExportWorker`; `InternalEvents` with the startup event and its route enumeration; and the hosted-service shutdown sequence. A host now delivers its startup event and process metrics. | 1, 2 |
+| 4. Request tracing and helpers | Implement `TracingIntegration` for all provider ownership modes, the private fallback and the detachable forwarding processor; `ApitallySpanProcessor`, `RequestState`, `RequestRegistry` and `RequestSampling`; `ApitallyMiddleware`, installed by the startup filter, with transport completion, final route and status, and exception capture; request-stage and final span snapshots; two-completion release into the span batch processor with per-request span caps; `IApitally`, `RequestHelpers` and `ConsumerUpdates`; and the request cutoff at shutdown. | 1-3 |
+| 5. Transport observation and request metrics | Implement stream and pipe observation with byte counts, bounded body capture, incomplete-body marking, native file omission, header capture and size resolution. Add sizes, headers and bodies to the final span record. Record the three request histograms and select the fixed metric capacity by measurement (section 9). | 1-4 |
+| 6. Validation and error aggregates | Implement `ValidationCapture` over the MVC hooks and the stage 5 response observation, and `ErrorAggregates` with the final-500 rule, drained into internal events in ordinary and final cycles. | 1-5 |
+| 7. Application logs | Implement `ApitallyLoggerProvider` with scope merging and SDK category exclusion, `LogMasking`, request association and per-request log caps, release of logs after SERVER, and logging adapter detachment at cutoff. | 1-4 |
+| 8. Qualification and release readiness | Measure and fix the batch queue, batch size and delay, and run the soak (section 12). Record the qualified dependency graph. Add the `../sdk-tests` adapter, app and variants and assert real ingestion on the backend; package-consumer validation belongs to that harness, and this repository has no packed-package tests. Update the README, migration guide and publishing workflows. | 1-7 |
 
-Port knowledge, not old architecture: retain useful route enumeration, recursive masking, process measurement and test scenarios after contract review. Replace the Hub client/models, custom counters/histograms/activity collector, whole-response buffering, persistent UUID/lock and independent forwarding-header interpretation. Do not delete v0 source before preserving its reference or treat this plan as deletion approval.
+A few modules grow across stages by addition: `EndpointMetadata` enumerates startup routes in stage 3 and resolves request routes in stage 4; `ApitallyMetrics` has process gauges from stage 3 and request histograms from stage 5; the startup filter, final span enrichment and shutdown cutoff gain the steps of each later stage. The worker's instrumentation suppression lands in stage 3 and is first testable in stage 4, when tracing exists.
+
+Port knowledge, not old architecture: read the `v0` branch for route enumeration, recursive masking, process measurement and test scenarios, and review each against the contract before porting it. Do not bring back the Hub client/models, custom counters/histograms/activity collector, whole-response buffering, persistent UUID/lock or independent forwarding-header interpretation.
 
 ## 12. Validation and performance criteria
 
