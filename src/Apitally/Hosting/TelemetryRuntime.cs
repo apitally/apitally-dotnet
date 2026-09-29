@@ -70,11 +70,12 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
             try
             {
                 Diagnostics = new SdkDiagnostics(services.GetRequiredService<ILoggerFactory>());
+                // Test hosts usually have no write token, so they return before it is validated.
+                if (IsTestServer(services.GetRequiredService<IServer>()))
+                    return;
                 var options = services.GetRequiredService<IOptions<ApitallyOptions>>().Value;
                 configuration = RuntimeConfiguration.Resolve(options, Diagnostics);
-                if (
-                    !configuration.IsEnabled || IsTestServer(services.GetRequiredService<IServer>())
-                )
+                if (!configuration.IsEnabled)
                     return;
                 timeProvider = services.GetService<TimeProvider>() ?? TimeProvider.System;
                 resource = OtlpEncoder.CreateResource(configuration.Env);

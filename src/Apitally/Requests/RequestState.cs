@@ -145,10 +145,10 @@ internal sealed class RequestState
         }
     }
 
-    public List<ValidationDetail> GetValidationDetails()
+    public IReadOnlyList<ValidationDetail> GetValidationDetails()
     {
         lock (sync)
-            return [.. validationDetails];
+            return validationDetails.Count == 0 ? [] : [.. validationDetails];
     }
 
     public Dictionary<string, object?> GetAttributes()

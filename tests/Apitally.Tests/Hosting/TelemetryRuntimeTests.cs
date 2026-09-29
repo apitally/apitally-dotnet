@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Apitally.Tests.Hosting;
@@ -159,6 +161,25 @@ public class TelemetryRuntimeTests
 
         Assert.False(app.Services.GetRequiredService<TelemetryRuntime>().IsPrepared);
         Assert.Empty(receiver.Exports);
+    }
+
+    [Fact]
+    public async Task TestServerHostsWithoutWriteTokenLogNoError()
+    {
+        var logs = new FakeLogCollector();
+        await using var app = Program.CreateMinimalApp(
+            ApplicationHost.Arguments("--Apitally:WriteToken="),
+            builder =>
+            {
+                builder.WebHost.UseTestServer();
+                builder.Logging.AddProvider(new FakeLoggerProvider(logs));
+            }
+        );
+
+        await app.StartAsync();
+        await app.StopAsync();
+
+        Assert.DoesNotContain(logs.GetSnapshot(), record => record.Level == LogLevel.Error);
     }
 
     [Fact]

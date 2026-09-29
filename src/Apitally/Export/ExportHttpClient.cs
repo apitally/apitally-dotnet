@@ -39,6 +39,8 @@ internal sealed class ExportHttpClient : IDisposable
                 Proxy = proxy,
                 UseProxy = proxy is not null,
                 PooledConnectionIdleTimeout = TimeSpan.FromSeconds(30),
+                // Exports keep the connection busy, so it is recycled to pick up DNS changes.
+                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             }
         )
         {

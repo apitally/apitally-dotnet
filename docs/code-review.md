@@ -105,6 +105,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
   - Use `IExceptionHandlerFeature is { } handled ? handled.Endpoint : context.GetEndpoint()`.
   - For status pages, save `IStatusCodeReExecuteFeature.Endpoint` when it is present, or document the limitation.
   - For PathBase, choose one convention and apply it to both `ResolveRoute` and `GetPaths`. The simplest option is to capture `Request.PathBase` when routing runs, not at entry. Whether mount prefixes are needed is a product decision.
+- **Decision**: Fixed the exception-handler fallback (covered by `ErrorAggregatesTests.ExceptionsBeforeRoutingAreNotAttributedToTheErrorPage`). Routes now exclude the path base, matching `GetPaths`. Status-code-page re-execution and in-app `UsePathBase`/`Map` prefixes are rejected.
 
 ### Test gaps (correctness)
 
@@ -112,6 +113,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
 - These setups are not tested: an application-side instrumentation `Filter`, a non-W3C propagator, and two hosts in one process.
 - There are no tests for HEAD, 204 or 304 responses, a chunked request body the app never reads, a Content-Length mismatch, or HTTP/2 stream resets.
 - Neither completion order (transport first, or SERVER end first) is exercised under concurrency.
+- **Decision**: The registry assertion and the instrumentation `Filter` test were added with C1. The remaining gaps are rejected.
 
 ## Robustness and lifecycle
 
@@ -153,6 +155,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
 - **Location**: `Hosting/TelemetryRuntime.cs:73-77`
 - **Problem**: `Prepare` calls `Resolve`, which logs token errors, before it checks `IsTestServer`. A test suite using `WebApplicationFactory` without a token logs an Error for every host. CI pipelines that fail on Error logs will break.
 - **Recommendation**: Check for the TestServer first and return early. Assert in `TestServerHostsAreSuppressed` that no Error diagnostics are logged.
+- **Decision**: Fixed as recommended; covered by `TelemetryRuntimeTests.TestServerHostsWithoutWriteTokenLogNoError`.
 
 ### R5. `AddApitally` on a host without a web pipeline does nothing silently
 
@@ -160,6 +163,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
 - **Location**: `Hosting/ApitallyHostedService.cs`, `Hosting/ApitallyStartupFilter.cs`
 - **Problem**: Activation only happens inside `IStartupFilter`. A Generic Host worker that calls `AddApitally()` compiles and runs, but collects no telemetry and logs nothing.
 - **Recommendation**: In `ApitallyHostedService.StartedAsync`, if the runtime is still `Created`, log one Warning such as "Apitally requires an ASP.NET Core web host; no telemetry is collected."
+- **Decision**: Rejected. Shared registration code used by web and worker projects would make the Warning noise.
 
 ### R6. The export connection never re-resolves DNS
 
@@ -167,6 +171,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
 - **Location**: `Export/ExportHttpClient.cs:36-44`
 - **Problem**: The idle timeout is 30 seconds and the export interval is about 15 seconds, so the pooled connection never goes idle. With no `PooledConnectionLifetime`, a long-running process keeps posting to the old IP address after an endpoint migration.
 - **Recommendation**: Set `PooledConnectionLifetime = TimeSpan.FromMinutes(5)`.
+- **Decision**: Fixed as recommended.
 
 ### R7. `TelemetryRuntime` supports only asynchronous disposal
 
@@ -174,6 +179,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
 - **Location**: `Hosting/TelemetryRuntime.cs:18, 186-199`
 - **Problem**: Calling `((IDisposable)app.Services).Dispose()` throws `InvalidOperationException` ("only implements IAsyncDisposable"). `IHost.Dispose()` and `WebApplication.Dispose()` work, so only code that disposes the service provider directly is affected.
 - **Recommendation**: Also implement `IDisposable` with a best-effort synchronous stop.
+- **Decision**: Rejected. All supported hosting paths dispose asynchronously.
 
 ### Verified sound (robustness)
 
@@ -228,6 +234,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
   - SHA-256 and a Base64 string
   - a global lock that allocates a new `LinkedListNode`
 - **Recommendation**: Store the last normalized values in the LRU entry and compare field by field. Move the existing node instead of allocating a new one. This also removes one of the two AOT warnings (I7).
+- **Decision**: The hash input is now the normalized fields joined with `\0` instead of reflection-based JSON, keeping SHA-256 so cache entries stay small. The existing node is moved instead of reallocated. This removes the JSON AOT warning.
 
 ### P5. A global lock is taken on every routed request for empty validation details
 
@@ -235,6 +242,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `Requests/RequestRegistry.cs:247-260`, `Requests/ErrorAggregates.cs:15-38`, `Requests/RequestState.cs:149-153`
 - **Problem**: Every routed request allocates a `List` and takes the process-wide `ErrorAggregates` lock just to loop over an empty sequence. This is the only global lock on the success path.
 - **Recommendation**: Skip the call when there are no validation details, and return a shared empty list.
+- **Decision**: Fixed as recommended.
 
 ### P6. Replacing `Request.Body` disables the zero-copy `BodyReader` path on .NET 10
 

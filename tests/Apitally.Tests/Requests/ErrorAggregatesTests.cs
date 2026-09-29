@@ -66,6 +66,31 @@ public class ErrorAggregatesTests
     }
 
     [Fact]
+    public async Task ExceptionsBeforeRoutingAreNotAttributedToTheErrorPage()
+    {
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await ApplicationHost.StartMinimalAsync(
+            receiver,
+            configureApp: app =>
+            {
+                app.UseExceptionHandler("/error-page");
+                app.Use(
+                    (HttpContext _, RequestDelegate _) => throw new InvalidOperationException()
+                );
+                app.UseRouting();
+                app.MapGet("/error-page", () => Results.StatusCode(500));
+            }
+        );
+
+        var response = await host.Client.GetAsync("/items/1");
+        await host.StopAsync();
+
+        Assert.Equal(500, (int)response.StatusCode);
+        Assert.Null(receiver.Spans().Server().Attributes().GetValueOrDefault("http.route"));
+        Assert.Empty(receiver.Events("apitally.request.server_error"));
+    }
+
+    [Fact]
     public async Task DeveloperExceptionPageResponsesKeepTheException()
     {
         await using var receiver = await OtlpReceiver.StartAsync();

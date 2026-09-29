@@ -199,7 +199,7 @@ internal sealed class RequestRegistry(
         var captureDetail = state.IsDetailKept;
         return new TransportCompletion(
             response.StatusCode,
-            EndpointMetadata.ResolveRoute(context, state.Entry.PathBase),
+            EndpointMetadata.ResolveRoute(context),
             request.Scheme,
             request.Host.HasValue ? request.Host.Host : null,
             request.Host.Port,
@@ -252,12 +252,13 @@ internal sealed class RequestRegistry(
                 context.Response.Headers.ContentEncoding,
                 bytes
             );
-        errorAggregates.AddValidationErrors(
-            consumer?.Identifier,
-            entry.Method,
-            route,
-            validationDetails
-        );
+        if (validationDetails.Count > 0)
+            errorAggregates.AddValidationErrors(
+                consumer?.Identifier,
+                entry.Method,
+                route,
+                validationDetails
+            );
         if (completion.StatusCode == 500 && state.CapturedException is { Exception: var exception })
             errorAggregates.AddServerError(consumer?.Identifier, entry.Method, route, exception);
         metrics.RecordRequest(
