@@ -25,7 +25,6 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
     private RuntimeConfiguration configuration = null!;
     private TimeProvider timeProvider = TimeProvider.System;
     private Resource resource = Resource.Empty;
-    private Task? cleanup;
     private TracingIntegration? tracing;
     private TelemetrySpool? spool;
     private ExportHttpClient? httpClient;
@@ -41,7 +40,6 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
         Created,
         Prepared,
         Active,
-        Stopping,
         Stopped,
         Disabled,
     }
@@ -49,44 +47,37 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
     public SdkDiagnostics Diagnostics { get; private set; } = SdkDiagnostics.None;
     public RequestRegistry? Registry { get; private set; }
 
-    public bool IsPrepared
-    {
-        get
-        {
-            lock (sync)
-                return state is RuntimeState.Prepared or RuntimeState.Active;
-        }
-    }
-
     // Resolves the finalized configuration once. Suppressed and disabled hosts construct no
-    // providers, spool or workers.
-    public void Prepare(IServiceProvider services)
+    // providers, spool or workers. Returns whether the host is prepared for activation.
+    public bool Prepare(IServiceProvider services)
     {
         lock (sync)
         {
             if (state != RuntimeState.Created)
-                return;
+                return false;
             state = RuntimeState.Disabled;
             try
             {
                 Diagnostics = new SdkDiagnostics(services.GetRequiredService<ILoggerFactory>());
                 // Test hosts usually have no write token, so they return before it is validated.
                 if (IsTestServer(services.GetRequiredService<IServer>()))
-                    return;
+                    return false;
                 var options = services.GetRequiredService<IOptions<ApitallyOptions>>().Value;
-                configuration = RuntimeConfiguration.Resolve(options, Diagnostics);
-                if (!configuration.IsEnabled)
-                    return;
+                if (RuntimeConfiguration.Resolve(options, Diagnostics) is not { } resolved)
+                    return false;
+                configuration = resolved;
                 timeProvider = services.GetService<TimeProvider>() ?? TimeProvider.System;
                 resource = OtlpEncoder.CreateResource(configuration.Env);
                 tracing = services.GetRequiredService<TracingIntegration>();
                 tracing.Prepare(services, resource);
                 state = RuntimeState.Prepared;
+                return true;
             }
             catch (Exception exception)
             {
                 Diagnostics.PreparationFailed(exception);
                 tracing?.DisposeOwnedProvider();
+                return false;
             }
         }
     }
@@ -164,11 +155,12 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
     // ends the host's wait and prevents further POSTs.
     public async Task ShutdownAsync(CancellationToken cancellationToken)
     {
+        Task cleanup;
         lock (sync)
         {
             if (state != RuntimeState.Active)
                 return;
-            state = RuntimeState.Stopping;
+            state = RuntimeState.Stopped;
             // Request detail still awaiting completion is discarded; finalized requests and
             // recorded metrics remain eligible for the final cycle.
             Registry!.Cutoff();
@@ -188,7 +180,7 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
     {
         lock (sync)
         {
-            if (cleanup is not null || state != RuntimeState.Active)
+            if (state != RuntimeState.Active)
                 return;
             state = RuntimeState.Stopped;
             Registry!.Cutoff();
@@ -220,8 +212,6 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
         finally
         {
             DisposeOwnedResources();
-            lock (sync)
-                state = RuntimeState.Stopped;
         }
     }
 

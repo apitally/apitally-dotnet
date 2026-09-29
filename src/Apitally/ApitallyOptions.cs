@@ -1,3 +1,5 @@
+using Apitally.Hosting;
+
 namespace Apitally;
 
 /// <summary>
@@ -10,7 +12,7 @@ public sealed class ApitallyOptions
     public string? WriteToken { get; set; }
 
     /// <summary>Environment name. Falls back to <c>APITALLY_ENV</c>, then <c>dev</c>.</summary>
-    public string Env { get; set; } = "dev";
+    public string Env { get; set; } = RuntimeConfiguration.DefaultEnv;
 
     /// <summary>Version of the application, included in the startup event.</summary>
     public string? AppVersion { get; set; }

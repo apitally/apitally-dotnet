@@ -24,7 +24,7 @@ public class RuntimeConfigurationTests
         var configuration = RuntimeConfiguration.Resolve(options, diagnostics.Diagnostics);
         options.MaskHeaders.Add("x-other");
 
-        Assert.True(configuration.IsEnabled);
+        Assert.NotNull(configuration);
         Assert.Equal(WriteToken, configuration.WriteToken);
         Assert.Equal("prod", configuration.Env);
         Assert.Equal("1.2.3", configuration.AppVersion);
@@ -45,7 +45,7 @@ public class RuntimeConfigurationTests
 
         var configuration = RuntimeConfiguration.Resolve(new(), diagnostics.Diagnostics);
 
-        Assert.False(configuration.IsEnabled);
+        Assert.Null(configuration);
         Assert.Single(diagnostics.Records(LogLevel.Error));
     }
 
@@ -60,7 +60,7 @@ public class RuntimeConfigurationTests
             diagnostics.Diagnostics
         );
 
-        Assert.False(configuration.IsEnabled);
+        Assert.Null(configuration);
         var error = Assert.Single(diagnostics.Records(LogLevel.Error));
         Assert.Contains("apt_secr...", error.Message);
         Assert.DoesNotContain("secretvalue", error.Message);
@@ -80,7 +80,7 @@ public class RuntimeConfigurationTests
             diagnostics.Diagnostics
         );
 
-        Assert.False(configuration.IsEnabled);
+        Assert.Null(configuration);
         Assert.Empty(diagnostics.Records(LogLevel.Error));
     }
 
@@ -95,7 +95,7 @@ public class RuntimeConfigurationTests
         var configuration = RuntimeConfiguration.Resolve(
             new() { WriteToken = WriteToken, SampleRate = sampleRate },
             new DiagnosticsCollector().Diagnostics
-        );
+        )!;
 
         Assert.Equal(1.0, configuration.SampleRate);
     }
@@ -111,7 +111,7 @@ public class RuntimeConfigurationTests
             diagnostics.Diagnostics
         );
 
-        Assert.True(configuration.IsEnabled);
+        Assert.NotNull(configuration);
         Assert.Equal("iban", Assert.Single(configuration.MaskBodyFields).ToString());
         Assert.Single(diagnostics.Records(LogLevel.Error));
     }
@@ -124,7 +124,7 @@ public class RuntimeConfigurationTests
         var configuration = RuntimeConfiguration.Resolve(
             new() { WriteToken = WriteToken, MaskQueryParams = ["session", "(?-i:Signature)"] },
             new DiagnosticsCollector().Diagnostics
-        );
+        )!;
 
         Assert.True(RuntimeConfiguration.MatchesAny(configuration.MaskQueryParams, "SESSION_ID"));
         Assert.True(RuntimeConfiguration.MatchesAny(configuration.MaskQueryParams, "Signature"));
@@ -141,7 +141,7 @@ public class RuntimeConfigurationTests
         var configuration = RuntimeConfiguration.Resolve(
             new() { WriteToken = WriteToken },
             new DiagnosticsCollector().Diagnostics
-        );
+        )!;
 
         Assert.Equal(new Uri("http://127.0.0.1:4318"), configuration.OtlpEndpoint);
     }

@@ -14,7 +14,7 @@ using Microsoft.Extensions.Options;
 namespace Apitally;
 
 /// <summary>Extension methods for adding Apitally to an application.</summary>
-public static class ApitallyExtensions
+public static class ApitallyServiceCollectionExtensions
 {
     /// <summary>
     /// Adds Apitally monitoring to an ASP.NET Core application. Options are read from the

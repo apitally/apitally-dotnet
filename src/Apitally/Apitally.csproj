@@ -6,6 +6,8 @@
     <LangVersion>12</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
     <Version>1.0.0-alpha.1</Version>
     <Authors>Simon Gurcke</Authors>
     <Company>Apitally</Company>

@@ -18,7 +18,7 @@ internal sealed class ApitallyMiddleware(RequestDelegate next, TelemetryRuntime 
         var state = TryGetOrCreateState(context);
         if (state is null)
         {
-            await next(context);
+            await next(context).ConfigureAwait(false);
             return;
         }
         var requestBody = context.Request.Body;
@@ -27,7 +27,7 @@ internal sealed class ApitallyMiddleware(RequestDelegate next, TelemetryRuntime 
         TryObserveBodies(context, state, responseBodyFeature, lifetimeFeature);
         try
         {
-            await next(context);
+            await next(context).ConfigureAwait(false);
         }
         catch (Exception exception)
         {

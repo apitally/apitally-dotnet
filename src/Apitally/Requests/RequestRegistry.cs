@@ -146,7 +146,7 @@ internal sealed class RequestRegistry(
             if (sampling.IsExcluded(entry.Method, entry.Path, entry.UserAgent, entry.IsWebSocket))
                 return false;
             var snapshot = sampling.HasRequestCallback
-                ? SpanSnapshots.CopyAtRequestStart(serverActivity, context, resource)
+                ? SpanSnapshots.CopyAtRequestStart(serverActivity, entry, context, resource)
                 : null;
             return sampling.ShouldKeepAtRequestStage(serverActivity.TraceId, snapshot);
         }
@@ -223,7 +223,7 @@ internal sealed class RequestRegistry(
             ValidationResponse =
                 isResponseComplete
                 && ValidationCapture.IsValidationResponse(response.StatusCode, response.ContentType)
-                    ? responseCapture?.GetRetainedBytes(isComplete: true)
+                    ? responseCapture?.GetRetainedBytes()
                     : null,
         };
     }

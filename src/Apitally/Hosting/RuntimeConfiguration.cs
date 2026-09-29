@@ -31,7 +31,6 @@ internal sealed partial class RuntimeConfiguration
     public const string DefaultOtlpEndpoint = "https://otlp.apitally.io";
     public static readonly TimeSpan PatternMatchTimeout = TimeSpan.FromMilliseconds(100);
 
-    public required bool IsEnabled { get; init; }
     public required string WriteToken { get; init; }
     public required string Env { get; init; }
     public string? AppVersion { get; init; }
@@ -56,28 +55,25 @@ internal sealed partial class RuntimeConfiguration
     public Uri OtlpEndpoint { get; init; } = new(DefaultOtlpEndpoint);
     public IWebProxy? Proxy { get; init; }
 
-    public static RuntimeConfiguration Resolve(ApitallyOptions options, SdkDiagnostics diagnostics)
+    // Returns null when telemetry is disabled.
+    public static RuntimeConfiguration? Resolve(ApitallyOptions options, SdkDiagnostics diagnostics)
     {
-        var disabled =
+        if (
             options.Disabled
             || IsTruthy(ReadEnvironmentVariable("APITALLY_DISABLED"))
-            || IsTruthy(ReadEnvironmentVariable("OTEL_SDK_DISABLED"));
-        var writeToken = options.WriteToken?.Trim() ?? "";
-        var endpoint = ReadEnvironmentVariable("APITALLY_OTLP_ENDPOINT") ?? DefaultOtlpEndpoint;
-        var isEnabled = !disabled && IsValid(writeToken, endpoint, diagnostics);
-        if (disabled)
+            || IsTruthy(ReadEnvironmentVariable("OTEL_SDK_DISABLED"))
+        )
+        {
             diagnostics.Disabled();
-        if (!isEnabled)
-            return new RuntimeConfiguration
-            {
-                IsEnabled = false,
-                WriteToken = "",
-                Env = DefaultEnv,
-            };
+            return null;
+        }
+        var writeToken = options.WriteToken?.Trim() ?? "";
+        if (!IsValidWriteToken(writeToken, diagnostics))
+            return null;
+        var endpoint = ReadEnvironmentVariable("APITALLY_OTLP_ENDPOINT") ?? DefaultOtlpEndpoint;
 
         return new RuntimeConfiguration
         {
-            IsEnabled = true,
             WriteToken = writeToken,
             Env = string.IsNullOrWhiteSpace(options.Env) ? DefaultEnv : options.Env.Trim(),
             AppVersion = string.IsNullOrWhiteSpace(options.AppVersion)
@@ -133,7 +129,7 @@ internal sealed partial class RuntimeConfiguration
         return false;
     }
 
-    private static bool IsValid(string writeToken, string endpoint, SdkDiagnostics diagnostics)
+    private static bool IsValidWriteToken(string writeToken, SdkDiagnostics diagnostics)
     {
         if (writeToken.Length == 0)
         {
@@ -144,14 +140,6 @@ internal sealed partial class RuntimeConfiguration
         {
             // The write token is a credential and must never appear unmasked in logs.
             diagnostics.WriteTokenInvalid(writeToken[..Math.Min(writeToken.Length, 8)] + "...");
-            return false;
-        }
-        if (
-            !Uri.TryCreate(endpoint, UriKind.Absolute, out var uri)
-            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
-        )
-        {
-            diagnostics.OtlpEndpointInvalid(endpoint);
             return false;
         }
         return true;

@@ -37,7 +37,7 @@ This document distinguishes:
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically, and capture activities from every `ActivitySource` within monitored requests, as v0 did. Instrumentation packages such as EF Core are opt-in. |
 | Tracing customization | Use standard OTel provider registration for instrumentation packages. Apitally-specific tracing-configuration callbacks are outside the initial API. |
 | Metric capacity | A fixed capacity of 10,000 per request histogram through native OTel views and reclamation; no public capacity setting or runtime resizing. |
-| Individually oversized records | Split ordinary batches to fit the spool cap. Drop an indivisible encoded record that still cannot fit, with a deduplicated actionable warning, and continue with other records. |
+| Individually oversized records | Split ordinary batches to fit the spool cap. Drop an indivisible encoded record that still cannot fit, with a deduplicated actionable warning, and continue with other records. Metrics are appended as one request per collection, because the server joins the request histograms within a request; the 10,000-point capacity bounds its size. |
 | Span-based callbacks | All request/response sampling and body-masking callbacks receive the same complete span snapshot type, populated for the callback's stage. It exposes read-only interfaces and native .NET/OTel types but is the SDK-owned record itself, with no isolation guarantee. |
 | Sampling callback result | Both sampling callbacks return `double?`: a keep probability in `[0, 1]`, or `null` to abstain. |
 | Late request telemetry | Drop spans and logs that arrive after a request is released. There is no completed-request cache. |
@@ -383,7 +383,7 @@ Provider-independent minimum/category rules apply to the adapter, and the alias 
 
 Resolve `apitally.request.server_span_id` through the activity-to-request association, preserving the emitting child span ID separately. Application logs without a request association are dropped. Exclude Apitally's and the OTel SDK's own diagnostic logs from capture to prevent feedback loops.
 
-**Confirmed:** also exclude `Microsoft.AspNetCore.*` categories from capture, as v0 did. Framework request logs repeat what the request log already shows and would crowd out application logs. Other logging providers still receive them.
+**Confirmed:** also exclude `Microsoft.AspNetCore.*` categories from capture, as v0 did. Framework request logs repeat what the request log already shows and would crowd out application logs. Exclude `System.Net.Http.HttpClient.*` categories too: outgoing calls are captured as redacted CLIENT spans, and on .NET 8 these logs contain unredacted query strings. Other logging providers still receive them.
 
 Run `MaskLogRecord` synchronously on the captured record before buffering. It may return the supplied record or drop it; exceptions, a different instance or a null/empty `Body` drop the record. Truncate the body to 2,048 characters after masking, when the batch worker encodes the record.
 
@@ -466,7 +466,7 @@ Detect changes with a 10,000-identifier LRU cache of hashes of the canonical nor
 
 A 32-record trace chunk exceeds the 4,000,000-byte cap in the experiment; exact encoded-size checks and splitting preserve the tested records within it. The POC also rejects an indivisible oversized encoded request.
 
-**Confirmed oversized-record policy:** after ordinary exact-size batch splitting, drop an indivisible encoded telemetry record that still exceeds the 4,000,000-byte spool cap, issue a deduplicated actionable warning and continue with the other records. Do not invent fragments or rewrite the record to force it to fit. The warning explains the lost item and how to reduce its size without logging its contents. This is separate from the existing 50,000-byte body-capture limit and `[BODY_TOO_LARGE]` behavior; ordinary records are not discarded with the oversized item.
+**Confirmed oversized-record policy:** after ordinary exact-size batch splitting, drop an indivisible encoded telemetry record that still exceeds the 4,000,000-byte spool cap, issue a deduplicated actionable warning and continue with the other records. Do not invent fragments or rewrite the record to force it to fit. The warning explains the lost item and how to reduce its size without logging its contents. This is separate from the existing 50,000-byte body-capture limit and `[BODY_TOO_LARGE]` behavior; ordinary records are not discarded with the oversized item. Metrics are not split: the server joins the duration and body-size histograms within one request, so each collection is appended as one request, matching the Python SDK. The 10,000-point capacity bounds its size; the measured worst case is about 14 MB uncompressed and 3 MB compressed.
 
 Use stock batch queue/worker machinery with explicit settings and approximately one-second intake delay. The snapshot POC demonstrates `BatchExportProcessor<T>` intake without private reflection. Bound encoded appends by actual size; a record-count chunk limit alone is not proof that a file stays below the cap.
 

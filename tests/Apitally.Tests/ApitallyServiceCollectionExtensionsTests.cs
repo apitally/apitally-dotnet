@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Apitally.Tests;
 
-public class ApitallyExtensionsTests
+public class ApitallyServiceCollectionExtensionsTests
 {
     [Fact]
     public void ConfigurationSectionOverridesEnvironmentFallbacks()

@@ -115,8 +115,8 @@ internal sealed class BodyCapture(Func<bool> isEligible, Func<long?> declaredLen
     }
 
     // Returns whatever complete bytes are retained, independent of export eligibility.
-    public byte[]? GetRetainedBytes(bool isComplete) =>
-        isComplete && IsCapturing() && !IsIncomplete && !IsBypassed && used > 0 && used == Count
+    public byte[]? GetRetainedBytes() =>
+        IsCapturing() && !IsIncomplete && !IsBypassed && used > 0 && used == Count
             ? GetBytes()
             : null;
 

@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using System.Globalization;
 using Apitally.Export;
 using Apitally.Logging;
+using Google.Protobuf;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -130,12 +131,11 @@ internal sealed class ApitallyMetrics : IDisposable
                 var mapped = OtlpMetricMapper.Map(metrics, out var hasOverflow);
                 if (hasOverflow)
                     diagnostics.MetricCapacityExceeded();
-                OtlpEncoder.EncodeRequests(
-                    mapped,
-                    chunk => OtlpMetricMapper.BuildRequest(chunk, resource),
-                    payload => spool.Append(TelemetrySignal.Metrics, payload),
-                    "metrics",
-                    diagnostics
+                // The server joins the three request histograms within one request, so each
+                // collection is appended whole. The 10,000-point capacity bounds its size.
+                spool.Append(
+                    TelemetrySignal.Metrics,
+                    OtlpMetricMapper.BuildRequest(mapped, resource).ToByteArray()
                 );
                 return ExportResult.Success;
             }

@@ -46,7 +46,6 @@ internal sealed class SpoolFile
     public long Sequence { get; }
     public string? Path => fileStream?.Name;
     public long UncompressedSize { get; private set; }
-    public bool IsClosed => gzip is null;
     public DateTimeOffset? FirstAttemptAt { get; set; }
 
     public long StoredSize => closedSize ?? fileStream?.Length ?? memoryStream!.Length;

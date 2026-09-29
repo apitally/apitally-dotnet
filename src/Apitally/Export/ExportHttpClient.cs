@@ -20,7 +20,7 @@ internal readonly record struct ExportResponse(
 // such as resilience handlers, from adding retries beneath the export worker.
 internal sealed class ExportHttpClient : IDisposable
 {
-    public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
     private const string ExportIntervalHeader = "Apitally-Export-Interval";
 
     private readonly HttpClient client;
@@ -44,7 +44,7 @@ internal sealed class ExportHttpClient : IDisposable
             }
         )
         {
-            Timeout = Timeout.InfiniteTimeSpan,
+            Timeout = RequestTimeout,
         };
     }
 
@@ -95,8 +95,6 @@ internal sealed class ExportHttpClient : IDisposable
         CancellationToken cancellationToken
     )
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(RequestTimeout);
         var content = new ByteArrayContent(body);
         content.Headers.ContentType = new MediaTypeHeaderValue("application/x-protobuf");
         content.Headers.ContentEncoding.Add("gzip");
@@ -104,9 +102,7 @@ internal sealed class ExportHttpClient : IDisposable
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", writeToken);
         request.Headers.Add("Apitally-Env", env);
         request.Headers.UserAgent.ParseAdd($"{OtlpEncoder.DistroName}/{OtlpEncoder.DistroVersion}");
-        var response = await client.SendAsync(request, timeout.Token).ConfigureAwait(false);
-        await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);
-        return response;
+        return await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
     }
 
     private static int? ReadExportInterval(HttpResponseMessage response) =>

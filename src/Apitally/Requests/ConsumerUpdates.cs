@@ -35,7 +35,7 @@ internal sealed class ConsumerUpdates(InternalEvents events)
     [];
     private readonly LinkedList<(string Identifier, string Hash)> leastRecentlyUsed = new();
 
-    public static string? NormalizeIdentifier(string? identifier) =>
+    private static string? NormalizeIdentifier(string? identifier) =>
         Normalize(identifier, MaxIdentifierLength);
 
     // Merges a submitted patch into the request's consumer. A different identifier starts over.

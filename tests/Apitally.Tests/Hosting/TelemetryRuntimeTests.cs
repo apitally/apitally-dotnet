@@ -137,7 +137,7 @@ public class TelemetryRuntimeTests
 
         await using (var app = Program.CreateMinimalApp(ApplicationHost.Arguments()))
         {
-            Assert.False(app.Services.GetRequiredService<TelemetryRuntime>().IsPrepared);
+            Assert.Null(app.Services.GetRequiredService<TelemetryRuntime>().Registry);
         }
 
         Assert.Empty(receiver.Exports);
@@ -159,7 +159,7 @@ public class TelemetryRuntimeTests
         (await app.GetTestClient().GetAsync("/hello")).EnsureSuccessStatusCode();
         await app.StopAsync();
 
-        Assert.False(app.Services.GetRequiredService<TelemetryRuntime>().IsPrepared);
+        Assert.Null(app.Services.GetRequiredService<TelemetryRuntime>().Registry);
         Assert.Empty(receiver.Exports);
     }
 
@@ -202,7 +202,7 @@ public class TelemetryRuntimeTests
         );
 
         await Assert.ThrowsAnyAsync<IOException>(() => app.StartAsync());
-        Assert.True(app.Services.GetRequiredService<TelemetryRuntime>().IsPrepared);
+        Assert.NotNull(app.Services.GetRequiredService<TelemetryRuntime>().Registry);
         await app.DisposeAsync();
         timeProvider.Advance(TimeSpan.FromMinutes(1));
         await Task.Delay(200);

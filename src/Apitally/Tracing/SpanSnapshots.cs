@@ -36,9 +36,11 @@ internal static class SpanSnapshots
                 : activity.Source.Version,
         };
 
-    // HTTP tags can be absent at SERVER start, so request values come from the HttpContext.
+    // HTTP tags can be absent at SERVER start, so request values come from the request entry
+    // and the HttpContext.
     public static SpanSnapshot CopyAtRequestStart(
         Activity activity,
+        RequestEntry entry,
         HttpContext context,
         Resource resource
     )
@@ -46,15 +48,13 @@ internal static class SpanSnapshots
         var snapshot = Copy(activity, resource);
         var request = context.Request;
         var attributes = snapshot.OwnedAttributes;
-        attributes["http.request.method"] = request.Method.ToUpperInvariant();
+        attributes["http.request.method"] = entry.Method;
         attributes["url.scheme"] = request.Scheme;
-        attributes["url.path"] = (request.PathBase + request.Path).Value;
-        if (request.QueryString.HasValue)
-            attributes["url.query"] = request.QueryString.Value![1..];
+        attributes["url.path"] = entry.PathBase + entry.Path;
+        SetOrRemove(attributes, "url.query", entry.Query);
         if (request.Host.HasValue)
             attributes["server.address"] = request.Host.Host;
-        if (request.Headers.UserAgent.Count > 0)
-            attributes["user_agent.original"] = request.Headers.UserAgent.ToString();
+        SetOrRemove(attributes, "user_agent.original", entry.UserAgent);
         return snapshot;
     }
 

@@ -10,7 +10,7 @@ namespace Apitally.Logging;
 internal sealed partial class SdkDiagnostics
 {
     public const string CategoryName = "Apitally";
-    public const string SpoolWriteFailedKey = "spool-write-failed";
+    private const string SpoolWriteFailedKey = "spool-write-failed";
 
     private readonly ILogger logger;
     private readonly ConcurrentDictionary<string, bool> raisedWarnings = new();
@@ -19,9 +19,6 @@ internal sealed partial class SdkDiagnostics
         logger = loggerFactory.CreateLogger(CategoryName);
 
     public static SdkDiagnostics None { get; } = new(NullLoggerFactory.Instance);
-
-    // Deduplicated warnings are raised again only after their condition is reset.
-    public void ResetWarning(string key) => raisedWarnings.TryRemove(key, out _);
 
     [LoggerMessage(
         Level = LogLevel.Error,
@@ -34,12 +31,6 @@ internal sealed partial class SdkDiagnostics
         Message = "Apitally write token has an invalid format ({MaskedToken}), so telemetry is disabled."
     )]
     public partial void WriteTokenInvalid(string maskedToken);
-
-    [LoggerMessage(
-        Level = LogLevel.Error,
-        Message = "Apitally OTLP endpoint is not a valid HTTP or HTTPS URL ({Endpoint}), so telemetry is disabled."
-    )]
-    public partial void OtlpEndpointInvalid(string endpoint);
 
     [LoggerMessage(
         Level = LogLevel.Error,
@@ -73,6 +64,9 @@ internal sealed partial class SdkDiagnostics
         if (ShouldWarn(SpoolWriteFailedKey))
             LogSpoolWriteFailed(exception);
     }
+
+    // The write failure warning is raised again only after writes have recovered.
+    public void SpoolWriteSucceeded() => raisedWarnings.TryRemove(SpoolWriteFailedKey, out _);
 
     public void SpoolSizeLimitReached(TelemetrySignal signal)
     {

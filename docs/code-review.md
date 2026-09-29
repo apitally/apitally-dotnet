@@ -250,6 +250,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `AspNetCore/ApitallyMiddleware.cs:91`
 - **Problem**: On .NET 10, Minimal API JSON binding reads from `BodyReader`. Because `Request.Body` has been replaced, Kestrel wraps the replacement in a `StreamPipeReader`. That adds one extra copy of every request body.
 - **Recommendation**: Accept this for v1. Revisit only if profiling shows a real cost.
+- **Decision**: Accepted as is. Pipe-level observation would add 100 to 150 lines of subtle code to save one sub-microsecond copy per request.
 
 ### P7. The metrics payload limit could drop a whole interval near the cardinality cap
 
@@ -257,6 +258,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `Export/OtlpEncoder.cs:15, 57-77`
 - **Problem**: Each `OtlpMetric` is an indivisible record. One histogram with up to 10,000 exponential-histogram points could exceed `MaxRequestSize` (4 MB). The metric is then dropped with `OversizedRecordDropped`, which loses all counts for that interval in exactly the high-traffic case.
 - **Recommendation**: Measure the encoded size at 10,000 points. If it can exceed the limit, split the data points across requests.
+- **Decision**: Confirmed by measurement: a single histogram reaches 3 to 5 MB near the cap. A related issue: the server joins the three request histograms within one request, so splitting them across requests already discarded body-size data from about 4,500 attribute combinations. Metrics are now appended as one request per collection, as in the Python SDK. The measured worst case is 13.6 MB uncompressed and 2.9 MB compressed, under the 8 MB NATS payload limit.
 
 ### Already done well (do not regress)
 
@@ -293,6 +295,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `Logging/ApitallyLoggerProvider.cs:35-39`, `Logging/LogMasking.cs:27-40`
 - **Problem**: On .NET 8, `IHttpClientFactory`'s `LogicalHandler` logs `Start processing HTTP request GET https://partner/api?api_key=...` at Information, and it pushes a `{Uri}` scope. Query redaction in these logs only arrived in .NET 9. With default logging levels and `CaptureLogs = true`, the key is exported both in the log body and in the `Uri` attribute. This matches the shared design, which applies automatic redaction only to query parameters, headers and body fields, and Python behaves the same way with `httpx`. It is still the most likely credential leak in a default .NET 8 installation.
 - **Recommendation**: Exclude the `System.Net.Http.HttpClient.` log categories by default. The request already has the outgoing CLIENT span, which is redacted. At a minimum, document this next to the "log capture on by default" note in the migration guide.
+- **Decision**: Fixed as recommended. `System.Net.Http.HttpClient.*` categories are excluded; design.md and migration.md are updated.
 
 ### Verified conformant (data and privacy)
 
@@ -374,6 +377,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `README.md:1-18`, `Apitally.csproj:20`
 - **Problem**: nuget.org does not render `<picture>` or `<p align>`, and it only shows images from allow-listed domains, which excludes `assets.apitally.io`.
 - **Recommendation**: Pack a short `docs/nuget-readme.md` in plain Markdown instead.
+- **Decision**: Rejected.
 
 ### I6. The extension class name breaks the `{Feature}ServiceCollectionExtensions` convention
 
@@ -381,6 +385,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `ApitallyExtensions.cs:14-16`
 - **Problem**: Microsoft.Extensions and OpenTelemetry use `{Feature}ServiceCollectionExtensions`. The name `ApitallyExtensions` doesn't say what type it extends.
 - **Recommendation**: Rename the class to `ApitallyServiceCollectionExtensions` before GA. Moving it to the `Microsoft.Extensions.DependencyInjection` namespace is optional.
+- **Decision**: Renamed to `ApitallyServiceCollectionExtensions`; the namespace stays `Apitally`.
 
 ### I7. Cheap trimming and AOT compatibility wins
 
@@ -388,6 +393,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `Hosting/RuntimeConfiguration.cs:23`, `Requests/ConsumerUpdates.cs:109`, `Apitally.csproj`
 - **Problem**: `IsAotCompatible=true` reports only two sources of warnings: reflection-based `ConfigurationBinder.Bind`, and `JsonSerializer.Serialize(object?[])`. Design.md says to prefer compatibility-friendly choices when they add no complexity.
 - **Recommendation**: Set `EnableConfigurationBindingGenerator=true` and `IsAotCompatible=true`, and replace the consumer hash serialization (see P4). This makes no support claim; it only stops the SDK from adding warnings to users' trimmed builds.
+- **Decision**: Both properties are set. The consumer hash no longer uses JSON (P4), so the build is free of trim and AOT warnings.
 
 ### I8. Minor idiom nits
 
@@ -398,6 +404,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Log wording**: messages print the enum as-is ("rejected buffered Logs"). Lowercase the signal name.
 - **Warning deduplication**: the key `"export-rejected-" + statusCode` omits the signal. After the first 401, rejections for the other signals are silent. If that is intended, say so in a comment.
 - **Timing-dependent tests**: `ExportWorkerTests.cs:46, 71, 92, 109, 135` use `Task.Delay(100)` to assert that nothing else happened.
+- **Decision**: Fixed `ConfigureAwait` and the `StartActivity` `<returns>` documentation. The other nits are rejected; the per-status rejection deduplication is specified by the shared design.
 
 ## Simplicity
 
@@ -438,6 +445,7 @@ Overall: the codebase is about 5.5k lines, close to apitally-js (about 5.6k), ev
 - **Recommendation**:
   - Remove `Stopping` and the `cleanup` field.
   - Have `Prepare` return `bool`: `if (runtime.Prepare(...)) app.UseMiddleware<ApitallyMiddleware>();`.
+- **Decision**: Fixed as recommended. `IsPrepared` is removed; tests check `Registry` instead.
 
 ### S4. `ExportHttpClient` reimplements the request timeout and reads the body twice
 
@@ -445,6 +453,7 @@ Overall: the codebase is about 5.5k lines, close to apitally-js (about 5.6k), ev
 - **Location**: `Export/ExportHttpClient.cs:45, 96-97, 106`
 - **Problem**: The client uses `Timeout.InfiniteTimeSpan` plus a linked `CancellationTokenSource` for each request, which is exactly what `HttpClient.Timeout` already does. `ReadAsByteArrayAsync` also re-reads content that is already buffered.
 - **Recommendation**: Set `Timeout = RequestTimeout` on the client, and remove the linked token source and the second read.
+- **Decision**: Fixed as recommended.
 
 ### S5. Captured payload fields are declared twice and copied field by field
 
@@ -452,6 +461,7 @@ Overall: the codebase is about 5.5k lines, close to apitally-js (about 5.6k), ev
 - **Location**: `Requests/RequestState.cs:21-24`, `Export/SpanRedaction.cs:14-37`, `Requests/RequestRegistry.cs:289-297`
 - **Problem**: `TransportCompletion` and `SpanExportEntry` declare the same four header and body properties, and `Release` copies them one at a time.
 - **Recommendation**: Introduce one `CapturedPayloads` record shared by both types, and make `CapturedBody` a record with a static `TooLarge` instance.
+- **Decision**: `CapturedBody` is now a record. The shared `CapturedPayloads` record is rejected as a marginal gain.
 
 ### S6. `RuntimeConfiguration` has code a test-only setting doesn't need
 
@@ -463,6 +473,7 @@ Overall: the codebase is about 5.5k lines, close to apitally-js (about 5.6k), ev
   - `DefaultEnv` repeats the default already set on `ApitallyOptions`.
   - `MatchesAny` hand-writes what `Any` already does.
 - **Recommendation**: Return `RuntimeConfiguration?`, with `null` meaning disabled. Inline `MatchesAny`. Optionally drop the endpoint validation.
+- **Decision**: `Resolve` returns `null` when disabled, the endpoint validation and its diagnostic are removed, and `ApitallyOptions.Env` defaults to `RuntimeConfiguration.DefaultEnv`. `MatchesAny` stays, because its loop avoids a LINQ allocation on per-request paths.
 
 ### S7. Dead, test-only and overexposed members
 
@@ -472,6 +483,7 @@ Overall: the codebase is about 5.5k lines, close to apitally-js (about 5.6k), ev
 - **Should be private**: `SpanRedaction.RedactQuery` and `RedactUrl`, `ConsumerUpdates.NormalizeIdentifier`, and `TelemetrySpool.MaxSize` are only used inside their own classes.
 - **Redundant check**: the `registry is null` check in `ApitallyMiddleware.TryObserveBodies` can never be true.
 - **Leaked key**: `SdkDiagnostics.SpoolWriteFailedKey` and `ResetWarning(string)` expose a deduplication key string to the spool. Replace them with a single `SpoolWriteSucceeded()` method.
+- **Decision**: Applied, except the `registry is null` check, which the compiler's nullable analysis requires. `ExportWorker.Interval` is handled with S9.
 
 ### S8. Small duplicated helpers
 
@@ -480,6 +492,7 @@ Overall: the codebase is about 5.5k lines, close to apitally-js (about 5.6k), ev
 - **Version parsing**: `InformationalVersion` is parsed twice (`OtlpEncoder.cs:23-27`, `InternalEvents.cs:122-127`).
 - **Content-encoding normalization**: duplicated in `BodyCapture.cs:41-48` and `SpanRedaction.cs:202-214`.
 - **Request attributes**: `SpanSnapshots.CopyAtRequestStart` re-reads method, path, query and user agent from `HttpContext`, although the `RequestEntry` built just before it already holds those values. Pass the entry in instead.
+- **Decision**: Only the `CopyAtRequestStart` item is fixed; it now takes the `RequestEntry`. The other duplications are rejected.
 
 ### S9. Some tests check wiring instead of behavior
 
