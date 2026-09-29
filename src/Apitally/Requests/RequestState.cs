@@ -180,7 +180,7 @@ internal sealed class RequestState
     {
         lock (sync)
         {
-            if (!IsDetailKept || isFinalized)
+            if (!IsDetailKept || isFinalized || associationKeys.Count >= MaxBufferedSpans + 1)
                 return;
             associationKeys.Add((traceId, spanId));
             associations[(traceId, spanId)] = this;
