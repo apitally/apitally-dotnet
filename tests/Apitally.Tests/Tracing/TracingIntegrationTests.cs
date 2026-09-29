@@ -168,6 +168,28 @@ public class TracingIntegrationTests
     }
 
     [Fact]
+    public async Task RequestsFilteredByApplicationInstrumentationAreReleased()
+    {
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await ApplicationHost.StartMinimalAsync(
+            receiver,
+            builder =>
+                builder
+                    .Services.AddOpenTelemetry()
+                    .WithTracing(tracing =>
+                        tracing.AddAspNetCoreInstrumentation(options =>
+                            options.Filter = context => context.Request.Path != "/items/1"
+                        )
+                    )
+        );
+
+        await host.Client.GetAsync("/items/1");
+        await host.StopAsync();
+
+        Assert.Empty(receiver.Spans());
+    }
+
+    [Fact]
     public async Task OtherLocalServerRootsAreNotExported()
     {
         await using var receiver = await OtlpReceiver.StartAsync();

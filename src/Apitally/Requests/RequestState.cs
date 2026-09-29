@@ -277,10 +277,14 @@ internal sealed class RequestState
     }
 
     // Detail waits for both transport completion and SERVER end; without kept detail, transport
-    // completion alone finalizes.
+    // completion alone finalizes. A SERVER activity dropped after start, for example by an
+    // instrumentation filter, never reports its end.
     private bool TryClaimFinalization()
     {
-        var isAwaitingServer = isServerAssociated && !isServerComplete;
+        var isAwaitingServer =
+            isServerAssociated
+            && !isServerComplete
+            && ServerActivity is { IsAllDataRequested: true, Recorded: true };
         if (isFinalized || !isTransportComplete || isAwaitingServer)
             return false;
         isFinalized = true;

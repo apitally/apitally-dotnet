@@ -69,6 +69,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
 
   The `RequestState` stays in `inFlight` and `associations` until shutdown, and it holds a reference to the `Activity`. A load-balancer health probe every few seconds grows memory without bound. Ten filtered requests left `inFlight=10 associations=10`. Metrics are unaffected.
 - **Recommendation**: At transport completion, stop waiting for a SERVER end that cannot arrive: add `&& ServerActivity is { IsAllDataRequested: true, Recorded: true }` to the `isAwaitingServer` condition. The filter always runs at activity start, and Kestrel calls `OnCompleted` before `DisposeContext`, so the flag is final by then. Add a test helper that asserts the registry is empty after requests, and use it in the integration tests. That assertion would have caught both C1 and C2.
+- **Decision**: Fixed as recommended. `ApplicationHost.StopAsync` now stops the server first and asserts `RequestRegistry.IsEmpty` for every integration test; covered by `TracingIntegrationTests.RequestsFilteredByApplicationInstrumentationAreReleased`.
 
 ### C2. Non-W3C propagators leak every request and export no traces
 

@@ -34,6 +34,8 @@ internal sealed class RequestRegistry(
     private readonly ConcurrentDictionary<RequestState, byte> inFlight = new();
     private volatile bool isCutOff;
 
+    public bool IsEmpty => inFlight.IsEmpty && associations.IsEmpty;
+
     public static RequestState? Get(HttpContext? context) => context?.Features.Get<RequestState>();
 
     // Called at SERVER activity start with the provider's resource, or at middleware entry
