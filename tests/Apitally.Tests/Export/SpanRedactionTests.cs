@@ -99,13 +99,13 @@ public class SpanRedactionTests
     {
         var span = TestSpans.Create();
         var body =
-            """{"user":{"name":"a","password":"p","tokens":["t1"]},"items":[{"card_number":"4111","qty":1.50}],"secret":42,"ok":true,"none":null}""";
+            """{"user":{"name":"a","password":"p","tokens":["t1"]},"items":[{"card_number":"4111","cvv":"123","qty":1.50}],"secret":42,"ok":true,"none":null}""";
 
         Redaction(options => options.MaskBodyFields = ["^name$"])
             .TryRedact(new SpanExportEntry(span) { RequestBody = Body(body) });
 
         Assert.Equal(
-            """{"user":{"name":"[REDACTED]","password":"[REDACTED]","tokens":["t1"]},"items":[{"card_number":"[REDACTED]","qty":1.50}],"secret":42,"ok":true,"none":null}""",
+            """{"user":{"name":"[REDACTED]","password":"[REDACTED]","tokens":["t1"]},"items":[{"card_number":"[REDACTED]","cvv":"[REDACTED]","qty":1.50}],"secret":42,"ok":true,"none":null}""",
             span.Attributes[SpanRedaction.RequestBodyAttribute]
         );
     }

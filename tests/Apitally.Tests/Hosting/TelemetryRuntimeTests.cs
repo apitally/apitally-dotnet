@@ -59,9 +59,9 @@ public class TelemetryRuntimeTests
         Assert.Single(receiver.Metrics("process.memory.usage"));
         Assert.Single(receiver.Metrics("process.cpu.utilization"));
         var resource = OtlpDecoding.Attributes(receiver.ResourceMetrics()[0].Resource.Attributes);
-        Assert.Equal("dev", resource["deployment.environment.name"]);
+        Assert.Equal("prod", resource["deployment.environment.name"]);
         Assert.Equal("apitally-dotnet", resource["telemetry.distro.name"]);
-        Assert.All(receiver.Exports, export => Assert.Equal("dev", export.Env));
+        Assert.All(receiver.Exports, export => Assert.Equal("prod", export.Env));
     }
 
     [Fact]

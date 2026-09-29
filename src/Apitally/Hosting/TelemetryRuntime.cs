@@ -69,7 +69,12 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
                 timeProvider = services.GetService<TimeProvider>() ?? TimeProvider.System;
                 resource = OtlpEncoder.CreateResource(configuration.Env);
                 tracing = services.GetRequiredService<TracingIntegration>();
-                tracing.Prepare(services, resource);
+                // A request sampling callback can raise the rate, so it needs every request recorded.
+                tracing.Prepare(
+                    services,
+                    resource,
+                    configuration.SampleOnRequest is null ? configuration.SampleRate : 1
+                );
                 state = RuntimeState.Prepared;
                 return true;
             }

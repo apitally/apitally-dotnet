@@ -34,7 +34,7 @@ public class RequestTelemetryTests
         Assert.Equal("load-item", child.Name);
         Assert.Equal(server.SpanId, child.ParentSpanId);
         var resource = OtlpDecoding.Attributes(receiver.ResourceSpans()[0].Resource.Attributes);
-        Assert.Equal("dev", resource["deployment.environment.name"]);
+        Assert.Equal("prod", resource["deployment.environment.name"]);
     }
 
     [Fact]

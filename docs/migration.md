@@ -88,7 +88,7 @@ The same applies to the `Apitally` section in `appsettings.json`, which the SDK 
 }
 ```
 
-Values set in code take precedence over the `Apitally` configuration section, which takes precedence over the `APITALLY_WRITE_TOKEN` and `APITALLY_ENV` environment variables. Standard .NET environment variables such as `Apitally__SampleRate` also populate the configuration section.
+Values set in code take precedence over the `APITALLY_WRITE_TOKEN` and `APITALLY_ENV` environment variables, which take precedence over the `Apitally` configuration section. Standard .NET environment variables such as `Apitally__SampleRate` also populate the configuration section.
 
 Callbacks passed to `AddApitally(options => ...)` run after all configuration sources. Existing `services.PostConfigure<ApitallyOptions>(...)` calls registered after `AddApitally()` keep working, but we recommend moving them into the `AddApitally` callback.
 
@@ -99,7 +99,7 @@ The following options have been changed:
 | Option | Change |
 | --- | --- |
 | `ClientId` | Replaced by `WriteToken`, which requires a new credential. |
-| `Env` | Default changed from `default` to `dev`. Set it explicitly if you relied on the old default. |
+| `Env` | Defaults to the lowercased ASP.NET Core environment name instead of `default`, with `Production` shortened to `prod` and `Development` to `dev`. |
 | `RequestLogging.CaptureLogs` | Moved to `CaptureLogs`. Default changed from `false` to `true`. |
 | `RequestLogging.IncludeRequestHeaders` | Renamed to `CaptureRequestHeaders`. |
 | `RequestLogging.IncludeRequestBody` | Renamed to `CaptureRequestBody`. |

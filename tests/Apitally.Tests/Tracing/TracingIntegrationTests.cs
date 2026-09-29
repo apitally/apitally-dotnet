@@ -45,6 +45,19 @@ public class TracingIntegrationTests
     }
 
     [Fact]
+    public async Task FallbackDoesNotRecordSampledOutRequests()
+    {
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await ApplicationHost.StartMinimalAsync(
+            receiver,
+            builder => builder.Services.AddApitally(options => options.SampleRate = 0),
+            app => app.MapGet("/recorded", () => Activity.Current?.Recorded ?? false)
+        );
+
+        Assert.Equal("false", await host.Client.GetStringAsync("/recorded"));
+    }
+
+    [Fact]
     public async Task OutgoingHttpCallYieldsOneClientSpan()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
@@ -144,7 +157,7 @@ public class TracingIntegrationTests
         );
         var resource = OtlpDecoding.Attributes(receiver.ResourceSpans()[0].Resource.Attributes);
         Assert.Equal("orders", resource["service.name"]);
-        Assert.Equal("dev", resource["deployment.environment.name"]);
+        Assert.Equal("prod", resource["deployment.environment.name"]);
     }
 
     [Theory]

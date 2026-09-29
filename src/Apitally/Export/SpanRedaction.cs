@@ -320,7 +320,7 @@ internal sealed partial class SpanRedaction(
     private static partial Regex DefaultHeaderPattern();
 
     [GeneratedRegex(
-        "password|pwd|token|secret|auth|card[-_ ]?number|ccv|ssn",
+        "password|pwd|token|secret|auth|card[-_ ]?number|ccv|cvv|cvc|ssn",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
         PatternTimeoutMilliseconds
     )]

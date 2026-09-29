@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Apitally.Requests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenTelemetry;
@@ -40,8 +41,9 @@ internal sealed class TracingIntegration
         );
     }
 
-    // Resolves the application's provider or builds the fallback before the server starts.
-    public void Prepare(IServiceProvider services, Resource resource)
+    // Resolves the application's provider or builds the fallback before the server starts. The
+    // fallback drops requests that the sample rate would discard.
+    public void Prepare(IServiceProvider services, Resource resource, double sampleRate)
     {
         var provider = services.GetService<TracerProvider>();
         if (provider is null)
@@ -49,7 +51,7 @@ internal sealed class TracingIntegration
                 .SetResourceBuilder(
                     ResourceBuilder.CreateEmpty().AddAttributes(resource.Attributes)
                 )
-                .SetSampler(new RequestSampler())
+                .SetSampler(new RequestSampler(sampleRate))
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddSource("*")
@@ -88,7 +90,7 @@ internal sealed class TracingIntegration
 
     // Records the ASP.NET Core hosting activity regardless of any remote parent, and local
     // children of recorded activities. Background work and other roots are never recorded.
-    private sealed class RequestSampler : Sampler
+    private sealed class RequestSampler(double sampleRate) : Sampler
     {
         private static readonly SamplingResult Record = new(SamplingDecision.RecordAndSample);
         private static readonly SamplingResult Drop = new(SamplingDecision.Drop);
@@ -97,8 +99,10 @@ internal sealed class TracingIntegration
         {
             var parent = parameters.ParentContext;
             return
-                parameters.Name == ApitallySpanProcessor.HostingOperationName
-                || (!parent.IsRemote && parent.TraceFlags.HasFlag(ActivityTraceFlags.Recorded))
+                (
+                    parameters.Name == ApitallySpanProcessor.HostingOperationName
+                    && RequestSampling.ShouldKeep(parameters.TraceId, sampleRate)
+                ) || (!parent.IsRemote && parent.TraceFlags.HasFlag(ActivityTraceFlags.Recorded))
                 ? Record
                 : Drop;
         }

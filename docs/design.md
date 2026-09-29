@@ -26,7 +26,7 @@ This document distinguishes:
 | Setup | One `IServiceCollection.AddApitally` registration call with automatic middleware registration. |
 | Existing tracing | Automatic integration with DI-registered tracing; register separately constructed providers as existing `TracerProvider` instances in DI. |
 | Hosting support boundary | Normal single-host ASP.NET Core integration is the v1 baseline. Additional hosts are not prohibited; special multi-host coordination is outside v1 implementation and release requirements. Independent sampling across overlapping providers is not guaranteed. |
-| Configuration | Use the standard .NET Options pattern: one base step applies environment fallbacks and binds the `Apitally` section, and `AddApitally` callbacks run as `PostConfigure`. Read `IOptions<ApitallyOptions>` once at startup preparation, then validate and freeze before activation. |
+| Configuration | Use the standard .NET Options pattern: one base step binds the `Apitally` section and then applies the `APITALLY_*` environment variables, and `AddApitally` callbacks run as `PostConfigure`. Read `IOptions<ApitallyOptions>` once at startup preparation, then validate and freeze before activation. |
 | Repeated setup | Within one host, compose code callbacks in registration order; later explicit assignments win. Register SDK components once with `TryAdd*`. Direct `Configure<ApitallyOptions>` follows standard .NET ordering. |
 | Runtime ownership | The application host owns configuration, buffers, workers, and shutdown through DI. |
 | Options layout | Use flat properties on `ApitallyOptions` and directly under the `Apitally` configuration section. |
@@ -72,7 +72,7 @@ Shared defaults apply:
 | Request headers, request bodies, response bodies | Disabled |
 | Response headers | Enabled |
 | Request sampling rate | `1.0` |
-| Environment | `dev` |
+| Environment | Lowercased host environment name, with `Production` as `prod` and `Development` as `dev` |
 | Built-in redaction and trace exclusion patterns | Enabled |
 
 Log capture becoming enabled by default must be called out in the migration guide. Application log content is unchanged except for the shared truncation rules unless the user supplies a masking callback.
@@ -99,7 +99,7 @@ When Apitally owns tracing:
 - Enable suitable stock ASP.NET Core and `HttpClient` instrumentation.
 - Subscribe to all sources with `AddSource("*")`, including the manual tracing source `apitally.otel`, so activities from application sources and natively instrumented libraries appear in request traces without OTel configuration.
 
-**Confirmed fallback sampler:** record an activity only when its operation name is `Microsoft.AspNetCore.Hosting.HttpRequestIn` (the ASP.NET Core hosting activity, regardless of any remote parent) or its parent is local and recorded; drop everything else. OTel sampling parameters carry the operation name but not the source name. This mirrors v0's `ActivityListener`: all sources are observed, but background work, other roots such as .NET 9+ SignalR hub invocations, and remote-parented non-request activities are never created as recorded activities.
+**Confirmed fallback sampler:** record an activity only when its operation name is `Microsoft.AspNetCore.Hosting.HttpRequestIn` (the ASP.NET Core hosting activity, regardless of any remote parent) and the configured `SampleRate` keeps its trace ID, or its parent is local and recorded; drop everything else. The rate check is skipped when a `SampleOnRequest` callback is set, because the callback can raise the rate. OTel sampling parameters carry the operation name but not the source name. This mirrors v0's `ActivityListener`: all sources are observed, but background work, other roots such as .NET 9+ SignalR hub invocations, and remote-parented non-request activities are never created as recorded activities.
 
 **POC evidence:** the [HttpClient source-subscription experiment](../pocs/http-client-source-subscription/README.md) passed on .NET 8.0.13, 9.0.2 and 10.0.9 with OTel 1.19.0. `AddSource("*")` alongside stock `HttpClient` instrumentation yields exactly one CLIENT span per outgoing call, as without the wildcard. The sampler sees the hosting activity's operation name, records it under an unsampled remote parent, records app-source and `apitally.otel` children, and records nothing outside requests. On .NET 9+, the only additional in-request span is one `Experimental.System.Net.Http.Connections.WaitForConnection` span when a call opens a new connection; connection-setup, DNS and socket activities start their own trace and are dropped by the sampler. Tested with HTTP/1.1 over loopback and one shared client; `IHttpClientFactory`, HTTP/2 and failures were not tested.
 
@@ -166,9 +166,10 @@ On the Apitally-only export of user-owned spans, override the instance ID and en
 Precedence, highest first:
 
 1. Values explicitly assigned through code options.
-2. Values present in the `Apitally` configuration section, treated as setup options.
-3. `APITALLY_WRITE_TOKEN` and `APITALLY_ENV` environment-variable fallbacks.
-4. Apitally defaults.
+2. `APITALLY_WRITE_TOKEN` and `APITALLY_ENV` environment variables.
+3. Values present in the `Apitally` configuration section.
+4. The host environment name (`IHostEnvironment.EnvironmentName`), for `Env` only.
+5. Apitally defaults.
 
 No `OTEL_*` variable maps to an option, matching the Python and JavaScript SDKs. `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` apply through the standard resource builder.
 
@@ -182,9 +183,9 @@ The write token must match `apt_` followed by 24 alphanumeric characters. Missin
 
 ### Options and immutability
 
-**Confirmed:** code configuration callbacks receive populated options rather than an override-only object. Apply defaults, `APITALLY_*` fallbacks and the `Apitally` section in increasing precedence, then run the collected code callbacks in registration order. Each callback sees the populated values and earlier callbacks' changes. Unassigned settings retain their existing values; ordinary boolean and numeric settings do not require nullable properties or assignment tracking to distinguish omission from an explicit value.
+**Confirmed:** code configuration callbacks receive populated options rather than an override-only object. Apply defaults, the `Apitally` section and the `APITALLY_*` environment variables in increasing precedence, then run the collected code callbacks in registration order. Each callback sees the populated values and earlier callbacks' changes. Unassigned settings retain their existing values; ordinary boolean and numeric settings do not require nullable properties or assignment tracking to distinguish omission from an explicit value.
 
-**Confirmed mechanism:** use the standard .NET Options pattern rather than a custom callback store. The first `AddApitally` call registers one base `IConfigureOptions<ApitallyOptions>` that applies the fallbacks and binds the section; each `AddApitally` callback is registered as `PostConfigure`, so the options factory runs callbacks after all configuration steps and in registration order. A direct `services.Configure<ApitallyOptions>(...)` follows standard .NET ordering relative to the base step and is documented as such. Read `IOptions<ApitallyOptions>.Value` once at startup preparation; it is computed once and never reloaded. Apply the additive environment disable controls, validate the resulting settings and copy them into immutable runtime configuration before activation. Later mutations to the options object or configuration sources must not alter the running SDK.
+**Confirmed mechanism:** use the standard .NET Options pattern rather than a custom callback store. The first `AddApitally` call registers one base `IConfigureOptions<ApitallyOptions>` that binds the section and then applies the `APITALLY_*` environment variables; each `AddApitally` callback is registered as `PostConfigure`, so the options factory runs callbacks after all configuration steps and in registration order. A direct `services.Configure<ApitallyOptions>(...)` follows standard .NET ordering relative to the base step and is documented as such. Read `IOptions<ApitallyOptions>.Value` once at startup preparation; it is computed once and never reloaded. Apply the additive environment disable controls, validate the resulting settings and copy them into immutable runtime configuration before activation. Later mutations to the options object or configuration sources must not alter the running SDK.
 
 **Confirmed layout:** keep the configuration surface as flat properties on `ApitallyOptions`, such as `SampleRate` and `CaptureRequestBody`. The same keys appear directly under the `Apitally` configuration section. Sampling, capture and redaction do not introduce nested options groups.
 

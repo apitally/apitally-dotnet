@@ -3,12 +3,13 @@ using System.Text.RegularExpressions;
 using Apitally.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Apitally.Hosting;
 
-// Applies the environment fallbacks, then the Apitally configuration section, before any
-// AddApitally callbacks run as post-configuration.
+// Applies the host environment, the Apitally configuration section, then the APITALLY_*
+// environment variables, before any AddApitally callbacks run as post-configuration.
 internal sealed class BaseOptionsConfiguration(IServiceProvider services)
     : IConfigureOptions<ApitallyOptions>
 {
@@ -16,11 +17,16 @@ internal sealed class BaseOptionsConfiguration(IServiceProvider services)
 
     public void Configure(ApitallyOptions options)
     {
+        if (services.GetService<IHostEnvironment>() is { } host)
+            options.Env =
+                host.IsProduction() ? "prod"
+                : host.IsDevelopment() ? "dev"
+                : host.EnvironmentName.ToLowerInvariant();
+        services.GetService<IConfiguration>()?.GetSection(SectionName).Bind(options);
         if (RuntimeConfiguration.ReadEnvironmentVariable("APITALLY_WRITE_TOKEN") is { } token)
             options.WriteToken = token;
         if (RuntimeConfiguration.ReadEnvironmentVariable("APITALLY_ENV") is { } env)
             options.Env = env;
-        services.GetService<IConfiguration>()?.GetSection(SectionName).Bind(options);
     }
 }
 

@@ -11,7 +11,11 @@ public sealed class ApitallyOptions
     /// <summary>Write token for the Apitally app. Falls back to <c>APITALLY_WRITE_TOKEN</c>.</summary>
     public string? WriteToken { get; set; }
 
-    /// <summary>Environment name. Falls back to <c>APITALLY_ENV</c>, then <c>dev</c>.</summary>
+    /// <summary>
+    /// Environment name. Defaults to the lowercased host environment name, with <c>Production</c>
+    /// and <c>Development</c> shortened to <c>prod</c> and <c>dev</c>. <c>APITALLY_ENV</c>
+    /// overrides it.
+    /// </summary>
     public string Env { get; set; } = RuntimeConfiguration.DefaultEnv;
 
     /// <summary>Version of the application, included in the startup event.</summary>
