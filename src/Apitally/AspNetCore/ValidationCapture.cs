@@ -43,7 +43,6 @@ internal static class ValidationCapture
         });
     }
 
-    // Validation responses are retained for parsing even when body capture is off.
     public static bool IsValidationResponse(int statusCode, string? contentType)
     {
         if (statusCode is not (400 or 422))
@@ -112,12 +111,18 @@ internal static class ValidationCapture
                 (parameter.BindingInfo?.BinderModelName ?? parameter.Name) == key
             )
             ?.BindingInfo?.BindingSource;
-        if (
-            bindingSource is null
-            && parameters.Count == 1
-            && parameters[0].BindingInfo?.BindingSource == BindingSource.Body
-        )
-            bindingSource = BindingSource.Body;
+        if (bindingSource is null)
+        {
+            // Parameters not supplied by the request, such as a CancellationToken, own no field.
+            var requestParameters = parameters
+                .Where(parameter => parameter.BindingInfo?.BindingSource?.IsFromRequest != false)
+                .ToList();
+            if (
+                requestParameters.Count == 1
+                && requestParameters[0].BindingInfo?.BindingSource == BindingSource.Body
+            )
+                bindingSource = BindingSource.Body;
+        }
         return bindingSource?.Id.ToLowerInvariant() switch
         {
             "body" => "body",

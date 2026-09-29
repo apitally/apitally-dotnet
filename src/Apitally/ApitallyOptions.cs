@@ -1,3 +1,5 @@
+using Apitally.Hosting;
+
 namespace Apitally;
 
 /// <summary>
@@ -6,11 +8,18 @@ namespace Apitally;
 /// </summary>
 public sealed class ApitallyOptions
 {
-    /// <summary>Write token for the Apitally app. Falls back to <c>APITALLY_WRITE_TOKEN</c>.</summary>
+    /// <summary>
+    /// Write token for the Apitally app. <c>APITALLY_WRITE_TOKEN</c> overrides the configuration
+    /// section.
+    /// </summary>
     public string? WriteToken { get; set; }
 
-    /// <summary>Environment name. Falls back to <c>APITALLY_ENV</c>, then <c>dev</c>.</summary>
-    public string Env { get; set; } = "dev";
+    /// <summary>
+    /// Environment name. <c>APITALLY_ENV</c> overrides the configuration section. When blank,
+    /// defaults to the lowercased host environment name, with <c>Production</c> and
+    /// <c>Development</c> shortened to <c>prod</c> and <c>dev</c>.
+    /// </summary>
+    public string? Env { get; set; }
 
     /// <summary>Version of the application, included in the startup event.</summary>
     public string? AppVersion { get; set; }
@@ -21,12 +30,16 @@ public sealed class ApitallyOptions
     /// <summary>Captures application logs emitted during requests.</summary>
     public bool CaptureLogs { get; set; } = true;
 
+    /// <summary>Captures request headers. Sensitive headers are redacted.</summary>
     public bool CaptureRequestHeaders { get; set; }
 
+    /// <summary>Captures request bodies. Sensitive JSON fields are redacted.</summary>
     public bool CaptureRequestBody { get; set; }
 
+    /// <summary>Captures response headers. Sensitive headers are redacted.</summary>
     public bool CaptureResponseHeaders { get; set; } = true;
 
+    /// <summary>Captures response bodies. Sensitive JSON fields are redacted.</summary>
     public bool CaptureResponseBody { get; set; }
 
     /// <summary>Probability in [0, 1] that a request's trace and logs are captured.</summary>

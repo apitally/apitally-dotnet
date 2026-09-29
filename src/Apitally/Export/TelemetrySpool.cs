@@ -43,7 +43,7 @@ internal sealed class TelemetrySpool : IDisposable
     }
 
     public bool IsInMemory => directory is null;
-    public long MaxSize => IsInMemory ? MaxMemorySize : MaxDiskSize;
+    private long MaxSize => IsInMemory ? MaxMemorySize : MaxDiskSize;
 
     public void Append(TelemetrySignal signal, byte[] payload)
     {
@@ -68,7 +68,7 @@ internal sealed class TelemetrySpool : IDisposable
                     currentFiles[signal] = file;
                 }
                 file.Append(payload);
-                diagnostics.ResetWarning(SdkDiagnostics.SpoolWriteFailedKey);
+                diagnostics.SpoolWriteSucceeded();
             }
             catch (Exception exception)
             {

@@ -12,6 +12,6 @@ internal static class TestConfiguration
         using var environment = new EnvironmentVariables();
         var options = new ApitallyOptions { WriteToken = WriteToken, Env = "test" };
         configure?.Invoke(options);
-        return RuntimeConfiguration.Resolve(options, SdkDiagnostics.None);
+        return RuntimeConfiguration.Resolve(options, SdkDiagnostics.None)!;
     }
 }

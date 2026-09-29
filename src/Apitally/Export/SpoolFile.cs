@@ -17,7 +17,7 @@ internal sealed class SpoolFile
     public const string FileExtension = ".gz";
 
     private readonly FileStream? fileStream;
-    private readonly MemoryStream? memoryStream;
+    private MemoryStream? memoryStream;
     private GZipStream? gzip;
     private byte[]? closedMemory;
     private long? closedSize;
@@ -46,7 +46,6 @@ internal sealed class SpoolFile
     public long Sequence { get; }
     public string? Path => fileStream?.Name;
     public long UncompressedSize { get; private set; }
-    public bool IsClosed => gzip is null;
     public DateTimeOffset? FirstAttemptAt { get; set; }
 
     public long StoredSize => closedSize ?? fileStream?.Length ?? memoryStream!.Length;
@@ -93,7 +92,9 @@ internal sealed class SpoolFile
         {
             closedMemory = memoryStream!.ToArray();
             closedSize = closedMemory.Length;
+            // Disposing does not release the stream's buffer.
             memoryStream.Dispose();
+            memoryStream = null;
         }
     }
 

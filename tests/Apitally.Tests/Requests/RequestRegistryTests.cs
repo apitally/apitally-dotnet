@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using OtlpSpan = OpenTelemetry.Proto.Trace.V1.Span;
 
 namespace Apitally.Tests.Requests;
@@ -178,7 +179,7 @@ public class RequestRegistryTests
     }
 
     [Fact]
-    public async Task PerRequestSpanLimitKeepsEarliestSpansAndServer()
+    public async Task PerRequestSpanLimitKeepsFirstStartedChildrenAndTheirLogs()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
         await using var host = await ApplicationHost.StartMinimalAsync(
@@ -186,13 +187,30 @@ public class RequestRegistryTests
             configureApp: app =>
                 app.MapGet(
                     "/many",
-                    () =>
+                    (TelemetryRuntime runtime, ILoggerFactory loggerFactory) =>
                     {
-                        for (var i = 0; i < 1_005; i++)
+                        var logger = loggerFactory.CreateLogger("TestApp.Requests");
+                        using (var first = ApplicationSource.StartActivity("child"))
                         {
-                            using var activity = ApplicationSource.StartActivity("child");
-                            activity?.SetTag("index", i);
+                            first!.SetTag("index", 0);
+                            for (var i = 1; i < 1_001; i++)
+                            {
+                                using var activity = ApplicationSource.StartActivity("child");
+                                activity!.SetTag("index", i);
+                                Assert.Equal(
+                                    i < 1_000,
+                                    runtime.Registry!.TryGet(
+                                        activity.TraceId,
+                                        activity.SpanId,
+                                        out _
+                                    )
+                                );
+                                if (i is 999 or 1_000)
+                                    logger.LogWarning("Child {Index}", i);
+                            }
+                            logger.LogWarning("Retained child");
                         }
+                        logger.LogWarning("Request");
                         return "OK";
                     }
                 )
@@ -203,7 +221,7 @@ public class RequestRegistryTests
 
         var spans = receiver.Spans();
         Assert.Equal(1_001, spans.Count);
-        Assert.Single(spans, span => span.Kind == OtlpSpan.Types.SpanKind.Server);
+        var server = spans.Server();
         Assert.Equal(
             Enumerable.Range(0, 1_000).Select(i => (long)i),
             spans
@@ -211,6 +229,12 @@ public class RequestRegistryTests
                 .Select(span => (long)span.Attributes()["index"]!)
                 .Order()
         );
+        var logs = receiver.ApplicationLogs();
+        Assert.Equal(
+            ["Child 999", "Retained child", "Request"],
+            logs.Select(log => log.Body.StringValue)
+        );
+        Assert.Equal(server.SpanId, logs[2].SpanId);
     }
 
     [Fact]

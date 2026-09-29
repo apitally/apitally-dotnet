@@ -5,21 +5,18 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Apitally.Logging;
 
-// An additive ILogger provider capturing request-scoped application logs. It is inert until
-// the runtime attaches it and never changes what other providers receive.
+// An additive ILogger provider capturing the rendered messages of request-scoped application
+// logs. It is inert until the runtime attaches it and never changes what other providers
+// receive. Structured values and scopes are not captured, because the server does not store them.
 [ProviderAlias("Apitally")]
-internal sealed class ApitallyLoggerProvider : ILoggerProvider, ISupportExternalScope
+internal sealed class ApitallyLoggerProvider : ILoggerProvider
 {
     private volatile LogCapture? capture;
-    private IExternalScopeProvider? scopeProvider;
 
     public ILogger CreateLogger(string categoryName) =>
         IsExcludedCategory(categoryName)
             ? NullLogger.Instance
             : new ApitallyLogger(categoryName, this);
-
-    public void SetScopeProvider(IExternalScopeProvider scopeProvider) =>
-        this.scopeProvider = scopeProvider;
 
     public void Attach(
         RequestRegistry registry,
@@ -30,13 +27,38 @@ internal sealed class ApitallyLoggerProvider : ILoggerProvider, ISupportExternal
 
     public void Dispose() => Detach();
 
-    // SDK and OTel diagnostics must never feed back into the export, and framework request
-    // logs repeat what the request log already shows.
+    // SDK and OTel diagnostics must never feed back into the export. Framework request, HttpClient
+    // and YARP forwarder logs repeat what the request log and CLIENT spans already show, and
+    // HttpClient logs on .NET 8 and YARP forwarder logs include unredacted query strings.
     private static bool IsExcludedCategory(string categoryName) =>
         categoryName == SdkDiagnostics.CategoryName
         || categoryName.StartsWith(SdkDiagnostics.CategoryName + ".", StringComparison.Ordinal)
         || categoryName.StartsWith("OpenTelemetry", StringComparison.Ordinal)
-        || categoryName.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal);
+        || categoryName.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal)
+        || categoryName.StartsWith("System.Net.Http.HttpClient", StringComparison.Ordinal)
+        || categoryName.StartsWith("Yarp.ReverseProxy.Forwarder", StringComparison.Ordinal);
+
+    // Exceptions, a replacement record or an empty body drop the record rather than export
+    // unmasked content.
+    private static bool TryMask(
+        LogRecordSnapshot record,
+        Func<LogRecordSnapshot, LogRecordSnapshot?>? mask
+    )
+    {
+        if (mask is not null)
+        {
+            try
+            {
+                if (!ReferenceEquals(mask(record), record))
+                    return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        return !string.IsNullOrEmpty(record.Body);
+    }
 
     private sealed record LogCapture(
         RequestRegistry Registry,
@@ -46,7 +68,6 @@ internal sealed class ApitallyLoggerProvider : ILoggerProvider, ISupportExternal
     private sealed class ApitallyLogger(string categoryName, ApitallyLoggerProvider provider)
         : ILogger
     {
-        // The logger factory pushes scopes to the external scope provider.
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
 
@@ -64,23 +85,21 @@ internal sealed class ApitallyLoggerProvider : ILoggerProvider, ISupportExternal
         )
         {
             if (
-                !IsEnabled(logLevel)
+                logLevel == LogLevel.None
                 || provider.capture is not { } capture
                 || Activity.Current is not { } activity
                 || !capture.Registry.TryGet(activity.TraceId, activity.SpanId, out var request)
                 || !request.IsAcceptingDetail
             )
                 return;
-            var record = LogMasking.CreateRecord(
+            var record = new LogRecordSnapshot(
+                DateTime.UtcNow,
                 categoryName,
                 logLevel,
                 eventId,
-                state,
-                exception,
-                formatter,
-                provider.scopeProvider
+                formatter(state, exception)
             );
-            if (record is null || !LogMasking.TryMask(record, capture.Mask))
+            if (!TryMask(record, capture.Mask))
                 return;
             // Linkage is added after masking, so the callback cannot unlink or reassign a record.
             request.AddLog(

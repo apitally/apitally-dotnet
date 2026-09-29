@@ -54,7 +54,6 @@ internal sealed class RequestState
     private (Exception Exception, DateTimeOffset Timestamp)? capturedException;
     private SpanSnapshot? server;
     private TransportCompletion? transport;
-    private bool isServerAssociated;
     private bool isServerComplete;
     private bool isTransportComplete;
     private bool isFinalized;
@@ -101,12 +100,12 @@ internal sealed class RequestState
         }
     }
 
-    public Exception? Exception
+    public (Exception Exception, DateTimeOffset Timestamp)? CapturedException
     {
         get
         {
             lock (sync)
-                return capturedException?.Exception;
+                return capturedException;
         }
     }
 
@@ -146,10 +145,10 @@ internal sealed class RequestState
         }
     }
 
-    public List<ValidationDetail> GetValidationDetails()
+    public IReadOnlyList<ValidationDetail> GetValidationDetails()
     {
         lock (sync)
-            return [.. validationDetails];
+            return validationDetails.Count == 0 ? [] : [.. validationDetails];
     }
 
     public Dictionary<string, object?> GetAttributes()
@@ -173,13 +172,7 @@ internal sealed class RequestState
             capturedException ??= (exception, DateTimeOffset.UtcNow);
     }
 
-    public (Exception Exception, DateTimeOffset Timestamp)? GetCapturedException()
-    {
-        lock (sync)
-            return capturedException;
-    }
-
-    public bool TryAssociate(
+    public void TryAssociate(
         ActivityTraceId traceId,
         ActivitySpanId spanId,
         ConcurrentDictionary<(ActivityTraceId, ActivitySpanId), RequestState> associations
@@ -187,12 +180,10 @@ internal sealed class RequestState
     {
         lock (sync)
         {
-            if (!IsDetailKept || isFinalized)
-                return false;
+            if (!IsDetailKept || isFinalized || associationKeys.Count >= MaxBufferedSpans + 1)
+                return;
             associationKeys.Add((traceId, spanId));
             associations[(traceId, spanId)] = this;
-            isServerAssociated |= spanId == ServerSpanId;
-            return true;
         }
     }
 
@@ -215,7 +206,7 @@ internal sealed class RequestState
     }
 
     // Each returns true when this call made the request ready for its single finalization.
-    public bool CompleteServer(SpanSnapshot snapshot)
+    public bool CompleteServer(SpanSnapshot? snapshot)
     {
         lock (sync)
         {
@@ -248,12 +239,7 @@ internal sealed class RequestState
         lock (sync)
         {
             RemoveAssociations(associations);
-            var detail = new RequestDetail(
-                IsDetailKept ? server : null,
-                [.. descendants],
-                [.. logs],
-                transport
-            );
+            var detail = new RequestDetail(server, [.. descendants], [.. logs], transport);
             descendants.Clear();
             logs.Clear();
             server = null;
@@ -277,10 +263,14 @@ internal sealed class RequestState
     }
 
     // Detail waits for both transport completion and SERVER end; without kept detail, transport
-    // completion alone finalizes.
+    // completion alone finalizes. A SERVER activity dropped after start, for example by an
+    // instrumentation filter, never reports its end.
     private bool TryClaimFinalization()
     {
-        var isAwaitingServer = isServerAssociated && !isServerComplete;
+        var isAwaitingServer =
+            IsDetailKept
+            && !isServerComplete
+            && ServerActivity is { IsAllDataRequested: true, Recorded: true };
         if (isFinalized || !isTransportComplete || isAwaitingServer)
             return false;
         isFinalized = true;
@@ -297,12 +287,14 @@ internal sealed class RequestState
     }
 }
 
-// Request values read when the request entered the pipeline.
+// Request values read when the request entered the pipeline. Content-Encoding is read here
+// because request decompression middleware removes it.
 internal sealed record RequestEntry(
     string Method,
     string PathBase,
     string Path,
     string? Query,
     string? UserAgent,
+    string? ContentEncoding,
     bool IsWebSocket
 );

@@ -31,8 +31,9 @@ internal sealed class RequestRegistry(
         (ActivityTraceId, ActivitySpanId),
         RequestState
     > associations = new();
-    private readonly ConcurrentDictionary<RequestState, byte> inFlight = new();
     private volatile bool isCutOff;
+
+    public bool IsEmpty => associations.IsEmpty;
 
     public static RequestState? Get(HttpContext? context) => context?.Features.Get<RequestState>();
 
@@ -53,6 +54,7 @@ internal sealed class RequestRegistry(
             request.Path.Value ?? "",
             request.QueryString.HasValue ? request.QueryString.Value![1..] : null,
             request.Headers.UserAgent.Count > 0 ? request.Headers.UserAgent.ToString() : null,
+            request.Headers.ContentEncoding,
             IsWebSocketRequest(context)
         );
         var isObserved = serverActivity?.Recorded == true && resource is not null && !isCutOff;
@@ -60,7 +62,6 @@ internal sealed class RequestRegistry(
             isObserved && ShouldKeepDetail(entry, context, serverActivity!, resource!);
         var state = new RequestState(entry, serverActivity, isDetailKept, context.RequestAborted);
         context.Features.Set(state);
-        inFlight.TryAdd(state, 0);
         if (isDetailKept)
             state.TryAssociate(serverActivity!.TraceId, serverActivity.SpanId, associations);
         context.Response.OnCompleted(
@@ -90,7 +91,7 @@ internal sealed class RequestRegistry(
         configuration.CaptureRequestBody
         && state.IsDetailKept
         && BodyCapture.IsAllowedContentType(context.Request.ContentType)
-        && BodyCapture.IsSupportedContentEncoding(context.Request.Headers.ContentEncoding);
+        && BodyCapture.IsSupportedContentEncoding(state.Entry.ContentEncoding);
 
     public bool IsResponseBodyCaptured(HttpContext context, RequestState state) =>
         configuration.CaptureResponseBody
@@ -98,10 +99,29 @@ internal sealed class RequestRegistry(
         && BodyCapture.IsAllowedContentType(context.Response.ContentType)
         && BodyCapture.IsSupportedContentEncoding(context.Response.Headers.ContentEncoding);
 
+    // Validation responses are retained for parsing even when body capture is off. Until the
+    // response starts, OnStarting callbacks can still set its content type, so eligibility stays
+    // undecided while capture could still apply.
+    public bool? IsResponseBodyRetained(HttpContext context, RequestState state)
+    {
+        var response = context.Response;
+        var isRetained =
+            IsResponseBodyCaptured(context, state)
+            || ValidationCapture.IsValidationResponse(response.StatusCode, response.ContentType);
+        var mayBeRetained =
+            isRetained
+            || (
+                response.ContentType is null
+                && configuration.CaptureResponseBody
+                && state.IsDetailKept
+            );
+        return !response.HasStarted && mayBeRetained ? null : isRetained;
+    }
+
     public bool TryGet(ActivityTraceId traceId, ActivitySpanId spanId, out RequestState state) =>
         associations.TryGetValue((traceId, spanId), out state!);
 
-    public void CompleteServer(RequestState state, SpanSnapshot snapshot)
+    public void CompleteServer(RequestState state, SpanSnapshot? snapshot)
     {
         if (state.CompleteServer(snapshot))
             Release(state);
@@ -124,12 +144,12 @@ internal sealed class RequestRegistry(
     }
 
     // Discards detail still awaiting completion; already released requests are unaffected.
+    // Only requests with kept detail have buffers, and each of them is associated.
     public void Cutoff()
     {
         isCutOff = true;
-        foreach (var state in inFlight.Keys)
+        foreach (var state in associations.Values.Distinct())
             state.Cutoff(associations);
-        inFlight.Clear();
         associations.Clear();
     }
 
@@ -145,7 +165,7 @@ internal sealed class RequestRegistry(
             if (sampling.IsExcluded(entry.Method, entry.Path, entry.UserAgent, entry.IsWebSocket))
                 return false;
             var snapshot = sampling.HasRequestCallback
-                ? SpanSnapshots.CopyAtRequestStart(serverActivity, context, resource)
+                ? SpanSnapshots.CopyAtRequestStart(serverActivity, entry, context, resource)
                 : null;
             return sampling.ShouldKeepAtRequestStage(serverActivity.TraceId, snapshot);
         }
@@ -198,7 +218,7 @@ internal sealed class RequestRegistry(
         var captureDetail = state.IsDetailKept;
         return new TransportCompletion(
             response.StatusCode,
-            EndpointMetadata.ResolveRoute(context, state.Entry.PathBase),
+            EndpointMetadata.ResolveRoute(context),
             request.Scheme,
             request.Host.HasValue ? request.Host.Host : null,
             request.Host.Port,
@@ -215,16 +235,15 @@ internal sealed class RequestRegistry(
                 captureDetail && configuration.CaptureResponseHeaders
                     ? CopyHeaders(response.Headers)
                     : null,
-            RequestBody = requestCapture?.GetBody(
-                isRequestComplete,
-                request.Headers.ContentEncoding
-            ),
+            RequestBody = requestCapture?.GetBody(isRequestComplete, state.Entry.ContentEncoding),
             ResponseBody = IsResponseBodyCaptured(context, state)
                 ? responseCapture?.GetBody(isResponseComplete, response.Headers.ContentEncoding)
                 : null,
-            ValidationResponse = isResponseComplete
-                ? responseCapture?.GetRetainedBytes(isComplete: true)
-                : null,
+            ValidationResponse =
+                isResponseComplete
+                && ValidationCapture.IsValidationResponse(response.StatusCode, response.ContentType)
+                    ? responseCapture?.GetRetainedBytes()
+                    : null,
         };
     }
 
@@ -252,13 +271,14 @@ internal sealed class RequestRegistry(
                 context.Response.Headers.ContentEncoding,
                 bytes
             );
-        errorAggregates.AddValidationErrors(
-            consumer?.Identifier,
-            entry.Method,
-            route,
-            validationDetails
-        );
-        if (completion.StatusCode == 500 && state.Exception is { } exception)
+        if (validationDetails.Count > 0)
+            errorAggregates.AddValidationErrors(
+                consumer?.Identifier,
+                entry.Method,
+                route,
+                validationDetails
+            );
+        if (completion.StatusCode == 500 && state.CapturedException is { Exception: var exception })
             errorAggregates.AddServerError(consumer?.Identifier, entry.Method, route, exception);
         metrics.RecordRequest(
             entry.Method,
@@ -275,7 +295,6 @@ internal sealed class RequestRegistry(
     // Callbacks and queue submission run outside the request lock, after the single claim.
     private void Release(RequestState state)
     {
-        inFlight.TryRemove(state, out _);
         var detail = state.TakeDetail(associations);
         if (detail.Server is not { } server || detail.Transport is not { } transport)
             return;

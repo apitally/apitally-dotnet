@@ -3,6 +3,7 @@ using System.Diagnostics.Metrics;
 using System.Globalization;
 using Apitally.Export;
 using Apitally.Logging;
+using Google.Protobuf;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -19,6 +20,7 @@ internal sealed class ApitallyMetrics : IDisposable
     // Fixed per-histogram capacity; delta collection reclaims inactive attribute sets.
     private const int CardinalityLimit = 10_000;
 
+    private readonly object sync = new();
     private readonly Meter meter;
     private readonly MeterProvider provider;
     private readonly BaseExportingMetricReader reader;
@@ -35,7 +37,10 @@ internal sealed class ApitallyMetrics : IDisposable
     {
         var scope = new object();
         meter = new Meter(new MeterOptions(MeterName) { Scope = scope });
-        reader = new BaseExportingMetricReader(new SpoolExporter(resource, spool, diagnostics))
+        reader = new SynchronizedMetricReader(
+            new SpoolExporter(resource, spool, diagnostics, sync),
+            sync
+        )
         {
             TemporalityPreference = MetricReaderTemporalityPreference.Delta,
         };
@@ -96,11 +101,14 @@ internal sealed class ApitallyMetrics : IDisposable
             tags.Add("apitally.consumer.identifier", consumerIdentifier);
         if (statusCode >= 500)
             tags.Add("error.type", statusCode.ToString(CultureInfo.InvariantCulture));
-        requestDuration.Record(duration.TotalSeconds, tags);
-        if (requestSize is { } requestBytes)
-            requestBodySize.Record(requestBytes, tags);
-        if (responseSize is { } responseBytes)
-            responseBodySize.Record(responseBytes, tags);
+        lock (sync)
+        {
+            requestDuration.Record(duration.TotalSeconds, tags);
+            if (requestSize is { } requestBytes)
+                requestBodySize.Record(requestBytes, tags);
+            if (responseSize is { } responseBytes)
+                responseBodySize.Record(responseBytes, tags);
+        }
     }
 
     public bool Collect(int timeoutMilliseconds) => reader.Collect(timeoutMilliseconds);
@@ -114,14 +122,39 @@ internal sealed class ApitallyMetrics : IDisposable
         meter.Dispose();
     }
 
+    private sealed class SynchronizedMetricReader(BaseExporter<SdkMetric> exporter, object sync)
+        : BaseExportingMetricReader(exporter)
+    {
+        // Shutdown and provider disposal also collect through this override. The exporter
+        // releases the lock once the snapshot is taken.
+        protected override bool OnCollect(int timeoutMilliseconds)
+        {
+            Monitor.Enter(sync);
+            try
+            {
+                return base.OnCollect(timeoutMilliseconds);
+            }
+            finally
+            {
+                if (Monitor.IsEntered(sync))
+                    Monitor.Exit(sync);
+            }
+        }
+    }
+
     private sealed class SpoolExporter(
         Resource resource,
         TelemetrySpool spool,
-        SdkDiagnostics diagnostics
+        SdkDiagnostics diagnostics,
+        object sync
     ) : BaseExporter<SdkMetric>
     {
         public override ExportResult Export(in Batch<SdkMetric> batch)
         {
+            // The reader calls this synchronously after the snapshot, so recording can resume
+            // while the batch is mapped and spooled.
+            if (Monitor.IsEntered(sync))
+                Monitor.Exit(sync);
             try
             {
                 var metrics = new List<SdkMetric>();
@@ -130,12 +163,11 @@ internal sealed class ApitallyMetrics : IDisposable
                 var mapped = OtlpMetricMapper.Map(metrics, out var hasOverflow);
                 if (hasOverflow)
                     diagnostics.MetricCapacityExceeded();
-                OtlpEncoder.EncodeRequests(
-                    mapped,
-                    chunk => OtlpMetricMapper.BuildRequest(chunk, resource),
-                    payload => spool.Append(TelemetrySignal.Metrics, payload),
-                    "metrics",
-                    diagnostics
+                // The server joins the three request histograms within one request, so each
+                // collection is appended whole. The 10,000-point capacity bounds its size.
+                spool.Append(
+                    TelemetrySignal.Metrics,
+                    OtlpMetricMapper.BuildRequest(mapped, resource).ToByteArray()
                 );
                 return ExportResult.Success;
             }

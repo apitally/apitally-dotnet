@@ -11,9 +11,10 @@ public static class Program
     )
     {
         var builder = WebApplication.CreateBuilder(args);
-        builder.Services.AddApitally();
         builder.Services.AddControllers().AddApplicationPart(typeof(Program).Assembly);
         configure?.Invoke(builder);
+        // Registered last so a test's own AddApitally call controls registration order.
+        builder.Services.AddApitally();
         var app = builder.Build();
         app.MapTestRoutes();
         app.MapControllers();

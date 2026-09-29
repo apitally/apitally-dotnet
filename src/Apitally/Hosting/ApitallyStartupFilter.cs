@@ -13,8 +13,7 @@ internal sealed class ApitallyStartupFilter : IStartupFilter
         app =>
         {
             var runtime = app.ApplicationServices.GetRequiredService<TelemetryRuntime>();
-            runtime.Prepare(app.ApplicationServices);
-            if (runtime.IsPrepared)
+            if (runtime.Prepare(app.ApplicationServices))
                 app.UseMiddleware<ApitallyMiddleware>();
             next(app);
             runtime.Activate(app.ApplicationServices);

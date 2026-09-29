@@ -13,7 +13,8 @@ using Microsoft.Extensions.Options;
 
 namespace Apitally;
 
-public static class ApitallyExtensions
+/// <summary>Extension methods for adding Apitally to an application.</summary>
+public static class ApitallyServiceCollectionExtensions
 {
     /// <summary>
     /// Adds Apitally monitoring to an ASP.NET Core application. Options are read from the

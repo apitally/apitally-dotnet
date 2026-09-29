@@ -5,10 +5,13 @@ using System.Text.Json;
 using Apitally.Hosting;
 using Apitally.TestApp;
 using Apitally.Tests.Support;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Apitally.Tests.Hosting;
@@ -57,9 +60,9 @@ public class TelemetryRuntimeTests
         Assert.Single(receiver.Metrics("process.memory.usage"));
         Assert.Single(receiver.Metrics("process.cpu.utilization"));
         var resource = OtlpDecoding.Attributes(receiver.ResourceMetrics()[0].Resource.Attributes);
-        Assert.Equal("dev", resource["deployment.environment.name"]);
+        Assert.Equal("prod", resource["deployment.environment.name"]);
         Assert.Equal("apitally-dotnet", resource["telemetry.distro.name"]);
-        Assert.All(receiver.Exports, export => Assert.Equal("dev", export.Env));
+        Assert.All(receiver.Exports, export => Assert.Equal("prod", export.Env));
     }
 
     [Fact]
@@ -135,7 +138,7 @@ public class TelemetryRuntimeTests
 
         await using (var app = Program.CreateMinimalApp(ApplicationHost.Arguments()))
         {
-            Assert.False(app.Services.GetRequiredService<TelemetryRuntime>().IsPrepared);
+            Assert.Null(app.Services.GetRequiredService<TelemetryRuntime>().Registry);
         }
 
         Assert.Empty(receiver.Exports);
@@ -157,8 +160,27 @@ public class TelemetryRuntimeTests
         (await app.GetTestClient().GetAsync("/hello")).EnsureSuccessStatusCode();
         await app.StopAsync();
 
-        Assert.False(app.Services.GetRequiredService<TelemetryRuntime>().IsPrepared);
+        Assert.Null(app.Services.GetRequiredService<TelemetryRuntime>().Registry);
         Assert.Empty(receiver.Exports);
+    }
+
+    [Fact]
+    public async Task TestServerHostsWithoutWriteTokenLogNoError()
+    {
+        var logs = new FakeLogCollector();
+        await using var app = Program.CreateMinimalApp(
+            ApplicationHost.Arguments("--Apitally:WriteToken="),
+            builder =>
+            {
+                builder.WebHost.UseTestServer();
+                builder.Logging.AddProvider(new FakeLoggerProvider(logs));
+            }
+        );
+
+        await app.StartAsync();
+        await app.StopAsync();
+
+        Assert.DoesNotContain(logs.GetSnapshot(), record => record.Level == LogLevel.Error);
     }
 
     [Fact]
@@ -181,12 +203,29 @@ public class TelemetryRuntimeTests
         );
 
         await Assert.ThrowsAnyAsync<IOException>(() => app.StartAsync());
-        Assert.True(app.Services.GetRequiredService<TelemetryRuntime>().IsPrepared);
+        Assert.NotNull(app.Services.GetRequiredService<TelemetryRuntime>().Registry);
         await app.DisposeAsync();
         timeProvider.Advance(TimeSpan.FromMinutes(1));
         await Task.Delay(200);
 
         Assert.Empty(receiver.Exports);
+    }
+
+    [Fact]
+    public async Task ContainerDisposalRemovesTracingAfterFailedPipelineConfiguration()
+    {
+        using var source = new ActivitySource("Apitally.Tests.FailedPipeline");
+        var app = Program.CreateMinimalApp(
+            ApplicationHost.Arguments(),
+            builder =>
+                builder.Services.AddApitally().AddTransient<IStartupFilter, ThrowingStartupFilter>()
+        );
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => app.StartAsync());
+        Assert.True(source.HasListeners());
+        await app.DisposeAsync();
+
+        Assert.False(source.HasListeners());
     }
 
     [Fact]
@@ -205,5 +244,12 @@ public class TelemetryRuntimeTests
         await runtime.ShutdownAsync(new CancellationToken(canceled: true));
 
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
+    }
+
+    // Runs inside Apitally's startup filter, after preparation and before activation.
+    private sealed class ThrowingStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            _ => throw new InvalidOperationException("Pipeline configuration failed");
     }
 }

@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Apitally.Logging;
 
 namespace Apitally.Requests;
@@ -36,7 +35,7 @@ internal sealed class ConsumerUpdates(InternalEvents events)
     [];
     private readonly LinkedList<(string Identifier, string Hash)> leastRecentlyUsed = new();
 
-    public static string? NormalizeIdentifier(string? identifier) =>
+    private static string? NormalizeIdentifier(string? identifier) =>
         Normalize(identifier, MaxIdentifierLength);
 
     // Merges a submitted patch into the request's consumer. A different identifier starts over.
@@ -56,7 +55,9 @@ internal sealed class ConsumerUpdates(InternalEvents events)
                 : new RequestConsumer(normalizedIdentifier);
         consumer.Name = Normalize(name, MaxNameLength) ?? consumer.Name;
         consumer.Group = Normalize(group, MaxNameLength) ?? consumer.Group;
-        foreach (var (rawKey, rawValue) in attributes ?? new Dictionary<string, string?>())
+        if (attributes is null)
+            return consumer;
+        foreach (var (rawKey, rawValue) in attributes)
         {
             var key = rawKey?.Trim();
             var value = rawValue?.Trim() is { Length: > 0 } trimmed ? trimmed : null;
@@ -84,40 +85,42 @@ internal sealed class ConsumerUpdates(InternalEvents events)
         var hash = Hash(consumer);
         lock (sync)
         {
-            if (hashes.Remove(consumer.Identifier, out var node))
+            if (hashes.TryGetValue(consumer.Identifier, out var node))
             {
                 leastRecentlyUsed.Remove(node);
+                leastRecentlyUsed.AddLast(node);
                 if (node.Value.Hash == hash)
-                {
-                    hashes[consumer.Identifier] = leastRecentlyUsed.AddLast(node.Value);
                     return;
-                }
+                node.Value = (consumer.Identifier, hash);
             }
-            hashes[consumer.Identifier] = leastRecentlyUsed.AddLast((consumer.Identifier, hash));
-            if (hashes.Count > MaxCachedConsumers)
+            else
             {
-                hashes.Remove(leastRecentlyUsed.First!.Value.Identifier);
-                leastRecentlyUsed.RemoveFirst();
+                hashes[consumer.Identifier] = leastRecentlyUsed.AddLast(
+                    (consumer.Identifier, hash)
+                );
+                if (hashes.Count > MaxCachedConsumers)
+                {
+                    hashes.Remove(leastRecentlyUsed.First!.Value.Identifier);
+                    leastRecentlyUsed.RemoveFirst();
+                }
             }
         }
         events.EmitConsumerUpdate(consumer);
     }
 
-    // Order-independent: attributes are hashed sorted by key.
+    // Order-independent: attributes are hashed sorted by key. Normalized values are never empty
+    // and never contain \0, so joining with \0 and writing null as "" is unambiguous.
     private static string Hash(RequestConsumer consumer)
     {
-        var canonical = JsonSerializer.Serialize(
-            new object?[]
-            {
-                consumer.Identifier,
-                consumer.Name,
-                consumer.Group,
-                consumer
-                    .Attributes.OrderBy(attribute => attribute.Key, StringComparer.Ordinal)
-                    .Select(attribute => new[] { attribute.Key, attribute.Value })
-                    .ToArray(),
-            }
-        );
+        string[] parts =
+        [
+            consumer.Name ?? "",
+            consumer.Group ?? "",
+            .. consumer
+                .Attributes.OrderBy(attribute => attribute.Key, StringComparer.Ordinal)
+                .SelectMany(attribute => new[] { attribute.Key, attribute.Value ?? "" }),
+        ];
+        var canonical = string.Join('\0', parts);
         return Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 

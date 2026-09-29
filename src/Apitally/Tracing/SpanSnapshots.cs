@@ -13,29 +13,34 @@ internal static class SpanSnapshots
     public const string ConsumerIdentifierAttribute = "apitally.consumer.identifier";
 
     public static SpanSnapshot Copy(Activity activity, Resource resource) =>
-        new(
-            activity.TraceId,
-            activity.SpanId,
-            activity.ParentSpanId,
-            activity.ActivityTraceFlags,
-            activity.TraceStateString,
-            activity.DisplayName,
-            activity.Kind,
-            activity.StartTimeUtc,
-            activity.IsStopped ? activity.Duration : null,
-            activity.Status,
-            activity.StatusDescription,
-            AttributeValues.Normalize(activity.TagObjects),
-            [.. activity.Events.Select(CopyEvent)],
-            [.. activity.Links.Select(CopyLink)],
-            resource,
-            activity.Source.Name,
-            string.IsNullOrEmpty(activity.Source.Version) ? null : activity.Source.Version
-        );
+        new()
+        {
+            TraceId = activity.TraceId,
+            SpanId = activity.SpanId,
+            ParentSpanId = activity.ParentSpanId,
+            TraceFlags = activity.ActivityTraceFlags,
+            TraceStateString = activity.TraceStateString,
+            DisplayName = activity.DisplayName,
+            Kind = activity.Kind,
+            StartTimeUtc = activity.StartTimeUtc,
+            Duration = activity.IsStopped ? activity.Duration : null,
+            Status = activity.Status,
+            StatusDescription = activity.StatusDescription,
+            OwnedAttributes = AttributeValues.Normalize(activity.TagObjects),
+            OwnedEvents = [.. activity.Events.Select(CopyEvent)],
+            Links = [.. activity.Links.Select(CopyLink)],
+            Resource = resource,
+            ScopeName = activity.Source.Name,
+            ScopeVersion = string.IsNullOrEmpty(activity.Source.Version)
+                ? null
+                : activity.Source.Version,
+        };
 
-    // HTTP tags can be absent at SERVER start, so request values come from the HttpContext.
+    // HTTP tags can be absent at SERVER start, so request values come from the request entry
+    // and the HttpContext.
     public static SpanSnapshot CopyAtRequestStart(
         Activity activity,
+        RequestEntry entry,
         HttpContext context,
         Resource resource
     )
@@ -43,15 +48,13 @@ internal static class SpanSnapshots
         var snapshot = Copy(activity, resource);
         var request = context.Request;
         var attributes = snapshot.OwnedAttributes;
-        attributes["http.request.method"] = request.Method.ToUpperInvariant();
+        attributes["http.request.method"] = entry.Method;
         attributes["url.scheme"] = request.Scheme;
-        attributes["url.path"] = (request.PathBase + request.Path).Value;
-        if (request.QueryString.HasValue)
-            attributes["url.query"] = request.QueryString.Value![1..];
+        attributes["url.path"] = entry.PathBase + entry.Path;
+        SetOrRemove(attributes, "url.query", entry.Query);
         if (request.Host.HasValue)
             attributes["server.address"] = request.Host.Host;
-        if (request.Headers.UserAgent.Count > 0)
-            attributes["user_agent.original"] = request.Headers.UserAgent.ToString();
+        SetOrRemove(attributes, "user_agent.original", entry.UserAgent);
         return snapshot;
     }
 
@@ -86,7 +89,7 @@ internal static class SpanSnapshots
     private static void AddExceptionEvent(SpanSnapshot server, RequestState state)
     {
         if (
-            state.GetCapturedException() is not { } captured
+            state.CapturedException is not { } captured
             || server.OwnedEvents.Any(activityEvent => activityEvent.Name == "exception")
         )
             return;
@@ -99,7 +102,7 @@ internal static class SpanSnapshots
                 {
                     ["exception.type"] = exception.GetType().FullName,
                     ["exception.message"] = exception.Message,
-                    ["exception.stacktrace"] = exception.ToString(),
+                    ["exception.stacktrace"] = ExceptionStacktrace.Get(exception),
                 }
             )
         );

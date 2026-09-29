@@ -12,7 +12,8 @@ public sealed class ItemsController : ControllerBase
     public IActionResult Get(int id) => Ok(new { id });
 
     [HttpPost]
-    public IActionResult Create(ItemInput input) => Created($"/controller/items/{input.Id}", input);
+    public IActionResult Create(ItemInput input, CancellationToken cancellationToken) =>
+        Created($"/controller/items/{input.Id}", input);
 
     [HttpGet]
     public IActionResult List([FromQuery(Name = "limit")] int limit) => Ok(new { limit });

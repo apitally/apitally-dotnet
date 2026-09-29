@@ -1,3 +1,4 @@
+using Apitally.Hosting;
 using Apitally.TestApp;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -33,6 +34,7 @@ internal sealed class ApplicationHost : IAsyncDisposable
     public static string[] Arguments(params string[] extra) =>
         [
             "--urls=http://127.0.0.1:0",
+            "--environment=Production",
             $"--Apitally:WriteToken={TestConfiguration.WriteToken}",
             "--Logging:Console:LogLevel:Default=None",
             "--Logging:Debug:LogLevel:Default=None",
@@ -77,11 +79,16 @@ internal sealed class ApplicationHost : IAsyncDisposable
     }
 
     // Stopping runs Apitally's final export cycle, so all telemetry has been delivered after it.
+    // Stopping the server first drains requests, which must all have been released before
+    // Apitally's shutdown discards any that remain.
     public async Task StopAsync()
     {
         if (stopped)
             return;
         stopped = true;
+        await host.Services.GetRequiredService<IServer>().StopAsync(CancellationToken.None);
+        var registry = host.Services.GetService<TelemetryRuntime>()?.Registry;
+        Assert.True(registry?.IsEmpty ?? true, "Requests were not released from the registry.");
         await host.StopAsync();
         Client.Dispose();
     }

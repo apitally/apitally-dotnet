@@ -49,7 +49,7 @@ internal sealed class ErrorAggregates
             Truncate(path, 2_000),
             Truncate(exception.GetType().FullName ?? exception.GetType().Name, 256),
             Truncate(exception.Message.Trim(), 2_048),
-            Truncate(exception.ToString(), 65_536)
+            Truncate(ExceptionStacktrace.Get(exception), 65_536)
         );
         lock (sync)
             Increment(serverErrors, key);

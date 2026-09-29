@@ -21,8 +21,7 @@ public class OtlpLogMapperTests
             "Orders.Service",
             LogLevel.Warning,
             new EventId(7, "OrderDelayed"),
-            "Order delayed",
-            new() { ["order.id"] = 42, [OtlpLogMapper.ServerSpanIdAttribute] = "callback-value" }
+            "Order delayed"
         );
 
         var output = Map(
@@ -41,13 +40,12 @@ public class OtlpLogMapperTests
         Assert.Equal("Order delayed", log.Body.StringValue);
         Assert.Equal(SeverityNumber.Warn, log.SeverityNumber);
         Assert.Equal("OrderDelayed", log.EventName);
-        Assert.Equal(traceId.ToHexString(), Hex(log.TraceId));
-        Assert.Equal(spanId.ToHexString(), Hex(log.SpanId));
+        Assert.Equal(traceId.ToHexString(), log.TraceId.Hex());
+        Assert.Equal(spanId.ToHexString(), log.SpanId.Hex());
         Assert.NotEqual(0ul, log.TimeUnixNano);
         Assert.Equal(
             new Dictionary<string, object?>
             {
-                ["order.id"] = 42L,
                 [OtlpLogMapper.ServerSpanIdAttribute] = serverSpanId.ToHexString(),
             },
             OtlpDecoding.Attributes(log.Attributes)
@@ -55,20 +53,14 @@ public class OtlpLogMapperTests
     }
 
     [Fact]
-    public void ApplicationStringsAreTruncatedAfterConversion()
+    public void ApplicationBodiesAreTruncated()
     {
         var record = new LogRecordSnapshot(
             DateTime.UtcNow,
             "App",
             LogLevel.Information,
             default,
-            new string('b', 3_000),
-            new()
-            {
-                ["text"] = new string('t', 3_000),
-                ["converted"] = new Uri("https://example.com/" + new string('u', 3_000)),
-                ["array"] = new[] { new string('a', 3_000) },
-            }
+            new string('b', 3_000)
         );
 
         var log = Map(LogSnapshot.ForApplicationLog(record, default, default, default, default))
@@ -76,11 +68,7 @@ public class OtlpLogMapperTests
             .ScopeLogs[0]
             .LogRecords[0];
 
-        var attributes = OtlpDecoding.Attributes(log.Attributes);
         Assert.Equal(2_048, log.Body.StringValue.Length);
-        Assert.Equal(2_048, ((string)attributes["text"]!).Length);
-        Assert.Equal(2_048, ((string)attributes["converted"]!).Length);
-        Assert.Equal(3_000, ((string)((object?[])attributes["array"]!)[0]!).Length);
     }
 
     [Fact]
@@ -114,7 +102,4 @@ public class OtlpLogMapperTests
 
     private static ExportLogsServiceRequest Map(params LogSnapshot[] logs) =>
         (ExportLogsServiceRequest)OtlpLogMapper.BuildRequest(logs, TestSpans.Resource);
-
-    private static string Hex(Google.Protobuf.ByteString bytes) =>
-        Convert.ToHexString(bytes.ToByteArray()).ToLowerInvariant();
 }

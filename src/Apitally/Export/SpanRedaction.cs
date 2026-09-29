@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Text.Unicode;
 using Apitally.Hosting;
 using Apitally.Logging;
 
@@ -21,18 +22,9 @@ internal sealed class SpanExportEntry(SpanSnapshot span)
 }
 
 // Complete captured body bytes, or the marker for a body over the size limit.
-internal sealed class CapturedBody
+internal sealed record CapturedBody(byte[] Bytes, string? ContentEncoding)
 {
     public static readonly CapturedBody TooLarge = new([], null);
-
-    public CapturedBody(byte[] bytes, string? contentEncoding)
-    {
-        Bytes = bytes;
-        ContentEncoding = contentEncoding;
-    }
-
-    public byte[] Bytes { get; }
-    public string? ContentEncoding { get; }
     public bool IsTooLarge => ReferenceEquals(this, TooLarge);
 }
 
@@ -54,8 +46,6 @@ internal sealed partial class SpanRedaction(
 
     // Stable and legacy attributes that can carry a query string. url.query has no "?".
     private static readonly string[] QueryAttributes = ["url.full", "http.target", "http.url"];
-
-    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     private static readonly JsonWriterOptions JsonWriterOptions = new()
     {
@@ -97,7 +87,7 @@ internal sealed partial class SpanRedaction(
         }
     }
 
-    public string RedactQuery(string query)
+    private string RedactQuery(string query)
     {
         var parts = query.Split('&');
         for (var i = 0; i < parts.Length; i++)
@@ -110,7 +100,7 @@ internal sealed partial class SpanRedaction(
         return string.Join('&', parts);
     }
 
-    public string RedactUrl(string url)
+    private string RedactUrl(string url)
     {
         var separator = url.IndexOf('?');
         return separator < 0 ? url : url[..(separator + 1)] + RedactQuery(url[(separator + 1)..]);
@@ -237,22 +227,15 @@ internal sealed partial class SpanRedaction(
     // Whether a body is JSON is decided by a parse attempt, never by content type.
     private object RedactBody(byte[] bytes)
     {
-        string text;
-        try
-        {
-            text = StrictUtf8.GetString(bytes);
-        }
-        catch (DecoderFallbackException)
-        {
+        if (!Utf8.IsValid(bytes))
             return bytes;
-        }
         try
         {
             return RedactJson(bytes);
         }
         catch (JsonException)
         {
-            return text;
+            return Encoding.UTF8.GetString(bytes);
         }
     }
 
@@ -337,7 +320,7 @@ internal sealed partial class SpanRedaction(
     private static partial Regex DefaultHeaderPattern();
 
     [GeneratedRegex(
-        "password|pwd|token|secret|auth|card[-_ ]?number|ccv|ssn",
+        "password|pwd|token|secret|auth|card[-_ ]?number|ccv|cvv|cvc|ssn",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
         PatternTimeoutMilliseconds
     )]

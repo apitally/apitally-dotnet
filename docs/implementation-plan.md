@@ -1,6 +1,6 @@
 ---
 directory: /Users/simon.gurcke/Repos/apitally/apitally-dotnet
-implemented_at: null
+implemented_at: 2026-09-29T09:36:31+10:00
 ---
 
 # Apitally .NET v1 implementation plan

@@ -4,20 +4,30 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>12</LangVersion>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
     <Version>1.0.0-alpha.1</Version>
     <Authors>Simon Gurcke</Authors>
     <Company>Apitally</Company>
-    <Description>SDK for Apitally, a simple API monitoring and analytics tool for REST
-      APIs built with ASP.NET Core.</Description>
+    <Description>SDK for Apitally, a simple API monitoring and analytics tool for REST APIs built with ASP.NET Core.</Description>
     <PackageProjectUrl>https://apitally.io</PackageProjectUrl>
     <RepositoryUrl>https://github.com/apitally/apitally-dotnet</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
     <PackageTags>api;monitoring;analytics;aspnetcore;opentelemetry</PackageTags>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <None Include="../../README.md" Pack="true" PackagePath="/" />
+    <None Include="icon.png" Pack="true" PackagePath="/" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="OpenTelemetry" Version="1.19.0" />

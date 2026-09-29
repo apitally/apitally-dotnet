@@ -46,14 +46,17 @@ internal static class EndpointMetadata
         return paths;
     }
 
-    // Exception-handler re-execution exposes the originally matched endpoint. Unmatched requests
-    // have no route.
-    public static string? ResolveRoute(HttpContext context, string pathBase)
+    // Exception-handler re-execution exposes the originally matched endpoint, which is null for
+    // exceptions thrown before routing. Handlers that set the feature without endpoint or route
+    // values, such as Hellang ProblemDetails, keep the matched endpoint on the context.
+    // Unmatched requests have no route. Routes exclude the path base, matching GetPaths.
+    public static string? ResolveRoute(HttpContext context)
     {
-        var endpoint =
-            context.Features.Get<IExceptionHandlerFeature>()?.Endpoint ?? context.GetEndpoint();
+        var endpoint = context.Features.Get<IExceptionHandlerFeature>() is { } handled
+            ? handled.Endpoint ?? (handled.RouteValues is null ? context.GetEndpoint() : null)
+            : context.GetEndpoint();
         return endpoint is RouteEndpoint { RoutePattern.RawText: { } route }
-            ? pathBase + NormalizeRoute(route)
+            ? NormalizeRoute(route)
             : null;
     }
 

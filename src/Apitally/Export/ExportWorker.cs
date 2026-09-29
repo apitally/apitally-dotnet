@@ -5,7 +5,13 @@ namespace Apitally.Export;
 
 // Runs export cycles independently of request traffic: flush intake, rotate the spool and
 // send closed files oldest first. Retry pacing comes only from the cycle schedule.
-internal sealed class ExportWorker
+internal sealed class ExportWorker(
+    TelemetrySpool spool,
+    ExportHttpClient client,
+    TimeProvider timeProvider,
+    SdkDiagnostics diagnostics,
+    Action flushIntake
+)
 {
     public static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(2);
     public static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(15);
@@ -13,30 +19,9 @@ internal sealed class ExportWorker
     private const int MaxIntervalSeconds = 60;
     private const int MaxSendsPerCycle = 10;
 
-    private readonly TelemetrySpool spool;
-    private readonly ExportHttpClient client;
-    private readonly TimeProvider timeProvider;
-    private readonly SdkDiagnostics diagnostics;
-    private readonly Action flushIntake;
     private readonly CancellationTokenSource stopping = new();
     private Task loop = Task.CompletedTask;
-
-    public ExportWorker(
-        TelemetrySpool spool,
-        ExportHttpClient client,
-        TimeProvider timeProvider,
-        SdkDiagnostics diagnostics,
-        Action flushIntake
-    )
-    {
-        this.spool = spool;
-        this.client = client;
-        this.timeProvider = timeProvider;
-        this.diagnostics = diagnostics;
-        this.flushIntake = flushIntake;
-    }
-
-    public TimeSpan Interval { get; private set; } = DefaultInterval;
+    private TimeSpan interval = DefaultInterval;
 
     public void Start()
     {
@@ -68,7 +53,7 @@ internal sealed class ExportWorker
             {
                 await RunCycleAsync().ConfigureAwait(false);
                 // Jitter desynchronizes processes that started together.
-                var delay = Interval * (0.9 + Random.Shared.NextDouble() * 0.2);
+                var delay = interval * (0.9 + Random.Shared.NextDouble() * 0.2);
                 await Task.Delay(delay, timeProvider, stopping.Token).ConfigureAwait(false);
             }
         }
@@ -139,7 +124,7 @@ internal sealed class ExportWorker
             .PostAsync(file.Signal, body, cancellationToken)
             .ConfigureAwait(false);
         if (response.ExportIntervalSeconds is { } seconds)
-            Interval = TimeSpan.FromSeconds(
+            interval = TimeSpan.FromSeconds(
                 Math.Clamp(seconds, MinIntervalSeconds, MaxIntervalSeconds)
             );
         switch (response.Outcome)

@@ -82,7 +82,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddApitally(options =>
 {
     options.WriteToken = "apt_..."; // or set the APITALLY_WRITE_TOKEN environment variable
-    options.Env = "dev"; // or "prod" etc.
 });
 
 var app = builder.Build();
@@ -97,7 +96,6 @@ Options can also be set in the `Apitally` section of your application's configur
 {
   "Apitally": {
     "WriteToken": "apt_...",
-    "Env": "prod",
     "CaptureRequestBody": true,
     "CaptureResponseBody": true
   }

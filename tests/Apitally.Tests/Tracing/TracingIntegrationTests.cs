@@ -45,6 +45,41 @@ public class TracingIntegrationTests
     }
 
     [Fact]
+    public async Task FallbackDoesNotRecordSampledOutRequests()
+    {
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await ApplicationHost.StartMinimalAsync(
+            receiver,
+            builder => builder.Services.AddApitally(options => options.SampleRate = 0),
+            app => app.MapGet("/recorded", () => Activity.Current?.Recorded ?? false)
+        );
+
+        Assert.Equal("false", await host.Client.GetStringAsync("/recorded"));
+    }
+
+    [Fact]
+    public async Task FallbackRecordsSampledOutRequestsWithSampledParent()
+    {
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await ApplicationHost.StartMinimalAsync(
+            receiver,
+            builder => builder.Services.AddApitally(options => options.SampleRate = 0),
+            app => app.MapGet("/recorded", () => Activity.Current?.Recorded ?? false)
+        );
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/recorded");
+        request.Headers.Add(
+            "traceparent",
+            "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+        );
+        var response = await host.Client.SendAsync(request);
+        await host.StopAsync();
+
+        Assert.Equal("true", await response.Content.ReadAsStringAsync());
+        Assert.Empty(receiver.Spans());
+    }
+
+    [Fact]
     public async Task OutgoingHttpCallYieldsOneClientSpan()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
@@ -144,7 +179,7 @@ public class TracingIntegrationTests
         );
         var resource = OtlpDecoding.Attributes(receiver.ResourceSpans()[0].Resource.Attributes);
         Assert.Equal("orders", resource["service.name"]);
-        Assert.Equal("dev", resource["deployment.environment.name"]);
+        Assert.Equal("prod", resource["deployment.environment.name"]);
     }
 
     [Theory]
@@ -159,6 +194,46 @@ public class TracingIntegrationTests
                 builder
                     .Services.AddOpenTelemetry()
                     .WithTracing(tracing => tracing.SetSampler(new FixedSampler(decision)))
+        );
+
+        await host.Client.GetAsync("/items/1");
+        await host.StopAsync();
+
+        Assert.Empty(receiver.Spans());
+    }
+
+    [Fact]
+    public async Task RequestsFilteredByApplicationInstrumentationAreReleased()
+    {
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await ApplicationHost.StartMinimalAsync(
+            receiver,
+            builder =>
+                builder
+                    .Services.AddOpenTelemetry()
+                    .WithTracing(tracing =>
+                        tracing.AddAspNetCoreInstrumentation(options =>
+                            options.Filter = context => context.Request.Path != "/items/1"
+                        )
+                    )
+        );
+
+        await host.Client.GetAsync("/items/1");
+        await host.StopAsync();
+
+        Assert.Empty(receiver.Spans());
+    }
+
+    [Fact]
+    public async Task RequestsFilteredByApplicationProcessorAreReleased()
+    {
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await ApplicationHost.StartMinimalAsync(
+            receiver,
+            builder =>
+                builder
+                    .Services.AddOpenTelemetry()
+                    .WithTracing(tracing => tracing.AddProcessor(new UnrecordingProcessor()))
         );
 
         await host.Client.GetAsync("/items/1");
@@ -258,6 +333,13 @@ public class TracingIntegrationTests
             .ToList();
         Assert.NotEmpty(receiver.Exports);
         Assert.Equal([new Uri(receiver.Endpoint, "/other").ToString()], urls);
+    }
+
+    // The filtering processor pattern from the OpenTelemetry .NET documentation.
+    private sealed class UnrecordingProcessor : BaseProcessor<Activity>
+    {
+        public override void OnEnd(Activity activity) =>
+            activity.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
     }
 
     private sealed class FixedSampler(SamplingDecision decision) : Sampler

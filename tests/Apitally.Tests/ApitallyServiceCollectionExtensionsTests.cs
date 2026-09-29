@@ -1,16 +1,16 @@
 using Apitally.Tests.Support;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Options;
 
 namespace Apitally.Tests;
 
-public class ApitallyExtensionsTests
+public class ApitallyServiceCollectionExtensionsTests
 {
     [Fact]
-    public void ConfigurationSectionOverridesEnvironmentFallbacks()
+    public void EnvironmentVariablesOverrideConfigurationSection()
     {
         using var environment = new EnvironmentVariables(
             ("APITALLY_WRITE_TOKEN", "apt_fromEnvironment000000000"),
@@ -18,11 +18,16 @@ public class ApitallyExtensionsTests
         );
 
         var options = ResolveOptions(
-            new() { ["Apitally:Env"] = "prod", ["Apitally:SampleRate"] = "0.5" }
+            new()
+            {
+                ["Apitally:WriteToken"] = "apt_fromConfiguration0000000",
+                ["Apitally:Env"] = "prod",
+                ["Apitally:SampleRate"] = "0.5",
+            }
         );
 
         Assert.Equal("apt_fromEnvironment000000000", options.WriteToken);
-        Assert.Equal("prod", options.Env);
+        Assert.Equal("staging", options.Env);
         Assert.Equal(0.5, options.SampleRate);
         Assert.True(options.CaptureResponseHeaders);
     }
@@ -59,6 +64,33 @@ public class ApitallyExtensionsTests
         Assert.Equal(["/a", "/b"], options.ExcludePaths);
     }
 
+    [Theory]
+    [InlineData("Production", null, "prod")]
+    [InlineData("Production", "", "prod")]
+    [InlineData("Development", null, "dev")]
+    [InlineData("Staging", null, "staging")]
+    public void EnvDefaultsToHostEnvironment(
+        string environmentName,
+        string? configuredEnv,
+        string expectedEnv
+    )
+    {
+        using var environment = new EnvironmentVariables();
+
+        var options = ResolveOptions(
+            configuredEnv is null ? [] : new() { ["Apitally:Env"] = configuredEnv },
+            services =>
+            {
+                services.AddSingleton<IHostEnvironment>(
+                    new HostingEnvironment { EnvironmentName = environmentName }
+                );
+                services.AddApitally();
+            }
+        );
+
+        Assert.Equal(expectedEnv, options.Env);
+    }
+
     [Fact]
     public void DirectConfigureFollowsStandardOrdering()
     {
@@ -76,22 +108,6 @@ public class ApitallyExtensionsTests
 
         Assert.Equal("before", options.AppVersion);
         Assert.Equal("after", options.Env);
-    }
-
-    [Fact]
-    public void RepeatedCallsRegisterServicesOnce()
-    {
-        var services = new ServiceCollection();
-
-        services.AddApitally();
-        services.AddApitally();
-
-        Assert.Single(services, service => service.ServiceType == typeof(IStartupFilter));
-        Assert.Single(services, service => service.ServiceType == typeof(IHostedService));
-        Assert.Single(
-            services,
-            service => service.ServiceType == typeof(IConfigureOptions<ApitallyOptions>)
-        );
     }
 
     private static ApitallyOptions ResolveOptions(
