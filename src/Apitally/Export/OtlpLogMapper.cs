@@ -43,15 +43,6 @@ internal static class OtlpLogMapper
             output.TraceId = OtlpEncoder.ToByteString(log.TraceId);
             output.SpanId = OtlpEncoder.ToByteString(log.SpanId);
             output.Flags = (uint)log.TraceFlags;
-            foreach (var (key, value) in record.Attributes)
-            {
-                if (
-                    key != ServerSpanIdAttribute
-                    && AttributeValues.TryNormalize(value, out var normalized)
-                )
-                    output.Attributes.Add(OtlpEncoder.ToKeyValue(key, Truncate(normalized)));
-            }
-            // SDK-owned linkage overwrites a same-named attribute from the mask callback.
             output.Attributes.Add(
                 OtlpEncoder.ToKeyValue(ServerSpanIdAttribute, log.ServerSpanId.ToHexString())
             );
@@ -63,8 +54,6 @@ internal static class OtlpLogMapper
         }
         return output;
     }
-
-    private static object? Truncate(object? value) => value is string text ? Truncate(text) : value;
 
     private static string Truncate(string text) =>
         text.Length > MaxStringLength ? text[..MaxStringLength] : text;

@@ -120,6 +120,8 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
 - **Location**: `Logging/ApitallyLoggerProvider.cs:58-95`, `Logging/LogMasking.cs:22`
 - **Problem**: When a provider throws, `Microsoft.Extensions.Logging.Logger.Log` throws an `AggregateException` back to the code that logged. `ApitallyLogger.Log` guards only the user's mask callback. The call to `formatter(state, exception)`, the scope enumeration and `exception.ToString()` are all unguarded. Consider `_logger.LogInformation("User {Id} did {Action}", id)`, where the template has more placeholders than arguments. It is harmless under providers that never format, such as Serilog or the OTel logger with default settings. Once Apitally is added, log capture is on by default, and that log line throws `FormatException` into the request and returns a 500. This violates the rule that the SDK must never break the host application.
 - **Recommendation**: Wrap the body of `Log`, after the cheap association checks, in `try`/`catch` and report the exception with `diagnostics.RequestProcessingFailed(e)`. The `Apitally` log category is already excluded from capture, so this cannot recurse. Add a test.
+- **Decision**: Rejected. The trigger is an application bug flagged at build time by CA2017, and the default console provider already throws for it without Apitally. Microsoft's and OTel's providers do not guard against it either.
+- **Follow-up decision**: Structured log values and scopes are no longer captured, because the server's log ingestion stores only the rendered message, level, logger and code location. `LogRecordSnapshot.Attributes`, scope support and `LogMasking` are removed; `MaskLogRecord` works on `Body`, `CategoryName`, `LogLevel`, `EventId` and `Timestamp`. design.md and migration.md are updated.
 
 ### R2. A non-ASCII `Env` makes every export fail silently
 
@@ -203,6 +205,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `Requests/ErrorAggregates.cs:52`, `Tracing/SpanSnapshots.cs:102`, `Logging/LogMasking.cs:40`
 - **Problem**: Both `AddServerError` and `AddExceptionEvent` format the same exception. `LogMasking` formats it a third time when the application also logs it. One call with a 20-frame async stack costs about 176 µs and allocates about 77 KB. During a database outage at 2,000 requests per second, that is about 0.7 cores and 300 MB/s of allocation on request threads, at the moment the application is already failing.
 - **Recommendation**: Format each exception once. Either cache the string next to the captured exception in `RequestState`, or use a static `ConditionalWeakTable<Exception, string>` shared by all three call sites.
+- **Decision**: Fixed with the static `ConditionalWeakTable` in `Requests/ExceptionStacktrace.cs`. Log records no longer carry `exception.*` attributes, because the server's log ingestion does not store them; design.md and migration.md are updated.
 
 ### P3. Body redaction always decodes the body to a string
 

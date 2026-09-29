@@ -234,7 +234,7 @@ See [sampling](https://docs.apitally.io/sdk-reference/dotnet/v1/sampling) for de
 
 Application logs emitted during request handling are now captured by default. Set `CaptureLogs = false` to disable this.
 
-Captured logs now also include structured values from message templates and log scopes, as well as exception details. As before, logs from `Microsoft.AspNetCore.*` categories are not captured. Your application's standard log filters apply, and you can narrow capture for Apitally only using the `Apitally` logging provider alias:
+As before, logs from `Microsoft.AspNetCore.*` categories are not captured. Your application's standard log filters apply, and you can narrow capture for Apitally only using the `Apitally` logging provider alias:
 
 ```json
 {
@@ -258,7 +258,7 @@ options.MaskLogRecord = record =>
     {
         return null; // drop the log record
     }
-    record.Attributes.Remove("email");
+    record.Body = Regex.Replace(record.Body!, @"\S+@\S+", "[EMAIL]");
     return record;
 };
 ```

@@ -47,51 +47,10 @@ public class ApitallyLoggerProviderTests
             "TestApp.Orders",
             receiver.ScopeLogs().Single(scope => scope.Scope.Name != "apitally").Scope.Name
         );
-        var attributes = OtlpDecoding.Attributes(logs[0].Attributes);
-        Assert.Equal(42L, attributes["OrderId"]);
-        Assert.Equal("/log", attributes["RequestPath"]);
-        Assert.DoesNotContain("{OriginalFormat}", attributes.Keys);
-    }
-
-    [Fact]
-    public async Task ScopesAreFlattenedWithEntryFieldsWinningOverInnerAndOuterScopes()
-    {
-        await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await StartAsync(receiver);
-
-        await host.Client.GetAsync("/scopes");
-        await host.StopAsync();
-
-        var attributes = OtlpDecoding.Attributes(
-            Assert.Single(receiver.ApplicationLogs()).Attributes
+        Assert.Equal(
+            ["apitally.request.server_span_id"],
+            OtlpDecoding.Attributes(logs[0].Attributes).Keys
         );
-        Assert.Equal("entry", attributes["Key"]);
-        Assert.Equal("inner", attributes["Shared"]);
-        Assert.Equal("outer", attributes["OuterOnly"]);
-        Assert.Equal(7L, attributes["Batch"]);
-        Assert.DoesNotContain(
-            attributes.Keys,
-            key => key.Contains("OriginalFormat") || key == "Scope"
-        );
-    }
-
-    [Fact]
-    public async Task ExceptionDetailsAreCopiedWhileOtherProvidersKeepTheOriginal()
-    {
-        await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await StartAsync(receiver);
-
-        await host.Client.GetAsync("/log-exception");
-        await host.StopAsync();
-
-        var attributes = OtlpDecoding.Attributes(
-            Assert.Single(receiver.ApplicationLogs()).Attributes
-        );
-        Assert.Equal("System.InvalidOperationException", attributes["exception.type"]);
-        Assert.Equal("Broken", attributes["exception.message"]);
-        Assert.Contains("Broken", (string)attributes["exception.stacktrace"]!);
-        var original = Assert.Single(host.Logs.GetSnapshot(), record => record.Message == "Failed");
-        Assert.IsType<InvalidOperationException>(original.Exception);
     }
 
     [Fact]
@@ -109,9 +68,6 @@ public class ApitallyLoggerProviderTests
                         throw new InvalidOperationException();
                     if (record.Body.Contains("empty"))
                         record.Body = "";
-                    record.Attributes.Remove("OrderId");
-                    record.Attributes["masked"] = true;
-                    record.Attributes["apitally.request.server_span_id"] = "0000000000000000";
                     record.Body = record.Body.Replace("42", "**");
                     return record;
                 }
@@ -122,13 +78,6 @@ public class ApitallyLoggerProviderTests
 
         var log = Assert.Single(receiver.ApplicationLogs());
         Assert.Equal("Handling order **", log.Body.StringValue);
-        var attributes = OtlpDecoding.Attributes(log.Attributes);
-        Assert.Equal(true, attributes["masked"]);
-        Assert.False(attributes.ContainsKey("OrderId"));
-        Assert.Equal(
-            receiver.Spans().Server().SpanId.Hex(),
-            attributes["apitally.request.server_span_id"]
-        );
         Assert.Contains(host.Logs.GetSnapshot(), record => record.Message == "Handling order 42");
     }
 
@@ -216,35 +165,6 @@ public class ApitallyLoggerProviderTests
                         logger.LogInformation("Handling order {OrderId}", 42);
                         using (ApplicationSource.StartActivity("child"))
                             logger.LogInformation("Inside child");
-                        return "OK";
-                    }
-                );
-                app.MapGet(
-                    "/scopes",
-                    () =>
-                    {
-                        using (
-                            logger.BeginScope(
-                                new Dictionary<string, object?>
-                                {
-                                    ["Shared"] = "outer",
-                                    ["OuterOnly"] = "outer",
-                                    ["Key"] = "outer",
-                                }
-                            )
-                        )
-                        using (logger.BeginScope("Importing orders"))
-                        using (logger.BeginScope("Batch {Batch}", 7))
-                        using (
-                            logger.BeginScope(
-                                new Dictionary<string, object?>
-                                {
-                                    ["Shared"] = "inner",
-                                    ["Key"] = "inner",
-                                }
-                            )
-                        )
-                            logger.LogInformation("Scoped {Key}", "entry");
                         return "OK";
                     }
                 );

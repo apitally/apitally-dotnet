@@ -5,21 +5,18 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Apitally.Logging;
 
-// An additive ILogger provider capturing request-scoped application logs. It is inert until
-// the runtime attaches it and never changes what other providers receive.
+// An additive ILogger provider capturing the rendered messages of request-scoped application
+// logs. It is inert until the runtime attaches it and never changes what other providers
+// receive. Structured values and scopes are not captured, because the server does not store them.
 [ProviderAlias("Apitally")]
-internal sealed class ApitallyLoggerProvider : ILoggerProvider, ISupportExternalScope
+internal sealed class ApitallyLoggerProvider : ILoggerProvider
 {
     private volatile LogCapture? capture;
-    private IExternalScopeProvider? scopeProvider;
 
     public ILogger CreateLogger(string categoryName) =>
         IsExcludedCategory(categoryName)
             ? NullLogger.Instance
             : new ApitallyLogger(categoryName, this);
-
-    public void SetScopeProvider(IExternalScopeProvider scopeProvider) =>
-        this.scopeProvider = scopeProvider;
 
     public void Attach(
         RequestRegistry registry,
@@ -38,6 +35,28 @@ internal sealed class ApitallyLoggerProvider : ILoggerProvider, ISupportExternal
         || categoryName.StartsWith("OpenTelemetry", StringComparison.Ordinal)
         || categoryName.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal);
 
+    // Exceptions, a replacement record or an empty body drop the record rather than export
+    // unmasked content.
+    private static bool TryMask(
+        LogRecordSnapshot record,
+        Func<LogRecordSnapshot, LogRecordSnapshot?>? mask
+    )
+    {
+        if (mask is not null)
+        {
+            try
+            {
+                if (!ReferenceEquals(mask(record), record))
+                    return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+        return !string.IsNullOrEmpty(record.Body);
+    }
+
     private sealed record LogCapture(
         RequestRegistry Registry,
         Func<LogRecordSnapshot, LogRecordSnapshot?>? Mask
@@ -46,7 +65,6 @@ internal sealed class ApitallyLoggerProvider : ILoggerProvider, ISupportExternal
     private sealed class ApitallyLogger(string categoryName, ApitallyLoggerProvider provider)
         : ILogger
     {
-        // The logger factory pushes scopes to the external scope provider.
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
 
@@ -71,16 +89,14 @@ internal sealed class ApitallyLoggerProvider : ILoggerProvider, ISupportExternal
                 || !request.IsAcceptingDetail
             )
                 return;
-            var record = LogMasking.CreateRecord(
+            var record = new LogRecordSnapshot(
+                DateTime.UtcNow,
                 categoryName,
                 logLevel,
                 eventId,
-                state,
-                exception,
-                formatter,
-                provider.scopeProvider
+                formatter(state, exception)
             );
-            if (record is null || !LogMasking.TryMask(record, capture.Mask))
+            if (!TryMask(record, capture.Mask))
                 return;
             // Linkage is added after masking, so the callback cannot unlink or reassign a record.
             request.AddLog(

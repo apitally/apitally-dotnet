@@ -99,7 +99,7 @@ internal static class SpanSnapshots
                 {
                     ["exception.type"] = exception.GetType().FullName,
                     ["exception.message"] = exception.Message,
-                    ["exception.stacktrace"] = exception.ToString(),
+                    ["exception.stacktrace"] = ExceptionStacktrace.Get(exception),
                 }
             )
         );
