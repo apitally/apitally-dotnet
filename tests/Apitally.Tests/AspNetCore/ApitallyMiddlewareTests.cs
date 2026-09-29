@@ -67,6 +67,20 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task ChunkedRequestBodyLargerThanInitialBufferIsCaptured()
+    {
+        await StartAsync();
+        var json = $$"""{"text":"{{new string('x', 20_000)}}"}""";
+
+        await PostJsonAsync("/read-pipe", json, chunked: true);
+        await host.StopAsync();
+
+        var attributes = receiver.Spans().Server().Attributes();
+        Assert.Equal(json, attributes["apitally.request.body"]);
+        Assert.Equal((long)json.Length, attributes["http.request.body.size"]);
+    }
+
+    [Fact]
     public async Task UnreadRequestBodyIsNeitherCapturedNorSizedWithoutLength()
     {
         await StartAsync();

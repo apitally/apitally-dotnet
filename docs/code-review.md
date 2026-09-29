@@ -81,6 +81,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
 
   `GetOrCreate` returns the existing state for the replacement, so the replacement is never associated. Every request leaks as in C1, and no spans are exported (5 requests left `inFlight=5` and 0 spans were received).
 - **Recommendation**: The C1 fix stops the leak. To keep traces, when a hosting activity starts for a context whose state's server activity has `IsAllDataRequested == false`, point the state's server activity and its association at the new activity, under the state's lock. If that is deferred, document B3 as unsupported.
+- **Decision**: Rejected. The leak is fixed by C1; traces for requests carrying non-W3C propagation headers remain unsupported.
 
 ### C3. With two hosts in one process, one host claims the other's requests
 
@@ -194,6 +195,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
   - Size the buffer from `Content-Length` when it is known. Otherwise start at about 4 KB and grow by doubling up to the cap.
   - Compute `ValidationResponse` only when `ValidationCapture.IsValidationResponse(...)` is true.
   - When both the body and the validation bytes are needed, share one copy.
+- **Decision**: Fixed as recommended. The buffer starts at the declared length or 4 KB and doubles up to the cap; the trimmed buffer is shared by the exported body and validation parsing; validation bytes are retained only for validation responses. Growth is covered by `ApitallyMiddlewareTests.ChunkedRequestBodyLargerThanInitialBufferIsCaptured`.
 
 ### P2. `Exception.ToString()` runs two or more times per failing request
 

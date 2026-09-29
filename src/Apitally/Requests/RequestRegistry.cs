@@ -222,9 +222,11 @@ internal sealed class RequestRegistry(
             ResponseBody = IsResponseBodyCaptured(context, state)
                 ? responseCapture?.GetBody(isResponseComplete, response.Headers.ContentEncoding)
                 : null,
-            ValidationResponse = isResponseComplete
-                ? responseCapture?.GetRetainedBytes(isComplete: true)
-                : null,
+            ValidationResponse =
+                isResponseComplete
+                && ValidationCapture.IsValidationResponse(response.StatusCode, response.ContentType)
+                    ? responseCapture?.GetRetainedBytes(isComplete: true)
+                    : null,
         };
     }
 
