@@ -13,25 +13,28 @@ internal static class SpanSnapshots
     public const string ConsumerIdentifierAttribute = "apitally.consumer.identifier";
 
     public static SpanSnapshot Copy(Activity activity, Resource resource) =>
-        new(
-            activity.TraceId,
-            activity.SpanId,
-            activity.ParentSpanId,
-            activity.ActivityTraceFlags,
-            activity.TraceStateString,
-            activity.DisplayName,
-            activity.Kind,
-            activity.StartTimeUtc,
-            activity.IsStopped ? activity.Duration : null,
-            activity.Status,
-            activity.StatusDescription,
-            AttributeValues.Normalize(activity.TagObjects),
-            [.. activity.Events.Select(CopyEvent)],
-            [.. activity.Links.Select(CopyLink)],
-            resource,
-            activity.Source.Name,
-            string.IsNullOrEmpty(activity.Source.Version) ? null : activity.Source.Version
-        );
+        new()
+        {
+            TraceId = activity.TraceId,
+            SpanId = activity.SpanId,
+            ParentSpanId = activity.ParentSpanId,
+            TraceFlags = activity.ActivityTraceFlags,
+            TraceStateString = activity.TraceStateString,
+            DisplayName = activity.DisplayName,
+            Kind = activity.Kind,
+            StartTimeUtc = activity.StartTimeUtc,
+            Duration = activity.IsStopped ? activity.Duration : null,
+            Status = activity.Status,
+            StatusDescription = activity.StatusDescription,
+            OwnedAttributes = AttributeValues.Normalize(activity.TagObjects),
+            OwnedEvents = [.. activity.Events.Select(CopyEvent)],
+            Links = [.. activity.Links.Select(CopyLink)],
+            Resource = resource,
+            ScopeName = activity.Source.Name,
+            ScopeVersion = string.IsNullOrEmpty(activity.Source.Version)
+                ? null
+                : activity.Source.Version,
+        };
 
     // HTTP tags can be absent at SERVER start, so request values come from the HttpContext.
     public static SpanSnapshot CopyAtRequestStart(
@@ -86,7 +89,7 @@ internal static class SpanSnapshots
     private static void AddExceptionEvent(SpanSnapshot server, RequestState state)
     {
         if (
-            state.GetCapturedException() is not { } captured
+            state.CapturedException is not { } captured
             || server.OwnedEvents.Any(activityEvent => activityEvent.Name == "exception")
         )
             return;

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Text.Unicode;
 using Apitally.Hosting;
 using Apitally.Logging;
 
@@ -54,8 +55,6 @@ internal sealed partial class SpanRedaction(
 
     // Stable and legacy attributes that can carry a query string. url.query has no "?".
     private static readonly string[] QueryAttributes = ["url.full", "http.target", "http.url"];
-
-    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     private static readonly JsonWriterOptions JsonWriterOptions = new()
     {
@@ -237,22 +236,15 @@ internal sealed partial class SpanRedaction(
     // Whether a body is JSON is decided by a parse attempt, never by content type.
     private object RedactBody(byte[] bytes)
     {
-        string text;
-        try
-        {
-            text = StrictUtf8.GetString(bytes);
-        }
-        catch (DecoderFallbackException)
-        {
+        if (!Utf8.IsValid(bytes))
             return bytes;
-        }
         try
         {
             return RedactJson(bytes);
         }
         catch (JsonException)
         {
-            return text;
+            return Encoding.UTF8.GetString(bytes);
         }
     }
 

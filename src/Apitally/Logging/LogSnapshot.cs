@@ -7,40 +7,19 @@ namespace Apitally.Logging;
 // linkage, or an SDK internal event.
 internal sealed class LogSnapshot
 {
-    private LogSnapshot(
-        DateTime timestamp,
-        LogRecordSnapshot? record,
-        string? eventName,
-        object? eventBody,
-        ActivityTraceId traceId,
-        ActivitySpanId spanId,
-        ActivityTraceFlags traceFlags,
-        ActivitySpanId serverSpanId
-    )
-    {
-        Timestamp = timestamp;
-        Record = record;
-        EventName = eventName;
-        EventBody = eventBody;
-        TraceId = traceId;
-        SpanId = spanId;
-        TraceFlags = traceFlags;
-        ServerSpanId = serverSpanId;
-    }
-
-    public DateTime Timestamp { get; }
+    public required DateTime Timestamp { get; init; }
 
     // Set for application logs.
-    public LogRecordSnapshot? Record { get; }
+    public LogRecordSnapshot? Record { get; init; }
 
     // Set for internal events: a string or a Dictionary<string, object?> body.
-    public string? EventName { get; }
-    public object? EventBody { get; }
+    public string? EventName { get; init; }
+    public object? EventBody { get; init; }
 
-    public ActivityTraceId TraceId { get; }
-    public ActivitySpanId SpanId { get; }
-    public ActivityTraceFlags TraceFlags { get; }
-    public ActivitySpanId ServerSpanId { get; }
+    public ActivityTraceId TraceId { get; init; }
+    public ActivitySpanId SpanId { get; init; }
+    public ActivityTraceFlags TraceFlags { get; init; }
+    public ActivitySpanId ServerSpanId { get; init; }
 
     public string ScopeName => Record?.CategoryName ?? OtlpEncoder.ScopeName;
 
@@ -50,8 +29,22 @@ internal sealed class LogSnapshot
         ActivitySpanId spanId,
         ActivityTraceFlags traceFlags,
         ActivitySpanId serverSpanId
-    ) => new(record.Timestamp, record, null, null, traceId, spanId, traceFlags, serverSpanId);
+    ) =>
+        new()
+        {
+            Timestamp = record.Timestamp,
+            Record = record,
+            TraceId = traceId,
+            SpanId = spanId,
+            TraceFlags = traceFlags,
+            ServerSpanId = serverSpanId,
+        };
 
     public static LogSnapshot ForInternalEvent(string eventName, object body, DateTime timestamp) =>
-        new(timestamp, null, eventName, body, default, default, default, default);
+        new()
+        {
+            Timestamp = timestamp,
+            EventName = eventName,
+            EventBody = body,
+        };
 }

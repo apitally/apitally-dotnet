@@ -19,19 +19,25 @@ public class OtlpTraceMapperTests
             ActivityTraceFlags.Recorded,
             "k=v"
         );
-        var span = new SpanSnapshot(
-            ActivityTraceId.CreateRandom(),
-            ActivitySpanId.CreateRandom(),
-            parent,
-            ActivityTraceFlags.Recorded,
-            "vendor=1",
-            "GET /items/{id}",
-            ActivityKind.Server,
-            new DateTime(2026, 9, 28, 10, 0, 0, DateTimeKind.Utc),
-            TimeSpan.FromMilliseconds(250),
-            ActivityStatusCode.Error,
-            "failed",
-            new() { ["http.route"] = "/items/{id}", ["http.response.status_code"] = 500L },
+        var span = new SpanSnapshot
+        {
+            TraceId = ActivityTraceId.CreateRandom(),
+            SpanId = ActivitySpanId.CreateRandom(),
+            ParentSpanId = parent,
+            TraceFlags = ActivityTraceFlags.Recorded,
+            TraceStateString = "vendor=1",
+            DisplayName = "GET /items/{id}",
+            Kind = ActivityKind.Server,
+            StartTimeUtc = new DateTime(2026, 9, 28, 10, 0, 0, DateTimeKind.Utc),
+            Duration = TimeSpan.FromMilliseconds(250),
+            Status = ActivityStatusCode.Error,
+            StatusDescription = "failed",
+            OwnedAttributes = new()
+            {
+                ["http.route"] = "/items/{id}",
+                ["http.response.status_code"] = 500L,
+            },
+            OwnedEvents =
             [
                 new ActivityEvent(
                     "exception",
@@ -39,11 +45,14 @@ public class OtlpTraceMapperTests
                     new ActivityTagsCollection { ["exception.type"] = "System.Exception" }
                 ),
             ],
-            [new ActivityLink(linked, new ActivityTagsCollection { ["link.kind"] = "retry" })],
-            TestSpans.Resource,
-            "Microsoft.AspNetCore",
-            "1.0"
-        );
+            Links =
+            [
+                new ActivityLink(linked, new ActivityTagsCollection { ["link.kind"] = "retry" }),
+            ],
+            Resource = TestSpans.Resource,
+            ScopeName = "Microsoft.AspNetCore",
+            ScopeVersion = "1.0",
+        };
 
         var request = (ExportTraceServiceRequest)OtlpTraceMapper.BuildRequest([span]);
 
@@ -94,25 +103,17 @@ public class OtlpTraceMapperTests
         {
             TestSpans.Create(),
             TestSpans.Create(kind: ActivityKind.Internal),
-            new SpanSnapshot(
-                ActivityTraceId.CreateRandom(),
-                ActivitySpanId.CreateRandom(),
-                default,
-                default,
-                null,
-                "work",
-                ActivityKind.Internal,
-                DateTime.UtcNow,
-                TimeSpan.Zero,
-                ActivityStatusCode.Unset,
-                null,
-                [],
-                [],
-                [],
-                other,
-                "apitally.otel",
-                null
-            ),
+            new SpanSnapshot
+            {
+                TraceId = ActivityTraceId.CreateRandom(),
+                SpanId = ActivitySpanId.CreateRandom(),
+                DisplayName = "work",
+                Kind = ActivityKind.Internal,
+                StartTimeUtc = DateTime.UtcNow,
+                Duration = TimeSpan.Zero,
+                Resource = other,
+                ScopeName = "apitally.otel",
+            },
         };
 
         var request = (ExportTraceServiceRequest)OtlpTraceMapper.BuildRequest(spans);

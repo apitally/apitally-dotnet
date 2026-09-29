@@ -15,23 +15,18 @@ internal static class TestSpans
         ActivitySpanId parentSpanId = default,
         ActivityTraceId? traceId = null
     ) =>
-        new(
-            traceId ?? ActivityTraceId.CreateRandom(),
-            ActivitySpanId.CreateRandom(),
-            parentSpanId,
-            ActivityTraceFlags.Recorded,
-            null,
-            name,
-            kind,
-            new DateTime(2026, 9, 28, 10, 0, 0, DateTimeKind.Utc),
-            TimeSpan.FromMilliseconds(25),
-            ActivityStatusCode.Unset,
-            null,
-            attributes ?? [],
-            [],
-            [],
-            Resource,
-            "Microsoft.AspNetCore",
-            null
-        );
+        new()
+        {
+            TraceId = traceId ?? ActivityTraceId.CreateRandom(),
+            SpanId = ActivitySpanId.CreateRandom(),
+            ParentSpanId = parentSpanId,
+            TraceFlags = ActivityTraceFlags.Recorded,
+            DisplayName = name,
+            Kind = kind,
+            StartTimeUtc = new DateTime(2026, 9, 28, 10, 0, 0, DateTimeKind.Utc),
+            Duration = TimeSpan.FromMilliseconds(25),
+            OwnedAttributes = attributes ?? [],
+            Resource = Resource,
+            ScopeName = "Microsoft.AspNetCore",
+        };
 }

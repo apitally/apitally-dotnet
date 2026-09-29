@@ -31,10 +31,9 @@ internal sealed class RequestRegistry(
         (ActivityTraceId, ActivitySpanId),
         RequestState
     > associations = new();
-    private readonly ConcurrentDictionary<RequestState, byte> inFlight = new();
     private volatile bool isCutOff;
 
-    public bool IsEmpty => inFlight.IsEmpty && associations.IsEmpty;
+    public bool IsEmpty => associations.IsEmpty;
 
     public static RequestState? Get(HttpContext? context) => context?.Features.Get<RequestState>();
 
@@ -63,7 +62,6 @@ internal sealed class RequestRegistry(
             isObserved && ShouldKeepDetail(entry, context, serverActivity!, resource!);
         var state = new RequestState(entry, serverActivity, isDetailKept, context.RequestAborted);
         context.Features.Set(state);
-        inFlight.TryAdd(state, 0);
         if (isDetailKept)
             state.TryAssociate(serverActivity!.TraceId, serverActivity.SpanId, associations);
         context.Response.OnCompleted(
@@ -127,12 +125,12 @@ internal sealed class RequestRegistry(
     }
 
     // Discards detail still awaiting completion; already released requests are unaffected.
+    // Only requests with kept detail have buffers, and each of them is associated.
     public void Cutoff()
     {
         isCutOff = true;
-        foreach (var state in inFlight.Keys)
+        foreach (var state in associations.Values.Distinct())
             state.Cutoff(associations);
-        inFlight.Clear();
         associations.Clear();
     }
 
@@ -260,7 +258,7 @@ internal sealed class RequestRegistry(
             route,
             validationDetails
         );
-        if (completion.StatusCode == 500 && state.Exception is { } exception)
+        if (completion.StatusCode == 500 && state.CapturedException is { Exception: var exception })
             errorAggregates.AddServerError(consumer?.Identifier, entry.Method, route, exception);
         metrics.RecordRequest(
             entry.Method,
@@ -277,7 +275,6 @@ internal sealed class RequestRegistry(
     // Callbacks and queue submission run outside the request lock, after the single claim.
     private void Release(RequestState state)
     {
-        inFlight.TryRemove(state, out _);
         var detail = state.TakeDetail(associations);
         if (detail.Server is not { } server || detail.Transport is not { } transport)
             return;

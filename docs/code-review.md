@@ -216,6 +216,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `Export/SpanRedaction.cs:215, 238-255`
 - **Problem**: `StrictUtf8.GetString(bytes)` runs for every body. For JSON, the result is discarded, because `RedactJson` builds its own output. A 50 KB body becomes a 100 KB string on the large-object heap, and the redacted output is another one. Gen2 collections pause request threads. `Decompress` also allocates a new 50 KB buffer for each compressed body.
 - **Recommendation**: Validate with `System.Text.Unicode.Utf8.IsValid(bytes)`, and decode to a string only in the non-JSON fallback. Optionally reuse one decompression buffer; the worker is single-threaded.
+- **Decision**: Fixed with `Utf8.IsValid`; the body is decoded only in the non-JSON fallback. The decompression buffer is not reused.
 
 ### P4. Consumer change detection serializes and hashes on every request
 
@@ -357,6 +358,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
   - Add README sections "Disabling in development and tests" and "Storing the write token".
   - Add one sentence explaining that the user's sampler controls which requests get request logs and traces.
   - Log one Debug or Information line on activation, such as `Apitally started (env=prod)`, and one Debug line when TestServer suppression applies.
+- **Decision**: Rejected.
 
 ### I5. The NuGet README won't render correctly
 
@@ -399,6 +401,7 @@ Overall: the codebase is about 5.5k lines, close to apitally-js (about 5.6k), ev
 - **Location**: `SpanSnapshot.cs:12-49`, `Logging/LogSnapshot.cs:10-56`, `LogRecordSnapshot.cs:12-27`, `tests/Apitally.Tests/Support/TestSpans.cs:18-36`
 - **Problem**: `SpanSnapshot` has a 17-parameter constructor with adjacent parameters of the same type (`spanId`, `parentSpanId`, and a run of nullable strings), so swapping two of them still compiles. `LogSnapshot` has an 8-parameter constructor and two factories that pass `null, null` or `default` four times.
 - **Recommendation**: Use `{ get; internal init; }` properties with an internal parameterless constructor and object initializers. The public surface is unchanged, and this removes about 50 to 60 lines.
+- **Decision**: Fixed as recommended. The internal `LogSnapshot` marks `Timestamp` as `required`.
 
 ### S2. `RequestState` finalization keeps redundant state
 
@@ -417,6 +420,7 @@ Overall: the codebase is about 5.5k lines, close to apitally-js (about 5.6k), ev
   - Optionally derive the cutoff set from `associations`.
 
   This saves about 15 to 20 lines and makes the release-once logic easier to reason about, which matters given C1 and C2.
+- **Decision**: Applied all five, including removing `inFlight`; shutdown cutoff uses the distinct values of `associations`.
 
 ### S3. `TelemetryRuntime` has more lifecycle states than it uses
 

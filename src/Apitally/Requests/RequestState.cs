@@ -54,7 +54,6 @@ internal sealed class RequestState
     private (Exception Exception, DateTimeOffset Timestamp)? capturedException;
     private SpanSnapshot? server;
     private TransportCompletion? transport;
-    private bool isServerAssociated;
     private bool isServerComplete;
     private bool isTransportComplete;
     private bool isFinalized;
@@ -101,12 +100,12 @@ internal sealed class RequestState
         }
     }
 
-    public Exception? Exception
+    public (Exception Exception, DateTimeOffset Timestamp)? CapturedException
     {
         get
         {
             lock (sync)
-                return capturedException?.Exception;
+                return capturedException;
         }
     }
 
@@ -173,13 +172,7 @@ internal sealed class RequestState
             capturedException ??= (exception, DateTimeOffset.UtcNow);
     }
 
-    public (Exception Exception, DateTimeOffset Timestamp)? GetCapturedException()
-    {
-        lock (sync)
-            return capturedException;
-    }
-
-    public bool TryAssociate(
+    public void TryAssociate(
         ActivityTraceId traceId,
         ActivitySpanId spanId,
         ConcurrentDictionary<(ActivityTraceId, ActivitySpanId), RequestState> associations
@@ -188,11 +181,9 @@ internal sealed class RequestState
         lock (sync)
         {
             if (!IsDetailKept || isFinalized)
-                return false;
+                return;
             associationKeys.Add((traceId, spanId));
             associations[(traceId, spanId)] = this;
-            isServerAssociated |= spanId == ServerSpanId;
-            return true;
         }
     }
 
@@ -248,12 +239,7 @@ internal sealed class RequestState
         lock (sync)
         {
             RemoveAssociations(associations);
-            var detail = new RequestDetail(
-                IsDetailKept ? server : null,
-                [.. descendants],
-                [.. logs],
-                transport
-            );
+            var detail = new RequestDetail(server, [.. descendants], [.. logs], transport);
             descendants.Clear();
             logs.Clear();
             server = null;
@@ -282,7 +268,7 @@ internal sealed class RequestState
     private bool TryClaimFinalization()
     {
         var isAwaitingServer =
-            isServerAssociated
+            IsDetailKept
             && !isServerComplete
             && ServerActivity is { IsAllDataRequested: true, Recorded: true };
         if (isFinalized || !isTransportComplete || isAwaitingServer)
