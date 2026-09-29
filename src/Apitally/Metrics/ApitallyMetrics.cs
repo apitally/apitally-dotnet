@@ -20,6 +20,7 @@ internal sealed class ApitallyMetrics : IDisposable
     // Fixed per-histogram capacity; delta collection reclaims inactive attribute sets.
     private const int CardinalityLimit = 10_000;
 
+    private readonly object sync = new();
     private readonly Meter meter;
     private readonly MeterProvider provider;
     private readonly BaseExportingMetricReader reader;
@@ -36,7 +37,7 @@ internal sealed class ApitallyMetrics : IDisposable
     {
         var scope = new object();
         meter = new Meter(new MeterOptions(MeterName) { Scope = scope });
-        reader = new BaseExportingMetricReader(new SpoolExporter(resource, spool, diagnostics))
+        reader = new SynchronizedMetricReader(new SpoolExporter(resource, spool, diagnostics), sync)
         {
             TemporalityPreference = MetricReaderTemporalityPreference.Delta,
         };
@@ -97,11 +98,14 @@ internal sealed class ApitallyMetrics : IDisposable
             tags.Add("apitally.consumer.identifier", consumerIdentifier);
         if (statusCode >= 500)
             tags.Add("error.type", statusCode.ToString(CultureInfo.InvariantCulture));
-        requestDuration.Record(duration.TotalSeconds, tags);
-        if (requestSize is { } requestBytes)
-            requestBodySize.Record(requestBytes, tags);
-        if (responseSize is { } responseBytes)
-            responseBodySize.Record(responseBytes, tags);
+        lock (sync)
+        {
+            requestDuration.Record(duration.TotalSeconds, tags);
+            if (requestSize is { } requestBytes)
+                requestBodySize.Record(requestBytes, tags);
+            if (responseSize is { } responseBytes)
+                responseBodySize.Record(responseBytes, tags);
+        }
     }
 
     public bool Collect(int timeoutMilliseconds) => reader.Collect(timeoutMilliseconds);
@@ -113,6 +117,17 @@ internal sealed class ApitallyMetrics : IDisposable
     {
         provider.Dispose();
         meter.Dispose();
+    }
+
+    private sealed class SynchronizedMetricReader(BaseExporter<SdkMetric> exporter, object sync)
+        : BaseExportingMetricReader(exporter)
+    {
+        // Shutdown and provider disposal also collect through this override.
+        protected override bool OnCollect(int timeoutMilliseconds)
+        {
+            lock (sync)
+                return base.OnCollect(timeoutMilliseconds);
+        }
     }
 
     private sealed class SpoolExporter(

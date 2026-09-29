@@ -56,7 +56,7 @@ The existing test suite passes. Additional scratch tests expose the findings bel
 | B2 | Low | Large native file responses export an unexpected body marker |
 | V1 | Low | Adding `CancellationToken` loses MVC validation-source attribution |
 
-R1 is implemented. M1 is deferred as a synthetic upper-bound limitation. M2 needs a measured design decision: synchronizing collection must not introduce excessive request latency. The remaining low-severity findings have small, localized recommendations.
+R1 is implemented. M1 is deferred as a synthetic upper-bound limitation. M2's shared-lock fix is implemented and verified. The remaining low-severity findings have small, localized recommendations.
 
 ## Production findings
 
@@ -130,7 +130,13 @@ The deterministic reproduction placed duration in collection 1 and both sizes in
 
 Appending all mapped histograms in one payload does not fix measurements already separated during collection.
 
-**Recommendation:** Ensure related observations stay together across ordinary and final collection. Assess contention before choosing synchronization: a global lock around collection could add request latency. This deserves a measured design decision rather than an unconditional locking change.
+**Decision:** Implement one shared lock around the three histogram writes and a nested reader's `OnCollect` override. The override covers ordinary collection, shutdown, and disposal. Keep the existing exporter and public lifecycle methods unchanged. Accept that recording waits for the complete collection, including encoding and spool writes, rather than introduce a staged exporter handoff.
+
+**Measurements:** Local Release benchmarks on .NET 10 measured median whole-collection durations of 0.44 ms at 100 distinct attribute combinations, 4.23 ms at 1,000, and 71.55 ms at 10,000. Corresponding maxima were 1.44 ms, 10.33 ms, and 110.87 ms. These are collection durations, not production request-latency or loss-rate estimates; slower storage can increase waits. Request metrics are recorded in `OnCompleted`, after response processing.
+
+**Implementation:** Applied the shared lock and nested reader override. Warning-as-error build and formatting checks pass; full suites, including the temporary concurrency theory, passed on .NET 8 (168), .NET 9 (168), and .NET 10 (169).
+
+**Test scope decision:** Remove the added 85-line concurrency theory; its thread orchestration is disproportionate to the shared-lock change. Keep the existing tests unchanged and retain concurrency verification as investigative evidence. The controlled collection/shutdown/disposal probe passed, and the accelerated scratch probe exported 9,000 duration observations with zero orphan size points after synchronization.
 
 ### B1. Pipe capture ignores content types set in `OnStarting`
 
