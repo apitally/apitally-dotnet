@@ -1,8 +1,6 @@
 using Apitally.Tests.Support;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Apitally.Tests;
@@ -76,22 +74,6 @@ public class ApitallyServiceCollectionExtensionsTests
 
         Assert.Equal("before", options.AppVersion);
         Assert.Equal("after", options.Env);
-    }
-
-    [Fact]
-    public void RepeatedCallsRegisterServicesOnce()
-    {
-        var services = new ServiceCollection();
-
-        services.AddApitally();
-        services.AddApitally();
-
-        Assert.Single(services, service => service.ServiceType == typeof(IStartupFilter));
-        Assert.Single(services, service => service.ServiceType == typeof(IHostedService));
-        Assert.Single(
-            services,
-            service => service.ServiceType == typeof(IConfigureOptions<ApitallyOptions>)
-        );
     }
 
     private static ApitallyOptions ResolveOptions(

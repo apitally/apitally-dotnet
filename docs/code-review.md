@@ -503,6 +503,7 @@ Overall: the codebase is about 5.5k lines, close to apitally-js (about 5.6k), ev
 - **Recommendation**:
   - For the interval, advance the fake clock and assert when POSTs arrive.
   - For repeated registration, call `AddApitally()` twice on a real host and assert exactly one SERVER span and one copy of each log.
+- **Decision**: `ServerExportIntervalIsClamped` now asserts export timing with the fake clock, and `ExportWorker.Interval` is private (S7). `RepeatedCallsRegisterServicesOnce` is deleted: the test app and most integration tests already call `AddApitally()` twice and assert a single SERVER span and exact log lists.
 
 ### S10. Style nits
 
@@ -512,6 +513,7 @@ Overall: the codebase is about 5.5k lines, close to apitally-js (about 5.6k), ev
 - **`ExecutionContext.SuppressFlow()`**: applied twice (`TelemetryRuntime.cs:102`, `ExportWorker.cs:44`). Keep only the outer one.
 - **`ExportWorker` constructor**: an explicit constructor that only assigns fields, while the rest of the codebase uses primary constructors.
 - **Duplicated comment**: the same comment appears twice (`ApitallyMiddleware.cs:82`, `ValidationCapture.cs:46`). Keep it in one place.
+- **Decision**: Fixed the logger condition, the `ExportWorker` primary constructor and the duplicated comment. The `SuppressFlow` item is invalid: the outer block covers only construction, and `ExportWorker.Start` runs outside it. The `GetOrCreate` and `EncodeRequests` items are rejected.
 
 ## Design questions raised
 

@@ -43,7 +43,6 @@ internal static class ValidationCapture
         });
     }
 
-    // Validation responses are retained for parsing even when body capture is off.
     public static bool IsValidationResponse(int statusCode, string? contentType)
     {
         if (statusCode is not (400 or 422))

@@ -84,7 +84,7 @@ internal sealed class ApitallyLoggerProvider : ILoggerProvider
         )
         {
             if (
-                !IsEnabled(logLevel)
+                logLevel == LogLevel.None
                 || provider.capture is not { } capture
                 || Activity.Current is not { } activity
                 || !capture.Registry.TryGet(activity.TraceId, activity.SpanId, out var request)

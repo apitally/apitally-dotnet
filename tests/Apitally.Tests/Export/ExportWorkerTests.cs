@@ -103,12 +103,16 @@ public sealed class ExportWorkerTests : IAsyncDisposable
         await StartAsync();
         receiver.Respond = _ => (200, "1");
         spool.Append(TelemetrySignal.Metrics, [1]);
-
         await AdvanceAsync(TimeSpan.FromSeconds(2.1));
         await receiver.WaitForExportsAsync(1);
         await Task.Delay(100);
+        spool.Append(TelemetrySignal.Metrics, [2]);
 
-        Assert.Equal(TimeSpan.FromSeconds(5), worker.Interval);
+        // The clamped 5-second interval has up to 10% jitter.
+        await AdvanceAsync(TimeSpan.FromSeconds(4.4));
+        Assert.Single(receiver.Exports);
+        await AdvanceAsync(TimeSpan.FromSeconds(1.2));
+        await receiver.WaitForExportsAsync(1);
     }
 
     public async ValueTask DisposeAsync()
