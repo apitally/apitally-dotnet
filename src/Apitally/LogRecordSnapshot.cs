@@ -25,8 +25,14 @@ public sealed class LogRecordSnapshot
 
     /// <summary>The time the record was logged, in UTC.</summary>
     public DateTime Timestamp { get; }
+
+    /// <summary>The logger's category name, usually the logging class's full name.</summary>
     public string CategoryName { get; }
+
+    /// <summary>The record's log level.</summary>
     public LogLevel LogLevel { get; }
+
+    /// <summary>The record's event ID.</summary>
     public EventId EventId { get; }
 
     /// <summary>The rendered log message.</summary>

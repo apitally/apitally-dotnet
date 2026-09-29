@@ -89,6 +89,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
 - **Location**: `Tracing/ApitallySpanProcessor.cs:36-37`, `Requests/RequestRegistry.cs:47`
 - **Problem**: `ActivityListener`s are process-wide, and `HttpContextAccessor` uses a static `AsyncLocal`. As a result, host A's processor creates the `RequestState` on host B's `HttpContext`. B's middleware then finds that state and uses it. B's metrics, traces and error aggregates go through A's configuration, redaction rules, write token and env. With different `SampleOnResponse` callbacks, a request to B ran A's callback. Multi-host coordination is outside v1 scope (design.md "Hosting support boundary"). However, design.md §2 states that "host association correctly filters foreign requests", and the implementation does not. A realistic trigger is a public host and an admin host in the same process.
 - **Recommendation**: In `OnStart`, ignore contexts that belong to another runtime (`context.RequestServices.GetService<TelemetryRuntime>() != runtime`). In `Get`, ignore a `RequestState` created by a different registry.
+- **Decision**: Rejected as outside the documented v1 single-host boundary. design.md "Multiple hosts" now describes the actual behavior instead of claiming foreign requests are filtered.
 
 ### C4. Route attribution under the exception handler, status-code pages and PathBase
 
@@ -129,6 +130,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
 - **Location**: `Hosting/RuntimeConfiguration.cs:82`, `Export/ExportHttpClient.cs:65-75, 103`
 - **Problem**: `Env` is sent unchanged as the `Apitally-Env` header. With a value such as `"Produktion Süd"`, `SocketsHttpHandler` throws `HttpRequestException` because request headers must be ASCII. The exporter classifies this as a retryable connection error. Every POST fails, the oldest spool file blocks every signal, and the application never shows as online. The user sees only Debug messages, plus an hourly "could not be delivered" warning that gives no cause. The spec says the server slugifies env, so users can reasonably expect non-ASCII names to work.
 - **Recommendation**: Validate `Env` in `Resolve`. If it contains non-ASCII or control characters, log an Error and disable the SDK, the same as for an invalid token. Do not silently fall back to `dev`. An alternative, if the product prefers it, is to slugify on the client exactly as the server does.
+- **Decision**: Rejected as overcautious. Environment names are short ASCII identifiers in practice.
 
 ### R3. Delivery failures cannot be diagnosed
 
@@ -143,6 +145,7 @@ D1, D2 and D4 each export secrets or personal data that the shared spec says mus
   - Add one deduplicated Warning, including the exception, when a connection failure keeps recurring. Reset it on the next accepted export, the same pattern `SpoolWriteFailed` uses.
   - Make `ExportCycleFailed` a deduplicated Warning.
   - Log the exception in `DelegatingExporter`.
+- **Decision**: Rejected.
 
 ### R4. Suppressed TestServer hosts still log "write token is missing" at Error
 
@@ -273,6 +276,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `Export/SpanRedaction.cs:222-236`, `AspNetCore/BodyCapture.cs:11-20`. Spec §6.3 (allow-list) and §6.7 (body field redaction).
 - **Problem**: `application/x-ndjson` is on the capture allow-list. `Utf8JsonReader` rejects the second top-level value, and the code falls back to the raw text. `{"password":"hunter2"}\n{"token":"abc"}` is exported unchanged. Python's `json.loads` and JavaScript's `JSON.parse` fall through in the same way.
 - **Recommendation**: Raise this against the shared spec. The smaller useful change is to redact each non-empty line separately, and fall back to text only if a line fails to parse. The alternative is to remove NDJSON from the allow-list in all SDKs.
+- **Decision**: Rejected.
 
 ### D3. Outgoing URLs with query secrets are captured unredacted from `HttpClient` logs on .NET 8
 
@@ -309,6 +313,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `Apitally.csproj`, `ApitallyOptions.cs:24-30`, `SpanSnapshot.cs:51-69`, `LogRecordSnapshot.cs:31-33`, `ApitallyExtensions.cs:16`
 - **Problem**: `GenerateDocumentationFile` is off, so the NuGet package ships no `Apitally.xml`, and IntelliSense shows nothing. Several callback rules exist only in those comments, for example that `null` means "use `SampleRate`" or "redact". Enabling the file produces 24 CS1591 warnings for undocumented members.
 - **Recommendation**: Enable `GenerateDocumentationFile`, document the 24 members, and let `TreatWarningsAsErrors` (I3) keep the documentation complete.
+- **Decision**: Fixed as recommended. Also covers I2: `SpanSnapshot.Attributes` documents its value types.
 
 ### I2. Callback attribute value types surprise .NET developers
 
@@ -316,6 +321,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `SpanSnapshot.cs:64`, `Export/AttributeValues.cs:44-56`, `Tracing/SpanSnapshots.cs:78`
 - **Problem**: Attribute values are normalized to OTLP types, so `int` becomes `long`. A developer who writes `(int)span.Attributes["http.response.status_code"]` gets an `InvalidCastException`. The SDK catches it and keeps the request with a single warning, so the filter silently does nothing.
 - **Recommendation**: Keep the design and document the value types on `Attributes`: `string`, `bool`, `long`, `double`, arrays of these, or `null`. Name the common keys, and add a `SampleOnResponse` example to the README.
+- **Decision**: Documented the value types on `SpanSnapshot.Attributes` as part of I1.
 
 ### I3. Packaging gaps: symbols, analyzers, deterministic build, icon
 
@@ -335,6 +341,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
   - Add a 128x128 icon.
   - Put the description on one line.
   - Switch to NuGet trusted publishing.
+- **Decision**: Applied all except `AnalysisLevel=latest-recommended`, whose CA1001 and CA2215 warnings flag deliberate lifecycle choices. Trusted publishing needs a nuget.org policy for this repository and workflow, plus a `NUGET_USER` secret.
 
 ### I4. First-run experience and README gaps
 
