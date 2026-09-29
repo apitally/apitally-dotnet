@@ -53,6 +53,7 @@ internal sealed class RequestRegistry(
             request.Path.Value ?? "",
             request.QueryString.HasValue ? request.QueryString.Value![1..] : null,
             request.Headers.UserAgent.Count > 0 ? request.Headers.UserAgent.ToString() : null,
+            request.Headers.ContentEncoding,
             IsWebSocketRequest(context)
         );
         var isObserved = serverActivity?.Recorded == true && resource is not null && !isCutOff;
@@ -90,7 +91,7 @@ internal sealed class RequestRegistry(
         configuration.CaptureRequestBody
         && state.IsDetailKept
         && BodyCapture.IsAllowedContentType(context.Request.ContentType)
-        && BodyCapture.IsSupportedContentEncoding(context.Request.Headers.ContentEncoding);
+        && BodyCapture.IsSupportedContentEncoding(state.Entry.ContentEncoding);
 
     public bool IsResponseBodyCaptured(HttpContext context, RequestState state) =>
         configuration.CaptureResponseBody
@@ -215,10 +216,7 @@ internal sealed class RequestRegistry(
                 captureDetail && configuration.CaptureResponseHeaders
                     ? CopyHeaders(response.Headers)
                     : null,
-            RequestBody = requestCapture?.GetBody(
-                isRequestComplete,
-                request.Headers.ContentEncoding
-            ),
+            RequestBody = requestCapture?.GetBody(isRequestComplete, state.Entry.ContentEncoding),
             ResponseBody = IsResponseBodyCaptured(context, state)
                 ? responseCapture?.GetBody(isResponseComplete, response.Headers.ContentEncoding)
                 : null,

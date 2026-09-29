@@ -297,12 +297,14 @@ internal sealed class RequestState
     }
 }
 
-// Request values read when the request entered the pipeline.
+// Request values read when the request entered the pipeline. Content-Encoding is read here
+// because request decompression middleware removes it.
 internal sealed record RequestEntry(
     string Method,
     string PathBase,
     string Path,
     string? Query,
     string? UserAgent,
+    string? ContentEncoding,
     bool IsWebSocket
 );

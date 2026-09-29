@@ -259,6 +259,7 @@ Context: Kestrel awaits `OnCompleted` callbacks before it reads the next HTTP/1.
 - **Location**: `Requests/RequestRegistry.cs:220-223`, `Requests/RequestRegistry.cs:83-87`, `Export/SpanRedaction.cs:199-203, 233-253`. Spec §6.3: "Compressed bodies MUST be decompressed before masking and field redaction."
 - **Problem**: Apitally's middleware runs outermost, so it captures the compressed bytes. ASP.NET Core's `RequestDecompressionMiddleware` runs later and removes the `Content-Encoding` request header. `CompleteTransport` reads `request.Headers.ContentEncoding` after the request completes, finds it empty, and treats the gzip bytes as uncompressed. UTF-8 decoding fails, so the raw bytes are exported as a bytes-valued `apitally.request.body`. The masking callbacks also receive gzip bytes. For example, a gzip POST of `{"user":"a","password":"hunter2"}` was exported as bytes that decompress to the original JSON, password included. The body is written to the spool on disk and then sent to Apitally. Any API that accepts gzip JSON from mobile or IoT clients is affected.
 - **Recommendation**: Record the request `Content-Encoding` at middleware entry, in `RequestEntry`. Use that value for both `IsSupportedContentEncoding` and `GetBody`. Add an end-to-end test with `UseRequestDecompression`.
+- **Decision**: Fixed as recommended. `RequestEntry.ContentEncoding` is read at entry; covered by `ApitallyMiddlewareTests.DecompressedRequestBodyIsDecodedAndRedacted`.
 
 ### D2. NDJSON bodies are captured but never field-redacted
 

@@ -32,6 +32,28 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task DecompressedRequestBodyIsDecodedAndRedacted()
+    {
+        await StartAsync(decompressRequests: true);
+        using var compressed = new MemoryStream();
+        using (var gzip = new GZipStream(compressed, CompressionMode.Compress))
+            gzip.Write(Encoding.UTF8.GetBytes("""{"id":1,"name":"a","password":"p"}"""));
+        using var content = new ByteArrayContent(compressed.ToArray());
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        content.Headers.ContentEncoding.Add("gzip");
+
+        using var response = await host.Client.PostAsync("/items", content);
+        await host.StopAsync();
+
+        Assert.True(response.IsSuccessStatusCode);
+        var attributes = receiver.Spans().Server().Attributes();
+        Assert.Equal(
+            """{"id":1,"name":"a","password":"[REDACTED]"}""",
+            attributes["apitally.request.body"]
+        );
+    }
+
+    [Fact]
     public async Task RequestBodyReadThroughPipeReaderIsCaptured()
     {
         await StartAsync();
@@ -235,7 +257,11 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
         File.Delete(file);
     }
 
-    private async Task StartAsync(bool compress = false, bool useExceptionHandler = false)
+    private async Task StartAsync(
+        bool compress = false,
+        bool useExceptionHandler = false,
+        bool decompressRequests = false
+    )
     {
         receiver = await OtlpReceiver.StartAsync();
         host = await ApplicationHost.StartMinimalAsync(
@@ -254,11 +280,15 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
                         options.MimeTypes = ["text/plain"];
                         options.Providers.Add<GzipCompressionProvider>();
                     });
+                if (decompressRequests)
+                    builder.Services.AddRequestDecompression();
             },
             app =>
             {
                 if (compress)
                     app.UseResponseCompression();
+                if (decompressRequests)
+                    app.UseRequestDecompression();
                 if (useExceptionHandler)
                     app.UseExceptionHandler(error =>
                         error.Run(context =>
