@@ -2,9 +2,10 @@ using Apitally.Export;
 
 namespace Apitally.AspNetCore;
 
-// Byte counts and bounded capture for one body direction. Eligibility is decided from headers
-// before any bytes are retained, and counts continue independently of capture.
-internal sealed class BodyCapture(Func<bool> isEligible, Func<long?> declaredLength)
+// Byte counts and bounded capture for one body direction. Eligibility is decided from headers,
+// and counts continue independently of capture. While eligibility is undecided (null), bytes are
+// retained provisionally and the decision is requested again on the next use.
+internal sealed class BodyCapture(Func<bool?> isEligible, Func<long?> declaredLength)
 {
     public const int MaxBodySize = SpanRedaction.MaxBodySize;
     private const int InitialBufferSize = 4_096;
@@ -53,7 +54,7 @@ internal sealed class BodyCapture(Func<bool> isEligible, Func<long?> declaredLen
     // declared length when known and doubles as needed.
     public int Stage(ReadOnlySpan<byte> bytes)
     {
-        if (!IsCapturing() || bytes.Length > MaxBodySize - used)
+        if (!IsCapturing() || bytes.Length > MaxBodySize - Count)
             return 0;
         var required = used + bytes.Length;
         if (buffer is null || buffer.Length < required)
@@ -73,7 +74,7 @@ internal sealed class BodyCapture(Func<bool> isEligible, Func<long?> declaredLen
         if (Count > MaxBodySize)
         {
             // A body is never exported truncated.
-            IsTooLarge = true;
+            IsTooLarge = eligible == true;
             buffer = null;
             used = 0;
             return;
@@ -133,9 +134,16 @@ internal sealed class BodyCapture(Func<bool> isEligible, Func<long?> declaredLen
         if (eligible is null)
         {
             eligible = isEligible();
-            // A declared oversized body yields the marker without retaining a byte.
-            if (eligible.Value && declaredLength() > MaxBodySize)
+            if (eligible is null)
+                return !IsIncomplete && !IsBypassed;
+            // An oversized declared or already counted body yields the marker without its bytes.
+            if (eligible.Value && (declaredLength() > MaxBodySize || Count > MaxBodySize))
                 IsTooLarge = true;
+            if (!eligible.Value || IsTooLarge)
+            {
+                buffer = null;
+                used = 0;
+            }
         }
         return eligible.Value && !IsTooLarge && !IsIncomplete && !IsBypassed;
     }

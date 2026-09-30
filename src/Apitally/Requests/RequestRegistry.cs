@@ -99,6 +99,25 @@ internal sealed class RequestRegistry(
         && BodyCapture.IsAllowedContentType(context.Response.ContentType)
         && BodyCapture.IsSupportedContentEncoding(context.Response.Headers.ContentEncoding);
 
+    // Validation responses are retained for parsing even when body capture is off. Until the
+    // response starts, OnStarting callbacks can still set its content type, so eligibility stays
+    // undecided while capture could still apply.
+    public bool? IsResponseBodyRetained(HttpContext context, RequestState state)
+    {
+        var response = context.Response;
+        var isRetained =
+            IsResponseBodyCaptured(context, state)
+            || ValidationCapture.IsValidationResponse(response.StatusCode, response.ContentType);
+        var mayBeRetained =
+            isRetained
+            || (
+                response.ContentType is null
+                && configuration.CaptureResponseBody
+                && state.IsDetailKept
+            );
+        return !response.HasStarted && mayBeRetained ? null : isRetained;
+    }
+
     public bool TryGet(ActivityTraceId traceId, ActivitySpanId spanId, out RequestState state) =>
         associations.TryGetValue((traceId, spanId), out state!);
 

@@ -79,14 +79,8 @@ internal sealed class ApitallyMiddleware(RequestDelegate next, TelemetryRuntime 
                 () => registry.IsRequestBodyCaptured(context, state),
                 () => request.ContentLength
             );
-            // Validation responses are retained for parsing even when body capture is off.
             state.ResponseBody = new BodyCapture(
-                () =>
-                    registry.IsResponseBodyCaptured(context, state)
-                    || ValidationCapture.IsValidationResponse(
-                        response.StatusCode,
-                        response.ContentType
-                    ),
+                () => registry.IsResponseBodyRetained(context, state),
                 () => response.ContentLength
             );
             request.Body = new ObservedStream(request.Body, state.RequestBody, isRequest: true);

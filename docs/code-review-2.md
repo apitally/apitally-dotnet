@@ -56,7 +56,7 @@ The existing test suite passes. Additional scratch tests expose the findings bel
 | B2 | Low | Large native file responses export an unexpected body marker |
 | V1 | Low | Adding `CancellationToken` loses MVC validation-source attribution |
 
-R1 is implemented. M1 is deferred as a synthetic upper-bound limitation. M2's shared-lock fix is implemented and verified. The remaining low-severity findings have small, localized recommendations.
+R1 is implemented. M1 is deferred as a synthetic upper-bound limitation. M2's shared-lock fix is implemented and verified. B1 and E1 are implemented. The remaining low-severity findings have small, localized recommendations.
 
 ## Production findings
 
@@ -150,6 +150,10 @@ When an `OnStarting` callback sets `ContentType = "text/plain"`, an initially un
 
 **Recommendation:** Account for response-header finalization when deciding pipe-capture eligibility. Preserve bounded staging, streaming, and backpressure. Add a paired stream/pipe regression test using the same `OnStarting` callback.
 
+**Decision:** Accepted option 1: defer the response eligibility decision until the response starts. Before the start, stage bytes provisionally (within the 50 KB limit) only when capture could still apply: headers currently eligible, or no content type yet while response capture is enabled for the request. Re-evaluate against the final headers once the response has started and discard the provisional copy if ineligible. Rejected unconditional provisional copying, which would add a copy to every .NET 10 `WriteAsJsonAsync` response even with capture off.
+
+**Implementation:** Applied. `BodyCapture` eligibility is now `Func<bool?>`; `null` stages provisionally and asks again on the next use. `RequestRegistry.IsResponseBodyRetained` returns `null` before `Response.HasStarted` while capture could apply. Oversize handling during the provisional phase stops staging and defers the `[BODY_TOO_LARGE]` marker to the final decision. The existing paired `ResponseBodiesAreCapturedFromStreamAndWriter` test now sets the pipe route's content type in `OnStarting`; it fails without the fix. Updated the design's transport-direction section. Warning-as-error build and formatting checks pass; full suites pass on .NET 8 (165), .NET 9 (165), and .NET 10 (166).
+
 ### E1. Memory spool retains two compressed buffers
 
 - **Severity:** Low.
@@ -166,6 +170,10 @@ A 3 MB incompressible payload retained:
 Three such queued files account for about 9 MB in spool bookkeeping while retaining about 21.6 MB of compressed buffers. This is unnecessary overhead in memory fallback, such as a read-only container during an export outage.
 
 **Recommendation:** Release the stream reference after sealing, or retain only one buffer representation. No additional lifecycle abstraction is needed.
+
+**Decision:** Accepted option 1: release the stream reference after copying it into `closedMemory`. Rejected returning the stream's buffer as a segment, which would change the `ReadStoredBytes` return type and its sending code.
+
+**Implementation:** Applied. `SpoolFile.memoryStream` is no longer readonly and is set to `null` in `Close()`. No test added; the change only affects garbage-collector reachability. Warning-as-error build and formatting checks pass; full suites pass on .NET 8 (165), .NET 9 (165), and .NET 10 (166).
 
 ### H1. Failed pipeline configuration leaks the owned tracing provider
 

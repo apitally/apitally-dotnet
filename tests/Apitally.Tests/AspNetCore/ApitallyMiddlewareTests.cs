@@ -344,7 +344,12 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
             "/write-pipe",
             async (HttpContext context) =>
             {
-                context.Response.ContentType = "text/plain";
+                // Pipe writes are advanced before the response starts and OnStarting runs.
+                context.Response.OnStarting(() =>
+                {
+                    context.Response.ContentType = "text/plain";
+                    return Task.CompletedTask;
+                });
                 var bytes = Encoding.UTF8.GetBytes("pipe text");
                 bytes.CopyTo(context.Response.BodyWriter.GetSpan(bytes.Length));
                 context.Response.BodyWriter.Advance(bytes.Length);
