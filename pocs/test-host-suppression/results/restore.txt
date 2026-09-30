@@ -1,3 +1,0 @@
-+ dotnet restore Driver/Driver.csproj --locked-mode --disable-parallel
-  Determining projects to restore...
-  All projects are up-to-date for restore.

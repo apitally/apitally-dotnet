@@ -1,6 +1,0 @@
-$ dotnet --list-sdks
-6.0.428 [/usr/local/share/dotnet/sdk]
-7.0.410 [/usr/local/share/dotnet/sdk]
-8.0.406 [/usr/local/share/dotnet/sdk]
-9.0.200 [/usr/local/share/dotnet/sdk]
-10.0.301 [/usr/local/share/dotnet/sdk]
