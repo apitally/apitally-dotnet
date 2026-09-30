@@ -51,10 +51,14 @@ internal sealed class BodyCapture(Func<bool?> isEligible, Func<long?> declaredLe
 
     // Copies bytes into the bounded buffer while caller-owned memory is still valid. The copy
     // only counts once Commit confirms the operation was accepted. The buffer starts at the
-    // declared length when known and doubles as needed.
+    // declared length when known and doubles as needed. A declared oversized body is never staged.
     public int Stage(ReadOnlySpan<byte> bytes)
     {
-        if (!IsCapturing() || bytes.Length > MaxBodySize - Count)
+        if (
+            !IsCapturing()
+            || bytes.Length > MaxBodySize - Count
+            || declaredLength() > MaxBodySize
+        )
             return 0;
         var required = used + bytes.Length;
         if (buffer is null || buffer.Length < required)

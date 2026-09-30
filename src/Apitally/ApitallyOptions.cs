@@ -8,7 +8,10 @@ namespace Apitally;
 /// </summary>
 public sealed class ApitallyOptions
 {
-    /// <summary>Write token for the Apitally app. Falls back to <c>APITALLY_WRITE_TOKEN</c>.</summary>
+    /// <summary>
+    /// Write token for the Apitally app. <c>APITALLY_WRITE_TOKEN</c> overrides the configuration
+    /// section.
+    /// </summary>
     public string? WriteToken { get; set; }
 
     /// <summary>

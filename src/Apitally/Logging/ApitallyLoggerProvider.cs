@@ -27,15 +27,16 @@ internal sealed class ApitallyLoggerProvider : ILoggerProvider
 
     public void Dispose() => Detach();
 
-    // SDK and OTel diagnostics must never feed back into the export. Framework request and
-    // HttpClient logs repeat what the request log and CLIENT spans already show, and HttpClient
-    // logs include unredacted query strings on .NET 8.
+    // SDK and OTel diagnostics must never feed back into the export. Framework request, HttpClient
+    // and YARP forwarder logs repeat what the request log and CLIENT spans already show, and
+    // HttpClient logs on .NET 8 and YARP forwarder logs include unredacted query strings.
     private static bool IsExcludedCategory(string categoryName) =>
         categoryName == SdkDiagnostics.CategoryName
         || categoryName.StartsWith(SdkDiagnostics.CategoryName + ".", StringComparison.Ordinal)
         || categoryName.StartsWith("OpenTelemetry", StringComparison.Ordinal)
         || categoryName.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal)
-        || categoryName.StartsWith("System.Net.Http.HttpClient", StringComparison.Ordinal);
+        || categoryName.StartsWith("System.Net.Http.HttpClient", StringComparison.Ordinal)
+        || categoryName.StartsWith("Yarp.ReverseProxy.Forwarder", StringComparison.Ordinal);
 
     // Exceptions, a replacement record or an empty body drop the record rather than export
     // unmasked content.

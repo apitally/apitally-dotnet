@@ -235,7 +235,7 @@ In either case, a Production app reports as `dev`. JSON `null` and an empty `API
 
 **Recommendation:** Exclude categories starting with `Yarp.ReverseProxy.Forwarder`, or accept and document this next to D3.
 
-**Decision:** Pending.
+**Decision:** Fixed as recommended. `Yarp.ReverseProxy.Forwarder.*` categories are excluded; design.md and migration.md are updated. No test was added, consistent with D3.
 
 ### B4. Chunked brotli and deflate request bodies are neither captured nor sized
 
@@ -248,7 +248,7 @@ Behind `UseRequestDecompression`, a chunked request body counts as complete only
 
 **Recommendation:** Accept and document. A fix would require reading request bytes that the application did not consume.
 
-**Decision:** Pending.
+**Decision:** Accepted and documented in design.md section 7. The failure mode omits data rather than exporting incorrect data, and the combination is rare.
 
 ### B5. Provisional staging ignores an oversized declared `Content-Length`
 
@@ -263,7 +263,7 @@ Before B1, an eligible response with a declared `Content-Length` above 50,000 by
 
 **Recommendation:** In `Stage`, stage nothing when the declared length exceeds the maximum body size.
 
-**Decision:** Pending.
+**Decision:** Fixed as recommended. No test was added, because the exported result does not change.
 
 ## Documentation and test findings
 
@@ -273,7 +273,7 @@ Before B1, an eligible response with a declared `Content-Length` above 50,000 by
 
 **Recommendation:** Say that `APITALLY_WRITE_TOKEN` overrides the configuration section, matching the wording on `Env`.
 
-**Decision:** Pending.
+**Decision:** Fixed as recommended.
 
 ### Doc2. `IApitally.StartActivity` `<returns>` doc is still wrong
 
