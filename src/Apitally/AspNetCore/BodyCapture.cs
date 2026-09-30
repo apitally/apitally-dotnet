@@ -54,11 +54,7 @@ internal sealed class BodyCapture(Func<bool?> isEligible, Func<long?> declaredLe
     // declared length when known and doubles as needed. A declared oversized body is never staged.
     public int Stage(ReadOnlySpan<byte> bytes)
     {
-        if (
-            !IsCapturing()
-            || bytes.Length > MaxBodySize - Count
-            || declaredLength() > MaxBodySize
-        )
+        if (!IsCapturing() || bytes.Length > MaxBodySize - Count || declaredLength() > MaxBodySize)
             return 0;
         var required = used + bytes.Length;
         if (buffer is null || buffer.Length < required)
