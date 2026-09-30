@@ -40,8 +40,8 @@ public class OtlpLogMapperTests
         Assert.Equal("Order delayed", log.Body.StringValue);
         Assert.Equal(SeverityNumber.Warn, log.SeverityNumber);
         Assert.Equal("OrderDelayed", log.EventName);
-        Assert.Equal(traceId.ToHexString(), Hex(log.TraceId));
-        Assert.Equal(spanId.ToHexString(), Hex(log.SpanId));
+        Assert.Equal(traceId.ToHexString(), log.TraceId.Hex());
+        Assert.Equal(spanId.ToHexString(), log.SpanId.Hex());
         Assert.NotEqual(0ul, log.TimeUnixNano);
         Assert.Equal(
             new Dictionary<string, object?>
@@ -102,7 +102,4 @@ public class OtlpLogMapperTests
 
     private static ExportLogsServiceRequest Map(params LogSnapshot[] logs) =>
         (ExportLogsServiceRequest)OtlpLogMapper.BuildRequest(logs, TestSpans.Resource);
-
-    private static string Hex(Google.Protobuf.ByteString bytes) =>
-        Convert.ToHexString(bytes.ToByteArray()).ToLowerInvariant();
 }

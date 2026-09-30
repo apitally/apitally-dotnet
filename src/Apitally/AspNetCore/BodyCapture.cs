@@ -106,11 +106,11 @@ internal sealed class BodyCapture(Func<bool?> isEligible, Func<long?> declaredLe
     // The oversized marker is exported even for an incomplete stream; partial bytes never are.
     public CapturedBody? GetBody(bool isComplete, string? contentEncoding)
     {
-        if (!IsCapturing() && !IsTooLarge)
+        if (IsBypassed || (!IsCapturing() && !IsTooLarge))
             return null;
         if (IsTooLarge)
             return CapturedBody.TooLarge;
-        if (!isComplete || IsIncomplete || IsBypassed || used == 0 || used != Count)
+        if (!isComplete || IsIncomplete || used == 0 || used != Count)
             return null;
         return new CapturedBody(GetBytes(), contentEncoding);
     }

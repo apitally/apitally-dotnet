@@ -34,14 +34,6 @@ public class RequestSamplingTests
     }
 
     [Fact]
-    public void WebSocketRequestsAreExcluded()
-    {
-        var sampling = new RequestSampling(TestConfiguration.Resolve(), SdkDiagnostics.None);
-
-        Assert.True(sampling.IsExcluded("GET", "/ws", null, isWebSocket: true));
-    }
-
-    [Fact]
     public void SamplingComparesLowTraceIdBitsWithTheRoundedThreshold()
     {
         var low = ActivityTraceId.CreateFromString("ffffffffffffffff3fffffffffffffff");

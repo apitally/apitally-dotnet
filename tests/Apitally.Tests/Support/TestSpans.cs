@@ -10,18 +10,14 @@ internal static class TestSpans
 
     public static SpanSnapshot Create(
         Dictionary<string, object?>? attributes = null,
-        ActivityKind kind = ActivityKind.Server,
-        string name = "GET /items/{id}",
-        ActivitySpanId parentSpanId = default,
-        ActivityTraceId? traceId = null
+        ActivityKind kind = ActivityKind.Server
     ) =>
         new()
         {
-            TraceId = traceId ?? ActivityTraceId.CreateRandom(),
+            TraceId = ActivityTraceId.CreateRandom(),
             SpanId = ActivitySpanId.CreateRandom(),
-            ParentSpanId = parentSpanId,
             TraceFlags = ActivityTraceFlags.Recorded,
-            DisplayName = name,
+            DisplayName = "GET /items/{id}",
             Kind = kind,
             StartTimeUtc = new DateTime(2026, 9, 28, 10, 0, 0, DateTimeKind.Utc),
             Duration = TimeSpan.FromMilliseconds(25),

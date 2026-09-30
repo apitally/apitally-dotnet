@@ -180,11 +180,18 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
         catch (OperationCanceledException) { }
     }
 
-    // Covers hosts that fail after activation, for example when the server cannot bind.
+    // Covers hosts that fail before activation, when pipeline configuration throws, or after
+    // it, for example when the server cannot bind.
     public async ValueTask DisposeAsync()
     {
         lock (sync)
         {
+            if (state == RuntimeState.Prepared)
+            {
+                state = RuntimeState.Stopped;
+                tracing!.DisposeOwnedProvider();
+                return;
+            }
             if (state != RuntimeState.Active)
                 return;
             state = RuntimeState.Stopped;

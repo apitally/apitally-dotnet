@@ -55,7 +55,9 @@ internal sealed class ConsumerUpdates(InternalEvents events)
                 : new RequestConsumer(normalizedIdentifier);
         consumer.Name = Normalize(name, MaxNameLength) ?? consumer.Name;
         consumer.Group = Normalize(group, MaxNameLength) ?? consumer.Group;
-        foreach (var (rawKey, rawValue) in attributes ?? new Dictionary<string, string?>())
+        if (attributes is null)
+            return consumer;
+        foreach (var (rawKey, rawValue) in attributes)
         {
             var key = rawKey?.Trim();
             var value = rawValue?.Trim() is { Length: > 0 } trimmed ? trimmed : null;

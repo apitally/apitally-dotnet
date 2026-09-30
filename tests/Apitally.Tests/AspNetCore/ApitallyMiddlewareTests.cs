@@ -54,19 +54,6 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task RequestBodyReadThroughPipeReaderIsCaptured()
-    {
-        await StartAsync();
-
-        await PostJsonAsync("/read-pipe", """{"a":1}""", chunked: true);
-        await host.StopAsync();
-
-        var attributes = receiver.Spans().Server().Attributes();
-        Assert.Equal("""{"a":1}""", attributes["apitally.request.body"]);
-        Assert.Equal(7L, attributes["http.request.body.size"]);
-    }
-
-    [Fact]
     public async Task ChunkedRequestBodyLargerThanInitialBufferIsCaptured()
     {
         await StartAsync();

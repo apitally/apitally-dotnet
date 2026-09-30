@@ -56,7 +56,7 @@ The existing test suite passes. Additional scratch tests expose the findings bel
 | B2 | Low | Large native file responses export an unexpected body marker |
 | V1 | Low | Adding `CancellationToken` loses MVC validation-source attribution |
 
-R1 is implemented. M1 is deferred as a synthetic upper-bound limitation. M2's shared-lock fix is implemented and verified. B1 and E1 are implemented. The remaining low-severity findings have small, localized recommendations.
+R1 is implemented. M1 is deferred as a synthetic upper-bound limitation. M2's shared-lock fix is implemented and verified. B1, E1, H1, B2, and V1 are implemented. All test findings and cleanup items are resolved.
 
 ## Production findings
 
@@ -195,6 +195,10 @@ This is distinct from the existing failed-server-bind test: that path reaches `A
 
 **Recommendation:** Dispose owned tracing resources when the runtime is `Prepared`, without accessing the not-yet-created registry or worker. Add one failed-pipeline-configuration disposal test.
 
+**Decision:** Accepted option 1: clean up the `Prepared` state in `TelemetryRuntime.DisposeAsync()`. Rejected catching the failure in the startup filter, which would add a second cleanup path only for code that neither disposes the failed host nor exits.
+
+**Implementation:** Applied. `DisposeAsync()` now moves a `Prepared` runtime to `Stopped` and disposes the owned tracer provider. Added `ContainerDisposalRemovesTracingAfterFailedPipelineConfiguration`: a startup filter registered after Apitally's throws during pipeline configuration, and the test asserts that an activity source has listeners before disposal and none after. It fails without the fix. Warning-as-error build and formatting checks pass; full suites pass on .NET 8 (166), .NET 9 (166), and .NET 10 (167).
+
 ### B2. Large native file responses export an unexpected body marker
 
 - **Severity:** Low.
@@ -206,6 +210,10 @@ Native file delivery deliberately bypasses body capture, but `GetBody()` evaluat
 With response-body capture enabled, `Results.File(path, "text/plain")` therefore exports a body attribute when the file exceeds 50,000 bytes, despite the documented complete omission of native-file bodies. The existing native-file test covers only small files.
 
 **Recommendation:** Return `null` for `IsBypassed` before initializing eligibility or returning the oversized sentinel. This also preserves omission for an oversized stream prefix followed by a native file send.
+
+**Decision:** Accepted: check `IsBypassed` first in `GetBody()`. No regression test; the change is a one-line reordering of an existing check.
+
+**Implementation:** Applied. `GetBody()` returns `null` for a bypassed capture before the oversized check, and the later redundant `IsBypassed` condition is removed. The review's scratch test (60,000-byte `Results.File`) exported `[BODY_TOO_LARGE]` before the change and no body after it; it was not added to the repository. Warning-as-error build and formatting checks pass; full suites pass on .NET 8 (166), .NET 9 (166), and .NET 10 (167).
 
 ### V1. Adding `CancellationToken` loses MVC validation-source attribution
 
@@ -223,6 +231,10 @@ The error itself is still captured. The loss is avoidable because `CancellationT
 
 **Recommendation:** Exclude special/service-bound parameters when determining whether the body is the sole possible binding source. Preserve conservative attribution when multiple actual request-binding sources could own the field.
 
+**Decision:** Accepted: apply the single-body-parameter fallback only to parameters whose binding source is from the request (`BindingSource.IsFromRequest`), which excludes `CancellationToken` and `[FromServices]` parameters. Parameters without a known binding source still count.
+
+**Implementation:** Applied in `ValidationCapture.GetBindingSource`. The test app's `ItemsController.Create` now also takes a `CancellationToken`, so the existing validation test's `source == "body"` assertion covers the regression; it fails without the fix. Warning-as-error build and formatting checks pass; full suites pass on .NET 8 (166), .NET 9 (166), and .NET 10 (167).
+
 ## Test findings
 
 ### T1. The registration-order theory executes Apitally-first twice
@@ -236,6 +248,10 @@ Consequently, `isApplicationFirst = true` registers application tracing before o
 
 **Recommendation:** Correct the setup and retain both theory rows. This is duplicate execution and missing coverage, not evidence of a production registration defect.
 
+**Decision:** Accepted: move the test app's built-in `AddApitally()` after the test's configuration callback, so a test's own `AddApitally(...)` call is the first registration and controls the order. Rejected a test-only switch on `CreateMinimalApp` and removing the theory rows.
+
+**Implementation:** Applied in `Program.CreateMinimalApp`. `ContainerDisposalRemovesTracingAfterFailedPipelineConfiguration` now calls `AddApitally()` before registering its throwing startup filter, which must run inside Apitally's filter. Warning-as-error build and formatting checks pass; full suites pass on .NET 8 (166), .NET 9 (166), and .NET 10 (167).
+
 ### T2. Delete three tests whose behavior is already covered
 
 | Delete | Retain | Why coverage remains |
@@ -246,6 +262,10 @@ Consequently, `isApplicationFirst = true` registers application tracing before o
 
 These recommendations remove three test methods without removing distinct behavior coverage. They are not a general recommendation to delete unit tests whenever integration tests exist.
 
+**Decision:** Accepted: delete all three.
+
+**Implementation:** Applied. Warning-as-error build and formatting checks pass; full suites pass on .NET 8 (163), .NET 9 (163), and .NET 10 (164).
+
 ### T3. Remove resource-group ordering assumptions from mapper tests
 
 - **Location:** [OtlpTraceMapperTests.cs:99-124](../tests/Apitally.Tests/Export/OtlpTraceMapperTests.cs#L99).
@@ -254,6 +274,10 @@ These recommendations remove three test methods without removing distinct behavi
 Assertions select resource groups by positions zero and one, although resource-group order is not the behavior under test.
 
 **Recommendation:** Select groups by resource attributes. Retain the test because its multiple-resource case has useful coverage not replaced by the integration suite. Its current input also has only one scope per resource, so its name overstates scope-grouping coverage.
+
+**Decision:** Rename only, to `GroupsSpansByResource`. The mapper groups with LINQ `GroupBy`, which preserves first-seen order, so the positional assertions are deterministic. Integration tests already export ASP.NET Core and `apitally.otel` spans under one resource, which exercises scope grouping.
+
+**Implementation:** Applied.
 
 ### Tests to retain
 
@@ -269,17 +293,23 @@ The main test-support infrastructure is justified. Broad deletion of mapper, lif
 
 Return the consumer after applying name/group updates when attributes are null, then iterate the supplied attributes normally. This removes an allocation without introducing a helper or abstraction.
 
+**Decision:** Accepted and applied.
+
 ### Remove unused or duplicated test support
 
 - Delete unused `OtlpDecoding.Concat` at [OtlpDecoding.cs:45](../tests/Apitally.Tests/Support/OtlpDecoding.cs#L45).
 - Remove unused `name`, `parentSpanId`, and `traceId` parameters from [TestSpans.Create](../tests/Apitally.Tests/Support/TestSpans.cs#L11).
 - Replace the local `Hex` helpers in [OtlpTraceMapperTests.cs:127](../tests/Apitally.Tests/Export/OtlpTraceMapperTests.cs#L127) and [OtlpLogMapperTests.cs:106](../tests/Apitally.Tests/Export/OtlpLogMapperTests.cs#L106) with the existing helper in [Spans.cs:10](../tests/Apitally.Tests/Support/Spans.cs#L10).
 
+**Decision:** Accepted and applied, including the `Google.Protobuf` using that only `Concat` needed. Warning-as-error build and formatting checks pass; full suites pass on .NET 8 (163), .NET 9 (163), and .NET 10 (164).
+
 ### Remove stale log-attribute and scope descriptions
 
 [design.md:417-421](design.md#L417) still describes values added by a log callback and log-entry/inner-scope/outer-scope precedence. Round one removed log attributes and scope capture; the current `LogRecordSnapshot` callback can modify only the body.
 
 Update those passages to describe the current span-value behavior and remove the obsolete logging claims.
+
+**Decision:** Accepted and applied. The value policy now covers span attributes normalized at snapshot time, the 2,048-character limit describes log bodies including mask-callback replacements, and the duplicate-key rule no longer mentions callback output or scope precedence.
 
 ## Local reproduction artifacts
 

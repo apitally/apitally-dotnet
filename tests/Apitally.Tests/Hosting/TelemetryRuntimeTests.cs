@@ -5,6 +5,7 @@ using System.Text.Json;
 using Apitally.Hosting;
 using Apitally.TestApp;
 using Apitally.Tests.Support;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -211,6 +212,23 @@ public class TelemetryRuntimeTests
     }
 
     [Fact]
+    public async Task ContainerDisposalRemovesTracingAfterFailedPipelineConfiguration()
+    {
+        using var source = new ActivitySource("Apitally.Tests.FailedPipeline");
+        var app = Program.CreateMinimalApp(
+            ApplicationHost.Arguments(),
+            builder =>
+                builder.Services.AddApitally().AddTransient<IStartupFilter, ThrowingStartupFilter>()
+        );
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => app.StartAsync());
+        Assert.True(source.HasListeners());
+        await app.DisposeAsync();
+
+        Assert.False(source.HasListeners());
+    }
+
+    [Fact]
     public async Task ShutdownWithCanceledTokenReturnsPromptly()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
@@ -226,5 +244,12 @@ public class TelemetryRuntimeTests
         await runtime.ShutdownAsync(new CancellationToken(canceled: true));
 
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
+    }
+
+    // Runs inside Apitally's startup filter, after preparation and before activation.
+    private sealed class ThrowingStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
+            _ => throw new InvalidOperationException("Pipeline configuration failed");
     }
 }

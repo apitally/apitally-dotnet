@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using Google.Protobuf;
 using OpenTelemetry.Proto.Collector.Logs.V1;
 using OpenTelemetry.Proto.Collector.Metrics.V1;
 using OpenTelemetry.Proto.Collector.Trace.V1;
@@ -41,7 +40,4 @@ internal static class OtlpDecoding
 
     public static Dictionary<string, object?> Attributes(IEnumerable<KeyValue> attributes) =>
         attributes.ToDictionary(attribute => attribute.Key, attribute => Value(attribute.Value));
-
-    public static byte[] Concat(params IMessage[] messages) =>
-        messages.SelectMany(message => message.ToByteArray()).ToArray();
 }

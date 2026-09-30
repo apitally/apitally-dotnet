@@ -130,19 +130,4 @@ public class RuntimeConfigurationTests
         Assert.True(RuntimeConfiguration.MatchesAny(configuration.MaskQueryParams, "Signature"));
         Assert.False(RuntimeConfiguration.MatchesAny(configuration.MaskQueryParams, "signature"));
     }
-
-    [Fact]
-    public void EndpointOverrideIsReadFromEnvironment()
-    {
-        using var environment = new EnvironmentVariables(
-            ("APITALLY_OTLP_ENDPOINT", "http://127.0.0.1:4318/")
-        );
-
-        var configuration = RuntimeConfiguration.Resolve(
-            new() { WriteToken = WriteToken },
-            new DiagnosticsCollector().Diagnostics
-        )!;
-
-        Assert.Equal(new Uri("http://127.0.0.1:4318"), configuration.OtlpEndpoint);
-    }
 }

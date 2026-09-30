@@ -62,9 +62,9 @@ public class OtlpTraceMapperTests
         Assert.Equal("Microsoft.AspNetCore", scopeSpans.Scope.Name);
         Assert.Equal("1.0", scopeSpans.Scope.Version);
         var output = Assert.Single(scopeSpans.Spans);
-        Assert.Equal(span.TraceId.ToHexString(), Hex(output.TraceId));
-        Assert.Equal(span.SpanId.ToHexString(), Hex(output.SpanId));
-        Assert.Equal(parent.ToHexString(), Hex(output.ParentSpanId));
+        Assert.Equal(span.TraceId.ToHexString(), output.TraceId.Hex());
+        Assert.Equal(span.SpanId.ToHexString(), output.SpanId.Hex());
+        Assert.Equal(parent.ToHexString(), output.ParentSpanId.Hex());
         Assert.Equal("vendor=1", output.TraceState);
         Assert.Equal(1u, output.Flags);
         Assert.Equal("GET /items/{id}", output.Name);
@@ -90,13 +90,13 @@ public class OtlpTraceMapperTests
             OtlpDecoding.Attributes(exceptionEvent.Attributes)["exception.type"]
         );
         var link = Assert.Single(output.Links);
-        Assert.Equal(linked.SpanId.ToHexString(), Hex(link.SpanId));
+        Assert.Equal(linked.SpanId.ToHexString(), link.SpanId.Hex());
         Assert.Equal("k=v", link.TraceState);
         Assert.Equal("retry", OtlpDecoding.Attributes(link.Attributes)["link.kind"]);
     }
 
     [Fact]
-    public void GroupsSpansByResourceAndScope()
+    public void GroupsSpansByResource()
     {
         var other = new Resource(new Dictionary<string, object> { ["service.name"] = "other" });
         var spans = new[]
@@ -123,7 +123,4 @@ public class OtlpTraceMapperTests
         Assert.Equal("apitally.otel", request.ResourceSpans[1].ScopeSpans.Single().Scope.Name);
         Assert.True(request.ResourceSpans[1].ScopeSpans[0].Spans[0].ParentSpanId.IsEmpty);
     }
-
-    private static string Hex(Google.Protobuf.ByteString bytes) =>
-        Convert.ToHexString(bytes.ToByteArray()).ToLowerInvariant();
 }
