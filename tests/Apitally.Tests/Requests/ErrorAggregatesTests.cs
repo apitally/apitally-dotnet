@@ -91,6 +91,44 @@ public class ErrorAggregatesTests
     }
 
     [Fact]
+    public async Task ExceptionsHandledWithoutReExecutionKeepTheRoute()
+    {
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await ApplicationHost.StartMinimalAsync(
+            receiver,
+            configureApp: app =>
+                // Like Hellang ProblemDetails: sets the feature without endpoint or route values.
+                app.Use(
+                    async (HttpContext context, RequestDelegate next) =>
+                    {
+                        try
+                        {
+                            await next(context);
+                        }
+                        catch (Exception error)
+                        {
+                            context.Response.StatusCode = 500;
+                            context.Features.Set<IExceptionHandlerFeature>(
+                                new ExceptionHandlerFeature
+                                {
+                                    Path = context.Request.Path,
+                                    Error = error,
+                                }
+                            );
+                        }
+                    }
+                )
+        );
+
+        var response = await host.Client.GetAsync("/error");
+        await host.StopAsync();
+
+        Assert.Equal(500, (int)response.StatusCode);
+        Assert.Equal("/error", receiver.Spans().Server().Attributes()["http.route"]);
+        Assert.Single(receiver.Events("apitally.request.server_error"));
+    }
+
+    [Fact]
     public async Task DeveloperExceptionPageResponsesKeepTheException()
     {
         await using var receiver = await OtlpReceiver.StartAsync();

@@ -58,6 +58,28 @@ public class TracingIntegrationTests
     }
 
     [Fact]
+    public async Task FallbackRecordsSampledOutRequestsWithSampledParent()
+    {
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await ApplicationHost.StartMinimalAsync(
+            receiver,
+            builder => builder.Services.AddApitally(options => options.SampleRate = 0),
+            app => app.MapGet("/recorded", () => Activity.Current?.Recorded ?? false)
+        );
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/recorded");
+        request.Headers.Add(
+            "traceparent",
+            "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+        );
+        var response = await host.Client.SendAsync(request);
+        await host.StopAsync();
+
+        Assert.Equal("true", await response.Content.ReadAsStringAsync());
+        Assert.Empty(receiver.Spans());
+    }
+
+    [Fact]
     public async Task OutgoingHttpCallYieldsOneClientSpan()
     {
         await using var receiver = await OtlpReceiver.StartAsync();

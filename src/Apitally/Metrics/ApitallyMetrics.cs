@@ -37,7 +37,10 @@ internal sealed class ApitallyMetrics : IDisposable
     {
         var scope = new object();
         meter = new Meter(new MeterOptions(MeterName) { Scope = scope });
-        reader = new SynchronizedMetricReader(new SpoolExporter(resource, spool, diagnostics), sync)
+        reader = new SynchronizedMetricReader(
+            new SpoolExporter(resource, spool, diagnostics, sync),
+            sync
+        )
         {
             TemporalityPreference = MetricReaderTemporalityPreference.Delta,
         };
@@ -122,22 +125,36 @@ internal sealed class ApitallyMetrics : IDisposable
     private sealed class SynchronizedMetricReader(BaseExporter<SdkMetric> exporter, object sync)
         : BaseExportingMetricReader(exporter)
     {
-        // Shutdown and provider disposal also collect through this override.
+        // Shutdown and provider disposal also collect through this override. The exporter
+        // releases the lock once the snapshot is taken.
         protected override bool OnCollect(int timeoutMilliseconds)
         {
-            lock (sync)
+            Monitor.Enter(sync);
+            try
+            {
                 return base.OnCollect(timeoutMilliseconds);
+            }
+            finally
+            {
+                if (Monitor.IsEntered(sync))
+                    Monitor.Exit(sync);
+            }
         }
     }
 
     private sealed class SpoolExporter(
         Resource resource,
         TelemetrySpool spool,
-        SdkDiagnostics diagnostics
+        SdkDiagnostics diagnostics,
+        object sync
     ) : BaseExporter<SdkMetric>
     {
         public override ExportResult Export(in Batch<SdkMetric> batch)
         {
+            // The reader calls this synchronously after the snapshot, so recording can resume
+            // while the batch is mapped and spooled.
+            if (Monitor.IsEntered(sync))
+                Monitor.Exit(sync);
             try
             {
                 var metrics = new List<SdkMetric>();

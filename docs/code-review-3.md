@@ -119,7 +119,7 @@ ASP.NET Core's built-in exception handler and developer exception page both set 
 1. Return to `context.Features.Get<IExceptionHandlerFeature>()?.Endpoint ?? context.GetEndpoint()`, and remove `ExceptionsBeforeRoutingAreNotAttributedToTheErrorPage`. This brings back C4's Low case: an exception thrown before routing, handled by path-based `UseExceptionHandler("/error")`, is attributed to the error page. Recommended, because it trades a High regression for the original Low issue and is the simplest code.
 2. Use `handled.Endpoint ?? (handled.RouteValues is null ? context.GetEndpoint() : null)`. This passes both the C4 test and the Hellang reproduction on Kestrel. However, it depends on the server providing `IRouteValuesFeature` before routing, which was not checked for IIS or HttpSys.
 
-**Decision:** Pending.
+**Decision:** Fixed with option 2. The feature's route values tell a re-executing handler apart from one like Hellang's. Kestrel always provides route values, so an exception thrown before routing keeps no route. IIS and HttpSys do not provide the feature, so that case falls back to the error page's route there. `ExceptionsHandledWithoutReExecutionKeepTheRoute` uses a Hellang-style middleware, fails without the fix, and passes alongside `ExceptionsBeforeRoutingAreNotAttributedToTheErrorPage`.
 
 ### M3. A metrics collection stalls request processing across the process
 
@@ -174,7 +174,7 @@ Measured with this change in a copy:
 
 A `Monitor.TryEnter` variant, where requests that lose the lock to another request also enqueue, was rejected. Under saturated synthetic load its queue grew without bound.
 
-**Decision:** Pending.
+**Decision:** Fixed by narrowing the lock instead of queueing. Only the snapshot must be atomic with recording; the export works on the snapshot, as in any OpenTelemetry exporter. The reader takes the lock for `OnCollect`, and `SpoolExporter.Export`, which the reader calls synchronously after the snapshot, releases it before mapping, encoding and spooling. Measured lock hold time on .NET 10: about 0.4 ms at 1,000 combinations and 6-10 ms at 10,000, against 2.5-5 ms and 50-80 ms for the export that now runs unlocked. No test was added, consistent with the M2 test scope decision. A scratch probe with 6 recording threads, 5,000 consumers and 42 collections recorded about 260,000 requests in each of three runs and exported identical duration, request-size and response-size totals in every collection.
 
 ### R3. The fallback sampler turns a sampled upstream `traceparent` into an unsampled one downstream
 
@@ -202,7 +202,7 @@ There is a second consequence (reasoned only). A root request dropped by this sa
 2. Revert question 3, so the hosting activity is always recorded. This removes both consequences but gives up the instrumentation savings.
 3. Accept both consequences and document them.
 
-**Decision:** Pending.
+**Decision:** Fixed with option 1. The owned sampler also records the hosting activity when its parent is sampled. Requests that start at this service and that `SampleRate` drops still propagate unsampled, as design question 3 intended. `FallbackRecordsSampledOutRequestsWithSampledParent` fails without the fix and confirms that Apitally exports nothing for such a request.
 
 ### H2. An empty `Env` value replaces the host-derived default
 
@@ -287,7 +287,7 @@ Before B1, an eligible response with a declared `Content-Length` above 50,000 by
 
 [design.md:98](design.md#L98) still says the owned sampler records monitored requests "regardless of upstream sampling" and that "Apitally's own sampling remains a request/export decision". The shared `cloud/docs/sdks/design.md` also says request-level sampling stays out of the provider sampler. The confirmed fallback sampler paragraph at [design.md:102](design.md#L102) is current. Update these statements together with the R3 decision.
 
-**Decision:** Pending.
+**Decision:** Fixed with R3. design.md now describes the sampler, including the sampled-parent condition, and the propagation behavior for dropped requests. The shared `cloud/docs/sdks/design.md` is in another repository and is left for a separate change.
 
 ### T4. Four tests fail when `ASPNETCORE_ENVIRONMENT=Development` is set
 

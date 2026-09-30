@@ -88,8 +88,9 @@ internal sealed class TracingIntegration
         public override void OnEnd(Activity data) => target?.OnEnd(data, ParentProvider);
     }
 
-    // Records the ASP.NET Core hosting activity regardless of any remote parent, and local
-    // children of recorded activities. Background work and other roots are never recorded.
+    // Records ASP.NET Core hosting activities that SampleRate keeps or whose remote parent is
+    // sampled, so upstream traces continue downstream, and local children of recorded activities.
+    // Background work and other roots are never recorded.
     private sealed class RequestSampler(double sampleRate) : Sampler
     {
         private static readonly SamplingResult Record = new(SamplingDecision.RecordAndSample);
@@ -101,7 +102,10 @@ internal sealed class TracingIntegration
             return
                 (
                     parameters.Name == ApitallySpanProcessor.HostingOperationName
-                    && RequestSampling.ShouldKeep(parameters.TraceId, sampleRate)
+                    && (
+                        RequestSampling.ShouldKeep(parameters.TraceId, sampleRate)
+                        || parent.TraceFlags.HasFlag(ActivityTraceFlags.Recorded)
+                    )
                 ) || (!parent.IsRemote && parent.TraceFlags.HasFlag(ActivityTraceFlags.Recorded))
                 ? Record
                 : Drop;
