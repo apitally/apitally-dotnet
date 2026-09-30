@@ -71,10 +71,10 @@ internal sealed class SpoolFile
         return new FileStream(path, options);
     }
 
-    public void Append(byte[] payload)
+    public void Append(int size, Action<Stream> writePayload)
     {
-        gzip!.Write(payload);
-        UncompressedSize += payload.Length;
+        writePayload(gzip!);
+        UncompressedSize += size;
     }
 
     // Writes the gzip trailer; only closed files are sent.
@@ -109,9 +109,9 @@ internal sealed class SpoolFile
             FileAccess.Read,
             FileShare.Read | FileShare.Delete
         );
-        using var output = new MemoryStream((int)stream.Length);
-        stream.CopyTo(output);
-        return output.ToArray();
+        var bytes = new byte[stream.Length];
+        stream.ReadExactly(bytes);
+        return bytes;
     }
 
     public void Touch(DateTime utcNow)

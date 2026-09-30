@@ -128,7 +128,7 @@ internal sealed partial class RuntimeConfiguration
     public static string? ReadEnvironmentVariable(string name) =>
         Environment.GetEnvironmentVariable(name)?.Trim() is { Length: > 0 } value ? value : null;
 
-    public static bool MatchesAny(IReadOnlyList<Regex> patterns, string value)
+    public static bool MatchesAny(IReadOnlyList<Regex> patterns, ReadOnlySpan<char> value)
     {
         foreach (var pattern in patterns)
         {

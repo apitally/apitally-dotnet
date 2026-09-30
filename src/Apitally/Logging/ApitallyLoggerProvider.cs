@@ -11,6 +11,9 @@ namespace Apitally.Logging;
 [ProviderAlias("Apitally")]
 internal sealed class ApitallyLoggerProvider : ILoggerProvider
 {
+    // Counts UTF-16 code units, matching the JavaScript SDK.
+    private const int MaxBodyLength = 2_048;
+
     private volatile LogCapture? capture;
 
     public ILogger CreateLogger(string categoryName) =>
@@ -101,6 +104,9 @@ internal sealed class ApitallyLoggerProvider : ILoggerProvider
             );
             if (!TryMask(record, capture.Mask))
                 return;
+            // Truncating before masking could split a secret so that the mask no longer matches it.
+            if (record.Body!.Length > MaxBodyLength)
+                record.Body = record.Body[..MaxBodyLength];
             // Linkage is added after masking, so the callback cannot unlink or reassign a record.
             request.AddLog(
                 LogSnapshot.ForApplicationLog(

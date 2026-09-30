@@ -56,6 +56,7 @@ internal static class OtlpTraceMapper
             ),
             Status = ToOtlpStatus(span.Status, span.StatusDescription),
         };
+        output.Attributes.Capacity = span.Attributes.Count;
         output.Attributes.Add(OtlpEncoder.ToKeyValues(span.Attributes));
         foreach (var activityEvent in span.Events)
         {

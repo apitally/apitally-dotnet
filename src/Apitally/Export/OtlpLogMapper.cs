@@ -12,9 +12,6 @@ internal static class OtlpLogMapper
 {
     public const string ServerSpanIdAttribute = "apitally.request.server_span_id";
 
-    // Counts UTF-16 code units, matching the JavaScript SDK.
-    private const int MaxStringLength = 2_048;
-
     public static IMessage BuildRequest(IReadOnlyList<LogSnapshot> logs, Resource resource)
     {
         var resourceLogs = new ResourceLogs { Resource = OtlpEncoder.ToOtlpResource(resource) };
@@ -38,7 +35,7 @@ internal static class OtlpLogMapper
         {
             output.SeverityNumber = ToSeverityNumber(record.LogLevel);
             output.SeverityText = record.LogLevel.ToString();
-            output.Body = new AnyValue { StringValue = Truncate(record.Body ?? "") };
+            output.Body = new AnyValue { StringValue = record.Body ?? "" };
             output.EventName = record.EventId.Name ?? "";
             output.TraceId = OtlpEncoder.ToByteString(log.TraceId);
             output.SpanId = OtlpEncoder.ToByteString(log.SpanId);
@@ -54,9 +51,6 @@ internal static class OtlpLogMapper
         }
         return output;
     }
-
-    private static string Truncate(string text) =>
-        text.Length > MaxStringLength ? text[..MaxStringLength] : text;
 
     private static SeverityNumber ToSeverityNumber(LogLevel level) =>
         level switch

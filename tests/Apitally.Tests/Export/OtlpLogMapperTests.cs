@@ -53,25 +53,6 @@ public class OtlpLogMapperTests
     }
 
     [Fact]
-    public void ApplicationBodiesAreTruncated()
-    {
-        var record = new LogRecordSnapshot(
-            DateTime.UtcNow,
-            "App",
-            LogLevel.Information,
-            default,
-            new string('b', 3_000)
-        );
-
-        var log = Map(LogSnapshot.ForApplicationLog(record, default, default, default, default))
-            .ResourceLogs[0]
-            .ScopeLogs[0]
-            .LogRecords[0];
-
-        Assert.Equal(2_048, log.Body.StringValue.Length);
-    }
-
-    [Fact]
     public void InternalEventsHaveNameBodyAndNoTraceContext()
     {
         var body = new Dictionary<string, object?>

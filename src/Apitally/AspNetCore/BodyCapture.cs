@@ -8,7 +8,6 @@ namespace Apitally.AspNetCore;
 internal sealed class BodyCapture(Func<bool?> isEligible, Func<long?> declaredLength)
 {
     public const int MaxBodySize = SpanRedaction.MaxBodySize;
-    private const int InitialBufferSize = 4_096;
 
     private static readonly string[] AllowedContentTypes =
     [
@@ -51,7 +50,8 @@ internal sealed class BodyCapture(Func<bool?> isEligible, Func<long?> declaredLe
 
     // Copies bytes into the bounded buffer while caller-owned memory is still valid. The copy
     // only counts once Commit confirms the operation was accepted. The buffer starts at the
-    // declared length when known and doubles as needed. A declared oversized body is never staged.
+    // declared length, or else at the first write's length, which is often the whole body, and
+    // doubles as needed. A declared oversized body is never staged.
     public int Stage(ReadOnlySpan<byte> bytes)
     {
         if (!IsCapturing() || bytes.Length > MaxBodySize - Count || declaredLength() > MaxBodySize)
@@ -59,7 +59,7 @@ internal sealed class BodyCapture(Func<bool?> isEligible, Func<long?> declaredLe
         var required = used + bytes.Length;
         if (buffer is null || buffer.Length < required)
         {
-            var size = buffer is null ? declaredLength() ?? InitialBufferSize : buffer.Length * 2;
+            var size = buffer is null ? declaredLength() ?? required : buffer.Length * 2;
             Array.Resize(ref buffer, (int)Math.Clamp(size, required, MaxBodySize));
         }
         bytes.CopyTo(buffer.AsSpan(used));
