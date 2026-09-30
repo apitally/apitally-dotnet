@@ -31,8 +31,9 @@ public interface IApitally
     /// Starts an internal child activity for manual tracing. Dispose it to end the span.
     /// </summary>
     /// <returns>
-    /// The started activity, or <c>null</c> if no listener records it. Outside a monitored
-    /// request, it is not exported to Apitally.
+    /// The started activity, or <c>null</c> when no tracer provider listens, for example when
+    /// Apitally is disabled. The activity is exported to Apitally only when it is recorded within
+    /// a monitored request.
     /// </returns>
     Activity? StartActivity(string name);
 }

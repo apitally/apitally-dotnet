@@ -281,7 +281,7 @@ Before B1, an eligible response with a declared `Content-Length` above 50,000 by
 
 **Recommendation:** Say that the method returns `null` when no tracer provider listens, for example when Apitally is disabled, and that activities outside a monitored request are not recorded or exported.
 
-**Decision:** Pending.
+**Decision:** Fixed as recommended.
 
 ### Doc3. design.md describes the pre-question-3 sampler
 
@@ -301,7 +301,7 @@ Many .NET developers export `ASPNETCORE_ENVIRONMENT=Development`. With that sett
 
 **Recommendation:** Add `--environment=Production` to the `ApplicationHost` arguments. The reviewer verified 164/164 passing with `ASPNETCORE_ENVIRONMENT=Development` after the change.
 
-**Decision:** Pending.
+**Decision:** Fixed as recommended. The suite passes 168/168 both with and without `ASPNETCORE_ENVIRONMENT=Development`.
 
 ## Considered and not raised
 

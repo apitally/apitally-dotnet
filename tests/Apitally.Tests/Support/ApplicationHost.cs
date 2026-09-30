@@ -34,6 +34,7 @@ internal sealed class ApplicationHost : IAsyncDisposable
     public static string[] Arguments(params string[] extra) =>
         [
             "--urls=http://127.0.0.1:0",
+            "--environment=Production",
             $"--Apitally:WriteToken={TestConfiguration.WriteToken}",
             "--Logging:Console:LogLevel:Default=None",
             "--Logging:Debug:LogLevel:Default=None",
