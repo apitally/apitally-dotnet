@@ -12,11 +12,11 @@ public sealed class ApitallyOptions
     public string? WriteToken { get; set; }
 
     /// <summary>
-    /// Environment name. Defaults to the lowercased host environment name, with <c>Production</c>
-    /// and <c>Development</c> shortened to <c>prod</c> and <c>dev</c>. <c>APITALLY_ENV</c>
-    /// overrides it.
+    /// Environment name. <c>APITALLY_ENV</c> overrides the configuration section. When blank,
+    /// defaults to the lowercased host environment name, with <c>Production</c> and
+    /// <c>Development</c> shortened to <c>prod</c> and <c>dev</c>.
     /// </summary>
-    public string Env { get; set; } = RuntimeConfiguration.DefaultEnv;
+    public string? Env { get; set; }
 
     /// <summary>Version of the application, included in the startup event.</summary>
     public string? AppVersion { get; set; }

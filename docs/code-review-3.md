@@ -222,7 +222,7 @@ In either case, a Production app reports as `dev`. JSON `null` and an empty `API
 
 **Recommendation:** Compute the host-derived name once in `Configure`. After binding, replace a blank `Env` with it. The reviewer's version also applies it only while `Env` still equals `DefaultEnv`, which preserves an `Env` set by an earlier `Configure<ApitallyOptions>` registration. That registration pattern is unlikely and can be omitted.
 
-**Decision:** Pending.
+**Decision:** Fixed by making `ApitallyOptions.Env` nullable, since v1 is unreleased. `Configure` binds the section and applies `APITALLY_*`, then fills a blank `Env` from the host environment. This also preserves an `Env` set by an earlier `Configure<ApitallyOptions>` registration. `EnvDefaultsToHostEnvironment` covers an empty configured value and fails without the fix.
 
 ### L1. YARP forwarder logs export unredacted query strings
 

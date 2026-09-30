@@ -65,15 +65,20 @@ public class ApitallyServiceCollectionExtensionsTests
     }
 
     [Theory]
-    [InlineData("Production", "prod")]
-    [InlineData("Development", "dev")]
-    [InlineData("Staging", "staging")]
-    public void EnvDefaultsToHostEnvironment(string environmentName, string expectedEnv)
+    [InlineData("Production", null, "prod")]
+    [InlineData("Production", "", "prod")]
+    [InlineData("Development", null, "dev")]
+    [InlineData("Staging", null, "staging")]
+    public void EnvDefaultsToHostEnvironment(
+        string environmentName,
+        string? configuredEnv,
+        string expectedEnv
+    )
     {
         using var environment = new EnvironmentVariables();
 
         var options = ResolveOptions(
-            [],
+            configuredEnv is null ? [] : new() { ["Apitally:Env"] = configuredEnv },
             services =>
             {
                 services.AddSingleton<IHostEnvironment>(

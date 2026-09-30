@@ -8,8 +8,8 @@ using Microsoft.Extensions.Options;
 
 namespace Apitally.Hosting;
 
-// Applies the host environment, the Apitally configuration section, then the APITALLY_*
-// environment variables, before any AddApitally callbacks run as post-configuration.
+// Applies the Apitally configuration section, the APITALLY_* environment variables, then the
+// host environment for a blank Env, before any AddApitally callbacks run as post-configuration.
 internal sealed class BaseOptionsConfiguration(IServiceProvider services)
     : IConfigureOptions<ApitallyOptions>
 {
@@ -17,16 +17,19 @@ internal sealed class BaseOptionsConfiguration(IServiceProvider services)
 
     public void Configure(ApitallyOptions options)
     {
-        if (services.GetService<IHostEnvironment>() is { } host)
-            options.Env =
-                host.IsProduction() ? "prod"
-                : host.IsDevelopment() ? "dev"
-                : host.EnvironmentName.ToLowerInvariant();
         services.GetService<IConfiguration>()?.GetSection(SectionName).Bind(options);
         if (RuntimeConfiguration.ReadEnvironmentVariable("APITALLY_WRITE_TOKEN") is { } token)
             options.WriteToken = token;
         if (RuntimeConfiguration.ReadEnvironmentVariable("APITALLY_ENV") is { } env)
             options.Env = env;
+        if (
+            string.IsNullOrWhiteSpace(options.Env)
+            && services.GetService<IHostEnvironment>() is { } host
+        )
+            options.Env =
+                host.IsProduction() ? "prod"
+                : host.IsDevelopment() ? "dev"
+                : host.EnvironmentName.ToLowerInvariant();
     }
 }
 
