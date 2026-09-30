@@ -1,2 +1,0 @@
-# Preserve the exact contents of the pinned upstream schemas.
-*.proto -whitespace

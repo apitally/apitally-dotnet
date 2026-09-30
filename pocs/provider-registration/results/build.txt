@@ -1,9 +1,0 @@
-  ProviderRegistration -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/provider-registration/bin/Release/net9.0/ProviderRegistration.dll
-  ProviderRegistration -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/provider-registration/bin/Release/net8.0/ProviderRegistration.dll
-  ProviderRegistration -> /Users/simon.gurcke/Repos/apitally/apitally-dotnet/pocs/provider-registration/bin/Release/net10.0/ProviderRegistration.dll
-
-Build succeeded.
-    0 Warning(s)
-    0 Error(s)
-
-Time Elapsed 00:00:07.77
