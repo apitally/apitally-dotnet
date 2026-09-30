@@ -121,7 +121,7 @@ internal sealed class RequestRegistry(
     public bool TryGet(ActivityTraceId traceId, ActivitySpanId spanId, out RequestState state) =>
         associations.TryGetValue((traceId, spanId), out state!);
 
-    public void CompleteServer(RequestState state, SpanSnapshot snapshot)
+    public void CompleteServer(RequestState state, SpanSnapshot? snapshot)
     {
         if (state.CompleteServer(snapshot))
             Release(state);

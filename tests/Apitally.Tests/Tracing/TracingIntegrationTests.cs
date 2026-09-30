@@ -203,6 +203,24 @@ public class TracingIntegrationTests
     }
 
     [Fact]
+    public async Task RequestsFilteredByApplicationProcessorAreReleased()
+    {
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await ApplicationHost.StartMinimalAsync(
+            receiver,
+            builder =>
+                builder
+                    .Services.AddOpenTelemetry()
+                    .WithTracing(tracing => tracing.AddProcessor(new UnrecordingProcessor()))
+        );
+
+        await host.Client.GetAsync("/items/1");
+        await host.StopAsync();
+
+        Assert.Empty(receiver.Spans());
+    }
+
+    [Fact]
     public async Task OtherLocalServerRootsAreNotExported()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
@@ -293,6 +311,13 @@ public class TracingIntegrationTests
             .ToList();
         Assert.NotEmpty(receiver.Exports);
         Assert.Equal([new Uri(receiver.Endpoint, "/other").ToString()], urls);
+    }
+
+    // The filtering processor pattern from the OpenTelemetry .NET documentation.
+    private sealed class UnrecordingProcessor : BaseProcessor<Activity>
+    {
+        public override void OnEnd(Activity activity) =>
+            activity.ActivityTraceFlags &= ~ActivityTraceFlags.Recorded;
     }
 
     private sealed class FixedSampler(SamplingDecision decision) : Sampler

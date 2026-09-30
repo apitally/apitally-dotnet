@@ -206,7 +206,7 @@ internal sealed class RequestState
     }
 
     // Each returns true when this call made the request ready for its single finalization.
-    public bool CompleteServer(SpanSnapshot snapshot)
+    public bool CompleteServer(SpanSnapshot? snapshot)
     {
         lock (sync)
         {

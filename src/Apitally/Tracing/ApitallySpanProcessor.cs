@@ -51,17 +51,18 @@ internal sealed class ApitallySpanProcessor(
     {
         try
         {
-            // Generic processing does not apply the stock recorded-activity check.
             if (
-                !activity.Recorded
-                || !registry.TryGet(activity.TraceId, activity.SpanId, out var state)
+                !registry.TryGet(activity.TraceId, activity.SpanId, out var state)
                 || !state.IsAcceptingDetail
             )
                 return;
-            var snapshot = SpanSnapshots.Copy(activity, GetExportResource(provider));
+            // An earlier processor can clear Recorded in OnEnd; the request must still be released.
+            var snapshot = activity.Recorded
+                ? SpanSnapshots.Copy(activity, GetExportResource(provider))
+                : null;
             if (activity.SpanId == state.ServerSpanId)
                 registry.CompleteServer(state, snapshot);
-            else
+            else if (snapshot is not null)
                 state.AddDescendant(snapshot);
         }
         catch (Exception exception)
