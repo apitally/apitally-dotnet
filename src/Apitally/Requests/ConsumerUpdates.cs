@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using Apitally.Logging;
@@ -31,9 +32,9 @@ internal sealed class ConsumerUpdates(InternalEvents events)
     private const int MaxAttributeValueLength = 1_024;
 
     private readonly object sync = new();
-    private readonly Dictionary<string, LinkedListNode<(string Identifier, string Hash)>> hashes =
+    private readonly Dictionary<string, LinkedListNode<(string Identifier, UInt128 Hash)>> hashes =
     [];
-    private readonly LinkedList<(string Identifier, string Hash)> leastRecentlyUsed = new();
+    private readonly LinkedList<(string Identifier, UInt128 Hash)> leastRecentlyUsed = new();
 
     private static string? NormalizeIdentifier(string? identifier) =>
         Normalize(identifier, MaxIdentifierLength);
@@ -109,8 +110,9 @@ internal sealed class ConsumerUpdates(InternalEvents events)
     }
 
     // Order-independent: attributes are hashed sorted by key. Normalized values are never empty
-    // and never contain \0, so joining with \0 and writing null as "" is unambiguous.
-    private static string Hash(RequestConsumer consumer)
+    // and never contain \0, so joining with \0 and writing null as "" is unambiguous. The first
+    // 128 bits of SHA-256 are ample for change detection.
+    private static UInt128 Hash(RequestConsumer consumer)
     {
         string[] parts =
         [
@@ -121,7 +123,9 @@ internal sealed class ConsumerUpdates(InternalEvents events)
                 .SelectMany(attribute => new[] { attribute.Key, attribute.Value ?? "" }),
         ];
         var canonical = string.Join('\0', parts);
-        return Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        Span<byte> hash = stackalloc byte[SHA256.HashSizeInBytes];
+        SHA256.HashData(Encoding.UTF8.GetBytes(canonical), hash);
+        return BinaryPrimitives.ReadUInt128LittleEndian(hash);
     }
 
     private static string? Normalize(string? value, int maxLength)

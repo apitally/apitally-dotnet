@@ -231,7 +231,8 @@ internal sealed class RequestState
     }
 
     // Removes the request's associations so later spans and logs drop locally, and hands over
-    // the buffered detail exactly once.
+    // the buffered detail exactly once. Kestrel keeps a connection's features until its next
+    // request, so captured headers and bodies are released here.
     public RequestDetail TakeDetail(
         ConcurrentDictionary<(ActivityTraceId, ActivitySpanId), RequestState> associations
     )
@@ -243,6 +244,9 @@ internal sealed class RequestState
             descendants.Clear();
             logs.Clear();
             server = null;
+            transport = null;
+            RequestBody = null;
+            ResponseBody = null;
             return detail;
         }
     }

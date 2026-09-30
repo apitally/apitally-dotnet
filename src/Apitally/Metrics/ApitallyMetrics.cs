@@ -165,10 +165,8 @@ internal sealed class ApitallyMetrics : IDisposable
                     diagnostics.MetricCapacityExceeded();
                 // The server joins the three request histograms within one request, so each
                 // collection is appended whole. The 10,000-point capacity bounds its size.
-                spool.Append(
-                    TelemetrySignal.Metrics,
-                    OtlpMetricMapper.BuildRequest(mapped, resource).ToByteArray()
-                );
+                var request = OtlpMetricMapper.BuildRequest(mapped, resource);
+                spool.Append(TelemetrySignal.Metrics, request.CalculateSize(), request.WriteTo);
                 return ExportResult.Success;
             }
             catch (Exception exception)

@@ -45,13 +45,14 @@ internal sealed class TelemetrySpool : IDisposable
     public bool IsInMemory => directory is null;
     private long MaxSize => IsInMemory ? MaxMemorySize : MaxDiskSize;
 
-    public void Append(TelemetrySignal signal, byte[] payload)
+    // Writes the payload straight into the file's gzip stream, so no serialized copy is needed.
+    public void Append(TelemetrySignal signal, int size, Action<Stream> writePayload)
     {
         lock (sync)
         {
             if (
                 currentFiles.TryGetValue(signal, out var file)
-                && file.UncompressedSize + payload.Length > MaxUncompressedFileSize
+                && file.UncompressedSize + size > MaxUncompressedFileSize
             )
             {
                 CloseCurrentFile(signal);
@@ -67,7 +68,7 @@ internal sealed class TelemetrySpool : IDisposable
                         : SpoolFile.CreateInFile(signal, sequence, directory);
                     currentFiles[signal] = file;
                 }
-                file.Append(payload);
+                file.Append(size, writePayload);
                 diagnostics.SpoolWriteSucceeded();
             }
             catch (Exception exception)

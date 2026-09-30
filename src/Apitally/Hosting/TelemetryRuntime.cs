@@ -4,6 +4,7 @@ using Apitally.Logging;
 using Apitally.Metrics;
 using Apitally.Requests;
 using Apitally.Tracing;
+using Google.Protobuf;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -242,7 +243,7 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
         OtlpEncoder.EncodeRequests(
             spans,
             OtlpTraceMapper.BuildRequest,
-            payload => spool!.Append(TelemetrySignal.Traces, payload),
+            (request, size) => spool!.Append(TelemetrySignal.Traces, size, request.WriteTo),
             "traces",
             Diagnostics
         );
@@ -252,7 +253,7 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
         OtlpEncoder.EncodeRequests(
             logs,
             chunk => OtlpLogMapper.BuildRequest(chunk, resource),
-            payload => spool!.Append(TelemetrySignal.Logs, payload),
+            (request, size) => spool!.Append(TelemetrySignal.Logs, size, request.WriteTo),
             "logs",
             Diagnostics
         );

@@ -108,17 +108,26 @@ internal sealed partial class SpanRedaction(
 
     private void RedactQueryAndHeaderAttributes(Dictionary<string, object?> attributes)
     {
-        foreach (var (key, value) in attributes.ToList())
+        List<KeyValuePair<string, object?>>? replacements = null;
+        foreach (var (key, value) in attributes)
         {
+            object? replacement;
             if (key == "url.query" && value is string query)
-                attributes[key] = RedactQuery(query);
+                replacement = RedactQuery(query);
             else if (QueryAttributes.Contains(key) && value is string url)
-                attributes[key] = RedactUrl(url);
+                replacement = RedactUrl(url);
             else if (key.StartsWith(RequestHeaderPrefix, StringComparison.Ordinal))
-                attributes[key] = RedactHeaderValue(key[RequestHeaderPrefix.Length..], value);
+                replacement = RedactHeaderValue(key[RequestHeaderPrefix.Length..], value);
             else if (key.StartsWith(ResponseHeaderPrefix, StringComparison.Ordinal))
-                attributes[key] = RedactHeaderValue(key[ResponseHeaderPrefix.Length..], value);
+                replacement = RedactHeaderValue(key[ResponseHeaderPrefix.Length..], value);
+            else
+                continue;
+            (replacements ??= []).Add(new(key, replacement));
         }
+        if (replacements is null)
+            return;
+        foreach (var (key, value) in replacements)
+            attributes[key] = value;
     }
 
     private void AddHeaderAttributes(
@@ -129,10 +138,11 @@ internal sealed partial class SpanRedaction(
     {
         if (headers is null)
             return;
+        attributes.EnsureCapacity(attributes.Count + headers.Count);
         foreach (var (name, values) in headers)
         {
-            var key = prefix + name.ToLowerInvariant();
-            attributes[key] = RedactHeaderValue(key[prefix.Length..], values);
+            var lowercaseName = name.ToLowerInvariant();
+            attributes[prefix + lowercaseName] = RedactHeaderValue(lowercaseName, values);
         }
     }
 
@@ -240,17 +250,21 @@ internal sealed partial class SpanRedaction(
     }
 
     // Rewrites JSON token by token, replacing string values of matching object keys at any depth.
+    // Only escaped string values are converted to .NET strings, which limits allocations.
     private string RedactJson(byte[] bytes)
     {
         var reader = new Utf8JsonReader(bytes);
         var output = new ArrayBufferWriter<byte>(bytes.Length);
         using (var writer = new Utf8JsonWriter(output, JsonWriterOptions))
         {
-            string? propertyName = null;
+            Span<char> nameBuffer = stackalloc char[256];
+            // Initialized from the buffer so the compiler allows it to reference stack memory.
+            ReadOnlySpan<char> propertyName = nameBuffer[..0];
+            var hasPropertyName = false;
             while (reader.Read())
             {
-                var valuePropertyName = propertyName;
-                propertyName = null;
+                var isPropertyValue = hasPropertyName;
+                hasPropertyName = false;
                 switch (reader.TokenType)
                 {
                     case JsonTokenType.StartObject:
@@ -266,16 +280,22 @@ internal sealed partial class SpanRedaction(
                         writer.WriteEndArray();
                         break;
                     case JsonTokenType.PropertyName:
-                        propertyName = reader.GetString()!;
+                        // An unescaped name never has more UTF-16 characters than UTF-8 bytes.
+                        Span<char> name =
+                            reader.ValueSpan.Length <= nameBuffer.Length
+                                ? nameBuffer
+                                : new char[reader.ValueSpan.Length];
+                        propertyName = name[..reader.CopyString(name)];
+                        hasPropertyName = true;
                         writer.WritePropertyName(propertyName);
                         break;
                     case JsonTokenType.String:
-                        writer.WriteStringValue(
-                            valuePropertyName is not null
-                            && ShouldRedactBodyField(valuePropertyName)
-                                ? Redacted
-                                : reader.GetString()
-                        );
+                        if (isPropertyValue && ShouldRedactBodyField(propertyName))
+                            writer.WriteStringValue(Redacted);
+                        else if (reader.ValueIsEscaped)
+                            writer.WriteStringValue(reader.GetString());
+                        else
+                            writer.WriteStringValue(reader.ValueSpan);
                         break;
                     case JsonTokenType.Number:
                         writer.WriteRawValue(reader.ValueSpan, skipInputValidation: true);
@@ -301,7 +321,7 @@ internal sealed partial class SpanRedaction(
         DefaultHeaderPattern().IsMatch(name)
         || RuntimeConfiguration.MatchesAny(configuration.MaskHeaders, name);
 
-    private bool ShouldRedactBodyField(string name) =>
+    private bool ShouldRedactBodyField(ReadOnlySpan<char> name) =>
         DefaultBodyFieldPattern().IsMatch(name)
         || RuntimeConfiguration.MatchesAny(configuration.MaskBodyFields, name);
 

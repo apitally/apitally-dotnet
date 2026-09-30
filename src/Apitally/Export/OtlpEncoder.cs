@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Apitally.Logging;
 using Google.Protobuf;
 using OpenTelemetry.Proto.Common.V1;
@@ -25,6 +26,8 @@ internal static class OtlpEncoder
             .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion.Split('+')[0]
         ?? "unknown";
+
+    private static readonly ConditionalWeakTable<Resource, OtlpResource> OtlpResources = new();
 
     // Honors OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES; the Apitally-owned keys always win.
     public static Resource CreateResource(string env) =>
@@ -54,12 +57,13 @@ internal static class OtlpEncoder
             )
         );
 
-    // Encodes records into requests of at most MaxRequestSize bytes, measured on the complete
-    // serialized request. A record that cannot fit on its own is dropped with a warning.
+    // Groups records into requests of at most MaxRequestSize bytes, measured on the complete
+    // serialized request, and passes each request with that size. A record that cannot fit on
+    // its own is dropped with a warning.
     public static void EncodeRequests<T>(
         IReadOnlyList<T> records,
         Func<IReadOnlyList<T>, IMessage> buildRequest,
-        Action<byte[]> append,
+        Action<IMessage, int> append,
         string signalName,
         SdkDiagnostics diagnostics
     )
@@ -80,13 +84,18 @@ internal static class OtlpEncoder
     public static ulong ToUnixNanoseconds(DateTime time) =>
         (ulong)(time.ToUniversalTime().Ticks - DateTime.UnixEpoch.Ticks) * 100;
 
-    public static OtlpResource ToOtlpResource(Resource resource)
-    {
-        var output = new OtlpResource();
-        foreach (var attribute in resource.Attributes)
-            output.Attributes.Add(ToKeyValue(attribute.Key, attribute.Value));
-        return output;
-    }
+    // Resources are immutable and generated messages cache nothing, so requests share one message.
+    public static OtlpResource ToOtlpResource(Resource resource) =>
+        OtlpResources.GetValue(
+            resource,
+            static resource =>
+            {
+                var output = new OtlpResource();
+                foreach (var attribute in resource.Attributes)
+                    output.Attributes.Add(ToKeyValue(attribute.Key, attribute.Value));
+                return output;
+            }
+        );
 
     public static ByteString ToByteString(ActivityTraceId traceId)
     {
@@ -140,15 +149,16 @@ internal static class OtlpEncoder
     private static void EncodeChunk<T>(
         ArraySegment<T> chunk,
         Func<IReadOnlyList<T>, IMessage> buildRequest,
-        Action<byte[]> append,
+        Action<IMessage, int> append,
         string signalName,
         SdkDiagnostics diagnostics
     )
     {
         var request = buildRequest(chunk);
-        if (request.CalculateSize() <= MaxRequestSize)
+        var size = request.CalculateSize();
+        if (size <= MaxRequestSize)
         {
-            append(request.ToByteArray());
+            append(request, size);
             return;
         }
         if (chunk.Count == 1)

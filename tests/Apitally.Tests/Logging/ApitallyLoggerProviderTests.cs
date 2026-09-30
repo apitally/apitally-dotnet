@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Apitally.Tests.Support;
 using Microsoft.AspNetCore.Builder;
@@ -79,6 +80,28 @@ public class ApitallyLoggerProviderTests
         var log = Assert.Single(receiver.ApplicationLogs());
         Assert.Equal("Handling order **", log.Body.StringValue);
         Assert.Contains(host.Logs.GetSnapshot(), record => record.Message == "Handling order 42");
+    }
+
+    [Fact]
+    public async Task MasksSeeFullMessagesAndExportedMessagesAreTruncated()
+    {
+        var maskedLengths = new ConcurrentQueue<int>();
+        await using var receiver = await OtlpReceiver.StartAsync();
+        await using var host = await StartAsync(
+            receiver,
+            options =>
+                options.MaskLogRecord = record =>
+                {
+                    maskedLengths.Enqueue(record.Body!.Length);
+                    return record;
+                }
+        );
+
+        await host.Client.GetAsync("/long-log");
+        await host.StopAsync();
+
+        Assert.Equal([3_000], maskedLengths);
+        Assert.Equal(2_048, Assert.Single(receiver.ApplicationLogs()).Body.StringValue.Length);
     }
 
     [Fact]
@@ -184,6 +207,14 @@ public class ApitallyLoggerProviderTests
                         logger.LogInformation("Please drop this");
                         logger.LogInformation("Please throw");
                         logger.LogInformation("Make it empty");
+                        return "OK";
+                    }
+                );
+                app.MapGet(
+                    "/long-log",
+                    () =>
+                    {
+                        logger.LogInformation(new string('b', 3_000));
                         return "OK";
                     }
                 );

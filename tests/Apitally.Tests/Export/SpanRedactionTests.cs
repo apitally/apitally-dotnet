@@ -130,6 +130,21 @@ public class SpanRedactionTests
     }
 
     [Fact]
+    public void EscapedAndLongJsonNamesAndValuesAreDecodedBeforeRedaction()
+    {
+        var span = TestSpans.Create();
+        var longName = new string('n', 300) + "_token";
+        var body = $$"""{"pass\u0077ord":"p","{{longName}}":"t","note":"say \"hi\""}""";
+
+        Redaction().TryRedact(new SpanExportEntry(span) { RequestBody = Body(body) });
+
+        Assert.Equal(
+            $$"""{"password":"[REDACTED]","{{longName}}":"[REDACTED]","note":"say \"hi\""}""",
+            span.Attributes[SpanRedaction.RequestBodyAttribute]
+        );
+    }
+
+    [Fact]
     public void NonJsonTextIsExportedAsTextAndBinaryAsBytes()
     {
         var span = TestSpans.Create();
