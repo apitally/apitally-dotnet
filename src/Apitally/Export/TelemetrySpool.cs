@@ -21,6 +21,7 @@ internal sealed class TelemetrySpool : IDisposable
     private readonly Dictionary<TelemetrySignal, SpoolFile> currentFiles = [];
     private readonly List<SpoolFile> closedFiles = [];
     private long nextSequence;
+    private int filesClosedSinceLastExportRotation;
 
     public TelemetrySpool(
         SdkDiagnostics diagnostics,
@@ -81,8 +82,9 @@ internal sealed class TelemetrySpool : IDisposable
     }
 
     // Closes a signal's current file only when none of its files are waiting, so an outage
-    // grows the current file instead of producing one file per cycle.
-    public void RotateForExport()
+    // grows the current file instead of producing one file per cycle. Returns the number of
+    // files closed since the previous call, including files closed for size.
+    public int RotateForExport()
     {
         lock (sync)
         {
@@ -93,6 +95,9 @@ internal sealed class TelemetrySpool : IDisposable
             }
             closedFiles.RemoveAll(DeleteIfExpired);
             EnforceSizeLimit();
+            var closedFileCount = filesClosedSinceLastExportRotation;
+            filesClosedSinceLastExportRotation = 0;
+            return closedFileCount;
         }
     }
 
@@ -171,6 +176,7 @@ internal sealed class TelemetrySpool : IDisposable
         {
             file.Close();
             closedFiles.Add(file);
+            filesClosedSinceLastExportRotation++;
         }
         catch (Exception exception)
         {
