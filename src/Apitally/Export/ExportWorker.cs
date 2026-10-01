@@ -17,7 +17,10 @@ internal sealed class ExportWorker(
     public static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(15);
     private const int MinIntervalSeconds = 5;
     private const int MaxIntervalSeconds = 60;
-    private const int MaxSendsPerCycle = 10;
+
+    // Files from earlier cycles are sent at most this many per cycle, which spreads backlog
+    // delivery after an outage over several cycles and keeps each cycle short.
+    private const int MaxBacklogSendsPerCycle = 10;
 
     private readonly CancellationTokenSource stopping = new();
     private Task loop = Task.CompletedTask;
@@ -41,7 +44,8 @@ internal sealed class ExportWorker(
     public async Task SendRemainingFilesAsync(CancellationToken cancellationToken)
     {
         using var suppression = SuppressInstrumentationScope.Begin();
-        await SendPendingFilesAsync(isFinal: true, cancellationToken).ConfigureAwait(false);
+        await SendPendingFilesAsync(int.MaxValue, isFinal: true, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task RunAsync()
@@ -67,9 +71,14 @@ internal sealed class ExportWorker(
             // The worker's flushes and POSTs must not generate telemetry.
             using var suppression = SuppressInstrumentationScope.Begin();
             flushIntake();
-            spool.RotateForExport();
+            var newFileCount = spool.RotateForExport();
             spool.TouchFiles();
-            await SendPendingFilesAsync(isFinal: false, stopping.Token).ConfigureAwait(false);
+            await SendPendingFilesAsync(
+                    MaxBacklogSendsPerCycle + newFileCount,
+                    isFinal: false,
+                    stopping.Token
+                )
+                .ConfigureAwait(false);
         }
         catch (Exception exception)
         {
@@ -78,12 +87,16 @@ internal sealed class ExportWorker(
     }
 
     // During an outage, stopping at the first retryable failure limits each cycle to one probe.
-    private async Task SendPendingFilesAsync(bool isFinal, CancellationToken cancellationToken)
+    private async Task SendPendingFilesAsync(
+        int maxSends,
+        bool isFinal,
+        CancellationToken cancellationToken
+    )
     {
         var sent = 0;
         foreach (var file in spool.GetPendingFiles())
         {
-            if (cancellationToken.IsCancellationRequested || (!isFinal && sent >= MaxSendsPerCycle))
+            if (cancellationToken.IsCancellationRequested || sent >= maxSends)
                 return;
             if (!spool.IsDeliverable(file))
                 continue;

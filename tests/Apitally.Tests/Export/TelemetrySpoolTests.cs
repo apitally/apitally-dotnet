@@ -103,6 +103,19 @@ public sealed class TelemetrySpoolTests : IDisposable
     }
 
     [Fact]
+    public void RotateForExportReturnsFilesClosedSinceThePreviousCall()
+    {
+        using var spool = CreateSpool();
+        spool.Append(TelemetrySignal.Traces, new byte[3_000_000]);
+        spool.Append(TelemetrySignal.Traces, new byte[1_000_001]);
+        spool.Append(TelemetrySignal.Logs, [1]);
+
+        // The size-closed traces file and the logs file; the current traces file waits.
+        Assert.Equal(2, spool.RotateForExport());
+        Assert.Equal(0, spool.RotateForExport());
+    }
+
+    [Fact]
     public void CurrentFileRotatesForExportOnlyWithoutBacklog()
     {
         using var spool = CreateSpool();

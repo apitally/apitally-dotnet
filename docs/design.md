@@ -484,7 +484,7 @@ Use stock batch queue/worker machinery with explicit settings and approximately 
 | Rotation | At most 4 MB uncompressed per file, checked before append. Rotate a signal's current file at send time only when no closed files are already waiting. |
 | Schedule | First attempt about two seconds after activation; subsequent cycles wait 15 seconds by default, with +/-10% jitter, after the preceding cycle completes. |
 | Server adjustment | Read integer `Apitally-Export-Interval` and clamp it to 5-60 seconds. |
-| Send bounds | Ten files per ordinary cycle, oldest first, with 0.1-0.5 seconds between sends; ten-second timeout per POST. |
+| Send bounds | Each ordinary cycle sends, oldest first, the files closed since the previous cycle plus at most ten files from earlier cycles, with 0.1-0.5 seconds between sends; ten-second timeout per POST. The ten-file bound spreads backlog delivery after an outage over several cycles and keeps cycles short, without limiting delivery of current traffic. |
 | Retryable failures | Connection errors, timeouts, 408, 429, and 5xx leave the file queued and stop that cycle's send sequence. One immediate retry on connection error covers a stale connection. |
 | Permanent rejection | Other 4xx discard the file and warn once per status under the shared warning policy. Trace quota rejection does not stop metrics or eligible error capture. |
 | Retention | Expire files 59 minutes after first send attempt. Never-attempted files have no age expiry. |
@@ -492,7 +492,7 @@ Use stock batch queue/worker machinery with explicit settings and approximately 
 | File permissions | Create spool files owner-only (`0600`) on non-Windows, as the Python and JavaScript SDKs do; they contain masked but potentially sensitive payloads. |
 | Filesystem fallback | Probe at spool construction; a failed probe selects memory with one warning. Later write failure discards the current affected file with deduplicated warning; it does not switch storage mode. |
 | Orphan cleanup | Recognizable spool files untouched for two hours, checked once at construction. Active runtimes refresh file modification times each cycle. |
-| Final cycle | Drain error groups, flush batch processors, collect metrics, close all current files, and attempt delivery without inter-send pauses or the ten-file cap. Normal failure rules still apply. |
+| Final cycle | Drain error groups, flush batch processors, collect metrics, close all current files, and attempt delivery without inter-send pauses or the backlog bound. Normal failure rules still apply. |
 
 Send through one private `HttpClient` over a `SocketsHttpHandler`, not `IHttpClientFactory`, so application-wide client defaults such as resilience handlers cannot add retries beneath the worker. Capture `HttpClient.DefaultProxy` once and assign it to the handler; .NET already implements `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`, plus the system proxy on Windows. Run collection, flushing, and export POSTs under OTel instrumentation suppression. This is especially important with default `HttpClient` instrumentation and with a user's own exporter observing application activities.
 

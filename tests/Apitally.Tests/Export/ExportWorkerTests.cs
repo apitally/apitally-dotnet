@@ -75,26 +75,43 @@ public sealed class ExportWorkerTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task OrdinaryCyclesSendAtMostTenFiles()
+    public async Task CycleSendsAllFilesClosedSinceThePreviousCycle()
     {
         await StartAsync();
-        for (var i = 0; i < 12; i++)
-        {
-            spool.Append(TelemetrySignal.Logs, [(byte)i]);
-            spool.CloseCurrentFiles();
-        }
+        AppendClosedLogFiles(12);
 
+        // The second cycle starts no earlier than 15.5 seconds after start.
         await AdvanceUntilAsync(
-            () => receiver.Exports.Count == 10,
+            () => receiver.Exports.Count == 12,
             step: TimeSpan.FromSeconds(1),
             limit: TimeSpan.FromSeconds(12)
         );
+        Assert.Empty(spool.GetPendingFiles());
+    }
+
+    [Fact]
+    public async Task CycleSendsNewFilesPlusAtMostTenFilesFromEarlierCycles()
+    {
+        await StartAsync();
+        var attempts = 0;
+        receiver.Respond = _ => (Interlocked.Increment(ref attempts) == 1 ? 503 : 200, null);
+        AppendClosedLogFiles(12);
+        await AdvanceAsync(TimeSpan.FromSeconds(2.1));
+        await receiver.WaitForExportsAsync(1);
         await Task.Delay(100);
-        Assert.Equal(10, receiver.Exports.Count);
+        spool.Append(TelemetrySignal.Traces, [1]);
+
+        await AdvanceUntilAsync(
+            () => receiver.Exports.Count == 12,
+            step: TimeSpan.FromSeconds(1),
+            limit: TimeSpan.FromSeconds(30)
+        );
+        await Task.Delay(100);
+        Assert.Equal(12, receiver.Exports.Count);
 
         await worker.StopAsync();
         await worker.SendRemainingFilesAsync(CancellationToken.None);
-        Assert.Equal(12, receiver.Exports.Count);
+        Assert.Equal(14, receiver.Exports.Count);
     }
 
     [Fact]
@@ -137,6 +154,15 @@ public sealed class ExportWorkerTests : IAsyncDisposable
         worker = new ExportWorker(spool, client, timeProvider, diagnostics.Diagnostics, () => { });
         worker.Start();
         await Task.Delay(50);
+    }
+
+    private void AppendClosedLogFiles(int count)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            spool.Append(TelemetrySignal.Logs, [(byte)i]);
+            spool.CloseCurrentFiles();
+        }
     }
 
     private async Task AdvanceAsync(TimeSpan duration)
