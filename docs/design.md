@@ -36,8 +36,8 @@ This document distinguishes:
 | Request helpers | An injectable `IApitally` service is the primary API. |
 | Default instrumentation | When Apitally owns tracing, instrument ASP.NET Core and outgoing `HttpClient` calls automatically, and capture activities from every `ActivitySource` within monitored requests, as v0 did. Instrumentation packages such as EF Core are opt-in. |
 | Tracing customization | Use standard OTel provider registration for instrumentation packages. Apitally-specific tracing-configuration callbacks are outside the initial API. |
-| Metric capacity | A fixed capacity of 10,000 per request histogram through native OTel views and reclamation; no public capacity setting or runtime resizing. |
-| Individually oversized records | Split ordinary batches to fit the spool cap. Drop an indivisible encoded record that still cannot fit, with a deduplicated actionable warning, and continue with other records. Metrics are appended as one request per collection, because the server joins the request histograms within a request; the 10,000-point capacity bounds its size. |
+| Metric capacity | A fixed capacity of 50,000 attribute combinations per collection interval in Apitally's own request-metric aggregation; no public capacity setting or runtime resizing. |
+| Individually oversized records | Split ordinary batches to fit the spool cap. Drop an indivisible encoded record that still cannot fit, with a deduplicated actionable warning, and continue with other records. Request metrics are split by attribute combination, keeping each combination's three histograms in one request, because the server joins them within a request. |
 | Span-based callbacks | All request/response sampling and body-masking callbacks receive the same complete span snapshot type, populated for the callback's stage. It exposes read-only interfaces and native .NET/OTel types but is the SDK-owned record itself, with no isolation guarantee. |
 | Sampling callback result | Both sampling callbacks return `double?`: a keep probability in `[0, 1]`, or `null` to abstain. |
 | Late request telemetry | Drop spans and logs that arrive after a request is released. There is no completed-request cache. |
@@ -140,7 +140,7 @@ Do not substitute a process-global configuration singleton.
 
 **Inherited:** Apitally owns private meter and logger pipelines. Do not register them as replacements for application-owned pipelines or pass the private meter provider to framework instrumentation.
 
-**POC evidence:** distinct meters/providers named `apitally` observe each other's measurements. The [metrics experiment](../pocs/encoding-metrics/README.md) isolates private outputs using `MeterOptions.Scope` (or the owning `IMeterFactory`) and an explicit view that drops foreign scopes. Factory ownership alone is insufficient. An unfiltered user provider subscribed to `apitally` still observes those instruments; private pipeline ownership is not process-level confidentiality. This metric mechanism does not resolve tracing's separate sampling interference.
+**Confirmed .NET adaptation:** request and process metrics are aggregated by Apitally without an OTel meter (section 11), so no other meter or provider observes them.
 
 Build an Apitally resource using standard OTel resource configuration, then override:
 
@@ -463,11 +463,11 @@ Detect changes with a 10,000-identifier LRU cache of hashes of the canonical nor
 
 **Research finding:** the .NET OTLP exporter's protobuf serializers are internal. The package does not expose a public encode-only API. Its network exporter is not a drop-in spool encoder.
 
-**POC evidence:** generated official OTLP v1.11.0 message classes and `Google.Protobuf` round-trip the tested trace, log and real SDK metric data, including binary bodies and structured internal events. Metric points are mapped and serialized synchronously before exporter return, avoiding retention of reusable SDK storage. Two unframed requests per signal merge correctly from a single continuous gzip stream, independently checked with Python zlib.
+**POC evidence:** generated official OTLP v1.11.0 message classes and `Google.Protobuf` round-trip the tested trace, log and real SDK metric data, including binary bodies and structured internal events. Two unframed requests per signal merge correctly from a single continuous gzip stream, independently checked with Python zlib.
 
 A 32-record trace chunk exceeds the 4,000,000-byte cap in the experiment; exact encoded-size checks and splitting preserve the tested records within it. The POC also rejects an indivisible oversized encoded request.
 
-**Confirmed oversized-record policy:** after ordinary exact-size batch splitting, drop an indivisible encoded telemetry record that still exceeds the 4,000,000-byte spool cap, issue a deduplicated actionable warning and continue with the other records. Do not invent fragments or rewrite the record to force it to fit. The warning explains the lost item and how to reduce its size without logging its contents. This is separate from the existing 50,000-byte body-capture limit and `[BODY_TOO_LARGE]` behavior; ordinary records are not discarded with the oversized item. Metrics are not split: the server joins the duration and body-size histograms within one request, so each collection is appended as one request, matching the Python SDK. The 10,000-point capacity bounds its size; the measured worst case is about 14 MB uncompressed and 3 MB compressed.
+**Confirmed oversized-record policy:** after ordinary exact-size batch splitting, drop an indivisible encoded telemetry record that still exceeds the 4,000,000-byte spool cap, issue a deduplicated actionable warning and continue with the other records. Do not invent fragments or rewrite the record to force it to fit. The warning explains the lost item and how to reduce its size without logging its contents. This is separate from the existing 50,000-byte body-capture limit and `[BODY_TOO_LARGE]` behavior; ordinary records are not discarded with the oversized item. Request metrics are split by attribute combination, at most 1,000 combinations per request, and each combination's duration and body-size histograms stay in the same request because the server joins them within a request. Process gauges are appended as their own request. The measured worst case is about 1.4 KB uncompressed per combination, so a request of 1,000 combinations stays well below the cap.
 
 Use stock batch queue/worker machinery with explicit settings and approximately one-second intake delay. The snapshot POC demonstrates `BatchExportProcessor<T>` intake without private reflection. Bound encoded appends by actual size; a record-count chunk limit alone is not proof that a file stays below the cap.
 
@@ -504,6 +504,8 @@ Send through one private `HttpClient` over a `SocketsHttpHandler`, not `IHttpCli
 
 **Inherited:** record in the transport integration, independently of activities and trace sampling. Use a private meter/provider and the scope name `apitally`.
 
+**Confirmed .NET adaptation:** Apitally aggregates the request histograms itself and does not use the OTel metrics SDK. The exported OTLP data is the same.
+
 | Instrument | Aggregation | Unit |
 | --- | --- | --- |
 | `http.server.request.duration` | Delta exponential histogram | `s` |
@@ -512,19 +514,15 @@ Send through one private `HttpClient` over a `SocketsHttpHandler`, not `IHttpCli
 
 Duration is the count anchor. Its attribute tuple is shared with size observations: request method, parameterized route, final status, and optional consumer identifier. Add `url.scheme` and the shared 5xx `error.type` convention. Skip `OPTIONS`, websockets, and unmatched routes; retain eligible excluded/sampled-out requests. Duration and response sizes reflect transport completion, not merely endpoint return.
 
-**POC evidence:** histogram-specific `Base2ExponentialBucketHistogramConfiguration` views and a manually collected `BaseExportingMetricReader` produce independent delta intervals with matching request dimensions and units. Public `MaxScale = 3` works in the tested package; the native exponential-view defaults are maximum scale 20 and bucket size 160. Tested duration/byte ranges adapt within ingestion's accepted scale range. Do not change unrelated instrument aggregation. The experiment serializes metric data before exporter return and does not prove every possible floating-point range or concurrent collection pattern.
+**Confirmed:** each attribute combination holds three delta exponential histograms at a fixed scale of 3, with bucket counts covering only the recorded index range. Bucket indexes use the OTel .NET mapping, so boundaries agree with other SDKs. On 307 test series, including exact powers of two, bucket boundaries and wide ranges, the output matched OTel .NET 1.19.0 exactly; where OTel reduced the scale to fit 160 buckets, the output matched after merging buckets to that scale. Realistic durations and sizes span at most about 320 buckets at scale 3, so the scale is never reduced.
 
-Record a request's duration and body-size measurements under one shared lock. A private `BaseExportingMetricReader.OnCollect` override takes the same lock for the complete collection, including encoding and spool writes; this also covers final collection during shutdown and disposal. Recording waits for collection so matching histogram observations remain together for ingestion.
+Record a request's duration and body-size measurements under one lock. Collection swaps in an empty set of combinations under the same lock and encodes the previous set outside it, so each collection contains exactly the combinations recorded since the previous one, and recording is blocked only for the swap. Per request, recording takes about 40 ns, compared with about 250 ns through the OTel metrics SDK.
 
 Observe normalized process CPU utilization, RSS-equivalent bytes, and uptime using direct .NET process/runtime APIs. CPU and memory need paired observation times within the server's one-second tolerance. Uptime keeps collections nonempty even without traffic or with CPU/memory disabled.
 
-**POC evidence:** delta collection reclaims inactive dimension capacity after an idle collection. Before reclamation, new dimensions can overflow even while an existing dimension remains active. The overflow point has only `otel.metric.overflow=true`, losing the required request dimensions; it cannot preserve accepted endpoint/consumer counts. The deliberately low POC limit of two is a test setting, not a product limit. Idle collections also produce paired CPU/memory timestamps and uptime, including uptime alone with CPU/memory disabled.
+**Research finding:** the OTel .NET metrics SDK keeps an attribute combination's slot until a collection finds it idle, so slots cover the combinations of two collection intervals, and it reserves about 12.5 KB per combination for 160 buckets. A soak test with many short-lived consumers needed about 13,300 slots at a 60-second interval, more than a fixed capacity of 10,000.
 
-**Research finding:** the tested OTel SDK defaults to 2,000 distinct attribute combinations per metric stream, with separate reserved slots for zero-attribute and overflow points. The public view's `CardinalityLimit` configures this at stream creation. Storage is partly allocated upfront and existing streams cannot be resized through public APIs. Delta collection resets measurements, not every dimension slot; active combinations retain slots until a later collection can reclaim them.
-
-**Confirmed capacity policy:** use one fixed limit for each of the three request histograms, configured through OTel's native views. Keep native aggregation and inactive-point reclamation. There is no user-facing capacity setting, runtime resizing, adaptive provider replacement or custom aggregation. The limit is 10,000 per histogram, five times the SDK default that the Python and JavaScript SDKs use. Upfront allocation scales with the limit, at about 4 MB for the three histograms. Each active attribute combination lazily allocates histogram buckets, about 12.5 KB across the three histograms with the default 160 buckets, so the limit bounds this storage at about 125 MB. With delta reclamation, the limit bounds distinct combinations within about one collection interval, so memory follows the combinations in recent use; typical applications use a few MB.
-
-At capacity, retain native behavior for accepted combinations. Detect overflow during collection, omit the invalid overflow point from Apitally export and issue a deduplicated warning explaining that some request metrics are missing, with capacity documentation and support guidance. Preserve the required dimensions on valid points rather than reducing attribution to hide the limit. This remains a finite bound, not a promise of lossless metrics under arbitrary cardinality.
+**Confirmed capacity policy:** accept at most 50,000 distinct attribute combinations per collection interval, with no user-facing capacity setting. Nothing is allocated upfront, and each combination uses about 0.7 KB, so the limit bounds this storage at about 35 MB; typical applications use a few MB at most. The limit guards against misuse such as a request ID used as the consumer identifier, which would otherwise grow memory and metrics exports with traffic. New combinations beyond the limit are dropped and a deduplicated warning explains that some request metrics are missing, with capacity documentation and support guidance. Accepted combinations keep all their dimensions. This remains a finite bound, not a promise of lossless metrics under arbitrary cardinality.
 
 ## 12. Error handling and logging posture
 
@@ -639,7 +637,7 @@ The [error-integrations POC](../pocs/error-integrations/README.md) retains the S
 | Log message representation | Rendered text in `Body`, with the original message template omitted from callback input. | Confirmed .NET adaptation. |
 | Structured log values and scopes | Not captured; the server does not store them. | Confirmed; values in the message template remain part of `Body`. |
 | Encoding | Official OTLP schemas/protobuf encoding with SDK-owned mapping. | Confirmed .NET mechanism; no change to HTTP/protobuf delivery. |
-| Metric capacity | Fixed capacity of 10,000 per request histogram through native OTel views and reclamation, with visible overflow degradation. | Confirmed. |
+| Metric capacity | Fixed capacity of 50,000 attribute combinations per collection interval in Apitally's own request-metric aggregation, with visible overflow degradation. | Confirmed. |
 | Runtime-specific fork and signal mechanics | Use .NET host lifecycle instead. | Platform adaptation. |
 | Sentry event-ID correlation | Defer the integration beyond v1 while retaining ordinary exception/error capture. | Confirmed v1 scope deviation. |
 | Startup endpoint documentation | Populate native summaries/descriptions in `paths`; omit full OpenAPI JSON on all runtimes, including .NET 10. | Confirmed v1 scope deviation. |
@@ -722,12 +720,10 @@ All six POC groups were independently rerun on .NET 8.0.13, 9.0.2 and 10.0.9 usi
 - [Specialized log batch ownership](https://github.com/open-telemetry/opentelemetry-dotnet/blob/5fbeba3a3d8bbd4f4235170ddeb6329fe0b8b86e/src/OpenTelemetry/Logs/Processor/BatchLogRecordExportProcessor.cs#L64-L93)
 - [Internal OTLP serializer](https://github.com/open-telemetry/opentelemetry-dotnet/blob/5fbeba3a3d8bbd4f4235170ddeb6329fe0b8b86e/src/OpenTelemetry.Exporter.OpenTelemetryProtocol/Implementation/Serializer/ProtobufOtlpTraceSerializer.cs#L9-L29)
 - [Official OTLP protobuf definitions and generation guidance](https://github.com/open-telemetry/opentelemetry-proto/blob/790608c4d51e6ffc12210b541e8514cbed9e91a4/README.md#L51-L73)
-- [OTel .NET metric cardinality behavior](https://github.com/open-telemetry/opentelemetry-dotnet/blob/5fbeba3a3d8bbd4f4235170ddeb6329fe0b8b86e/docs/metrics/README.md#cardinality-limits)
 - [OTel hosting registration and one provider per service collection](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry.Extensions.Hosting/README.md#L24-L47)
 - [OTel guidance on separately constructed providers and the usual single-provider lifetime](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/docs/trace/customizing-the-sdk/README.md#L45-L59)
 - [.NET DI ownership of externally created singleton instances](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection-guidelines#services-not-created-by-the-service-container)
-- [OTel 1.19.0 per-view cardinality limit and default](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Metrics/View/MetricStreamConfiguration.cs#L69-L95)
-- [OTel fixed metric-capacity allocation](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Metrics/AggregatorStore.cs#L71-L179)
+- [OTel 1.19.0 metric slot reclamation](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Metrics/AggregatorStore.cs)
 - [Python callback declarations](../../apitally-py/apitally/__init__.py) and [standard ReadableSpan copy construction](../../apitally-py/apitally/shared/span_processor.py)
 - [JavaScript callback declarations](../../apitally-js/src/config.ts) and [structural ReadableSpan copies](../../apitally-js/src/spanProcessor.ts)
 - [OTel private logger's synchronous processing and record recycling](https://github.com/open-telemetry/opentelemetry-dotnet/blob/dac1573ece52e8c275c3db5282bc57e3d5eff5cf/src/OpenTelemetry/Logs/ILogger/OpenTelemetryLogger.cs#L44-L106)

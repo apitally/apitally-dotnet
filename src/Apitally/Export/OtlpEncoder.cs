@@ -65,12 +65,13 @@ internal static class OtlpEncoder
         Func<IReadOnlyList<T>, IMessage> buildRequest,
         Action<IMessage, int> append,
         string signalName,
-        SdkDiagnostics diagnostics
+        SdkDiagnostics diagnostics,
+        int recordsPerRequest = RecordsPerRequest
     )
     {
-        for (var start = 0; start < records.Count; start += RecordsPerRequest)
+        for (var start = 0; start < records.Count; start += recordsPerRequest)
         {
-            var count = Math.Min(RecordsPerRequest, records.Count - start);
+            var count = Math.Min(recordsPerRequest, records.Count - start);
             EncodeChunk(
                 new ArraySegment<T>([.. records.Skip(start).Take(count)]),
                 buildRequest,

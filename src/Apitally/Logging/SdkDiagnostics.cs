@@ -166,7 +166,7 @@ internal sealed partial class SdkDiagnostics
 
     [LoggerMessage(
         Level = LogLevel.Warning,
-        Message = "Apitally request metrics exceeded the capacity of 10,000 distinct attribute combinations per collection interval, so some request metrics are missing. See https://docs.apitally.io or contact support if this persists."
+        Message = "Apitally request metrics exceeded the capacity of 50,000 distinct attribute combinations per collection interval, so some request metrics are missing. See https://docs.apitally.io or contact support if this persists."
     )]
     private partial void LogMetricCapacityExceeded();
 

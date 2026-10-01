@@ -210,10 +210,10 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
         {
             await worker!.StopAsync().ConfigureAwait(false);
             events!.EmitErrorAggregates(errorAggregates);
-            // Terminal shutdown joins the batch workers; the reader performs the final collection.
+            // Terminal shutdown joins the batch workers, so their final records are spooled before closing.
             spanProcessor!.Shutdown(Timeout.Infinite);
             logProcessor!.Shutdown(Timeout.Infinite);
-            metrics!.Shutdown();
+            metrics!.Collect();
             spool!.CloseCurrentFiles();
             if (!cancellationToken.IsCancellationRequested)
                 await worker.SendRemainingFilesAsync(cancellationToken).ConfigureAwait(false);
@@ -234,7 +234,7 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
         events!.EmitErrorAggregates(errorAggregates);
         spanProcessor!.ForceFlush(FlushTimeoutMilliseconds);
         logProcessor!.ForceFlush(FlushTimeoutMilliseconds);
-        metrics!.Collect(FlushTimeoutMilliseconds);
+        metrics!.Collect();
     }
 
     private void ExportSpans(IReadOnlyList<SpanExportEntry> entries, SpanRedaction redaction)
@@ -278,7 +278,6 @@ internal sealed class TelemetryRuntime : IAsyncDisposable
         tracing?.DisposeOwnedProvider();
         spanProcessor?.Dispose();
         logProcessor?.Dispose();
-        metrics?.Dispose();
         httpClient?.Dispose();
         spool?.Dispose();
     }

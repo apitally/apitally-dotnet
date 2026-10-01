@@ -1,4 +1,4 @@
-// Tests share process-wide state: environment variables, activity listeners and meters.
+// Tests share process-wide state: environment variables and activity listeners.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
 namespace Apitally.Tests.Support;

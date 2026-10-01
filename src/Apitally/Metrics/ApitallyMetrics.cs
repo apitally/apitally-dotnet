@@ -1,84 +1,29 @@
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using System.Globalization;
 using Apitally.Export;
 using Apitally.Logging;
 using Google.Protobuf;
-using OpenTelemetry;
-using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
-using SdkMetric = OpenTelemetry.Metrics.Metric;
 
 namespace Apitally.Metrics;
 
-// A private meter and provider. The provider only accepts instruments from this meter
-// instance, so other meters named "apitally" never reach Apitally.
-internal sealed class ApitallyMetrics : IDisposable
+internal sealed class ApitallyMetrics(
+    Resource resource,
+    TelemetrySpool spool,
+    TimeProvider timeProvider,
+    SdkDiagnostics diagnostics
+)
 {
-    public const string MeterName = "apitally";
+    // Bounds memory when most requests form a new combination, for example when a request ID
+    // is used as the consumer identifier.
+    private const int MaxCombinations = 50_000;
 
-    // Fixed per-histogram capacity; delta collection reclaims inactive attribute sets.
-    private const int CardinalityLimit = 10_000;
+    // At up to about 1.4 KB per combination, requests stay well below OtlpEncoder.MaxRequestSize.
+    private const int CombinationsPerRequest = 1_000;
 
     private readonly object sync = new();
-    private readonly Meter meter;
-    private readonly MeterProvider provider;
-    private readonly BaseExportingMetricReader reader;
-    private readonly Histogram<double> requestDuration;
-    private readonly Histogram<long> requestBodySize;
-    private readonly Histogram<long> responseBodySize;
+    private readonly ProcessMetrics processMetrics = new(timeProvider);
+    private Dictionary<RequestMetricKey, RequestMetricValues> requests = [];
+    private DateTime intervalStart = timeProvider.GetUtcNow().UtcDateTime;
 
-    public ApitallyMetrics(
-        Resource resource,
-        TelemetrySpool spool,
-        TimeProvider timeProvider,
-        SdkDiagnostics diagnostics
-    )
-    {
-        var scope = new object();
-        meter = new Meter(new MeterOptions(MeterName) { Scope = scope });
-        reader = new SynchronizedMetricReader(
-            new SpoolExporter(resource, spool, diagnostics, sync),
-            sync
-        )
-        {
-            TemporalityPreference = MetricReaderTemporalityPreference.Delta,
-        };
-        provider = Sdk.CreateMeterProviderBuilder()
-            .SetResourceBuilder(ResourceBuilder.CreateEmpty().AddAttributes(resource.Attributes))
-            .AddMeter(MeterName)
-            .AddView(instrument =>
-                !ReferenceEquals(instrument.Meter.Scope, scope) ? MetricStreamConfiguration.Drop
-                : instrument is Histogram<double> or Histogram<long>
-                    ? new Base2ExponentialBucketHistogramConfiguration
-                    {
-                        MaxScale = 3,
-                        CardinalityLimit = CardinalityLimit,
-                    }
-                : null
-            )
-            .SetExemplarFilter(ExemplarFilterType.AlwaysOff)
-            .AddReader(reader)
-            .Build();
-        requestDuration = meter.CreateHistogram<double>(
-            "http.server.request.duration",
-            "s",
-            "Duration of HTTP server requests"
-        );
-        requestBodySize = meter.CreateHistogram<long>(
-            "http.server.request.body.size",
-            "By",
-            "Size of HTTP server request bodies"
-        );
-        responseBodySize = meter.CreateHistogram<long>(
-            "http.server.response.body.size",
-            "By",
-            "Size of HTTP server response bodies"
-        );
-        _ = new ProcessMetrics(meter, timeProvider);
-    }
-
-    // Duration is the count anchor; sizes use the identical attribute tuple so they join to it.
     public void RecordRequest(
         string method,
         string route,
@@ -90,90 +35,75 @@ internal sealed class ApitallyMetrics : IDisposable
         long? responseSize
     )
     {
-        var tags = new TagList
-        {
-            { "http.request.method", method },
-            { "http.route", route },
-            { "http.response.status_code", statusCode },
-            { "url.scheme", scheme },
-        };
-        if (consumerIdentifier is not null)
-            tags.Add("apitally.consumer.identifier", consumerIdentifier);
-        if (statusCode >= 500)
-            tags.Add("error.type", statusCode.ToString(CultureInfo.InvariantCulture));
+        var key = new RequestMetricKey(method, route, statusCode, scheme, consumerIdentifier);
         lock (sync)
         {
-            requestDuration.Record(duration.TotalSeconds, tags);
+            if (!requests.TryGetValue(key, out var values))
+            {
+                if (requests.Count >= MaxCombinations)
+                    return;
+                values = new RequestMetricValues();
+                requests.Add(key, values);
+            }
+            values.Duration.Record(duration.TotalSeconds);
             if (requestSize is { } requestBytes)
-                requestBodySize.Record(requestBytes, tags);
+                values.RequestBodySize.Record(requestBytes);
             if (responseSize is { } responseBytes)
-                responseBodySize.Record(responseBytes, tags);
+                values.ResponseBodySize.Record(responseBytes);
         }
     }
 
-    public bool Collect(int timeoutMilliseconds) => reader.Collect(timeoutMilliseconds);
-
-    // Performs the final collection; the reader rejects any later collection.
-    public void Shutdown() => reader.Shutdown(Timeout.Infinite);
-
-    public void Dispose()
+    // Recording is blocked only while the interval's combinations are swapped out.
+    public void Collect()
     {
-        provider.Dispose();
-        meter.Dispose();
-    }
-
-    private sealed class SynchronizedMetricReader(BaseExporter<SdkMetric> exporter, object sync)
-        : BaseExportingMetricReader(exporter)
-    {
-        // Shutdown and provider disposal also collect through this override. The exporter
-        // releases the lock once the snapshot is taken.
-        protected override bool OnCollect(int timeoutMilliseconds)
+        Dictionary<RequestMetricKey, RequestMetricValues> collected;
+        DateTime start;
+        DateTime end;
+        lock (sync)
         {
-            Monitor.Enter(sync);
-            try
-            {
-                return base.OnCollect(timeoutMilliseconds);
-            }
-            finally
-            {
-                if (Monitor.IsEntered(sync))
-                    Monitor.Exit(sync);
-            }
+            collected = requests;
+            requests = [];
+            start = intervalStart;
+            end = intervalStart = timeProvider.GetUtcNow().UtcDateTime;
         }
-    }
-
-    private sealed class SpoolExporter(
-        Resource resource,
-        TelemetrySpool spool,
-        SdkDiagnostics diagnostics,
-        object sync
-    ) : BaseExporter<SdkMetric>
-    {
-        public override ExportResult Export(in Batch<SdkMetric> batch)
+        if (collected.Count >= MaxCombinations)
+            diagnostics.MetricCapacityExceeded();
+        try
         {
-            // The reader calls this synchronously after the snapshot, so recording can resume
-            // while the batch is mapped and spooled.
-            if (Monitor.IsEntered(sync))
-                Monitor.Exit(sync);
-            try
-            {
-                var metrics = new List<SdkMetric>();
-                foreach (var metric in batch)
-                    metrics.Add(metric);
-                var mapped = OtlpMetricMapper.Map(metrics, out var hasOverflow);
-                if (hasOverflow)
-                    diagnostics.MetricCapacityExceeded();
-                // The server joins the three request histograms within one request, so each
-                // collection is appended whole. The 10,000-point capacity bounds its size.
-                var request = OtlpMetricMapper.BuildRequest(mapped, resource);
-                spool.Append(TelemetrySignal.Metrics, request.CalculateSize(), request.WriteTo);
-                return ExportResult.Success;
-            }
-            catch (Exception exception)
-            {
-                diagnostics.MetricExportFailed(exception);
-                return ExportResult.Failure;
-            }
+            var gauges = OtlpMetricMapper.BuildProcessRequest(
+                processMetrics.Observe(),
+                start,
+                end,
+                resource
+            );
+            spool.Append(TelemetrySignal.Metrics, gauges.CalculateSize(), gauges.WriteTo);
+            OtlpEncoder.EncodeRequests(
+                [.. collected],
+                chunk => OtlpMetricMapper.BuildRequestMetricsRequest(chunk, start, end, resource),
+                (request, size) => spool.Append(TelemetrySignal.Metrics, size, request.WriteTo),
+                "metrics",
+                diagnostics,
+                CombinationsPerRequest
+            );
+        }
+        catch (Exception exception)
+        {
+            diagnostics.MetricExportFailed(exception);
         }
     }
+}
+
+internal readonly record struct RequestMetricKey(
+    string Method,
+    string Route,
+    int StatusCode,
+    string Scheme,
+    string? ConsumerIdentifier
+);
+
+internal sealed class RequestMetricValues
+{
+    public ExponentialHistogram Duration;
+    public ExponentialHistogram RequestBodySize;
+    public ExponentialHistogram ResponseBodySize;
 }
