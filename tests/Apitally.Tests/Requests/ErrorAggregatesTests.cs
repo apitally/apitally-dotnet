@@ -61,7 +61,7 @@ public class ErrorAggregatesTests
         Assert.Equal("System.InvalidOperationException", events[1]["type"]);
         Assert.Equal("Test error", events[1]["message"]);
         Assert.Contains("Test error", (string)events[1]["stacktrace"]!);
-        Assert.Equal(2L, events[1]["count"]);
+        Assert.Equal(Counts((null, 2L)), events[1]["counts"]);
         Assert.Equal("GET", events[1]["method"]);
     }
 
@@ -151,27 +151,35 @@ public class ErrorAggregatesTests
     }
 
     [Fact]
-    public void GroupsAreBoundedBetweenDrains()
+    public void DistinctErrorsAreBoundedBetweenDrains()
     {
         var aggregates = new ErrorAggregates();
-        for (var i = 0; i < 150; i++)
+        for (var i = 0; i <= ErrorAggregates.MaxErrors; i++)
             aggregates.AddValidationErrors(
                 null,
                 "POST",
                 "/a",
                 [new ValidationDetail("body", $"f{i}", "m", "")]
             );
-        aggregates.AddValidationErrors(
-            null,
-            "POST",
-            "/a",
-            [new ValidationDetail("body", "f0", "m", "")]
-        );
+        var consumers = Enumerable
+            .Range(0, ErrorAggregates.MaxErrors + 1)
+            .Select(i => $"consumer-{i}")
+            .ToList();
+        foreach (var consumer in consumers)
+            aggregates.AddValidationErrors(
+                consumer,
+                "POST",
+                "/a",
+                [new ValidationDetail("body", "f0", "m", "")]
+            );
 
         var (validation, server) = aggregates.Drain();
 
-        Assert.Equal(ErrorAggregates.MaxGroups, validation.Count);
-        Assert.Equal(2L, validation.Single(e => (string)e["field"]! == "f0")["count"]);
+        Assert.Equal(ErrorAggregates.MaxErrors, validation.Count);
+        Assert.Equal(
+            Counts([(null, 1L), .. consumers.Select(consumer => ((string?)consumer, 1L))]),
+            validation.Single(e => (string)e["field"]! == "f0")["counts"]
+        );
         Assert.Empty(server);
         Assert.Empty(aggregates.Drain().Validation);
     }
@@ -209,10 +217,22 @@ public class ErrorAggregatesTests
         );
 
         var body = Assert.Single(aggregates.Drain().Validation);
-        Assert.Equal(128, ((string)body["consumer"]!).Length);
         Assert.Equal(32, ((string)body["source"]!).Length);
         Assert.Equal(2_048, ((string)body["message"]!).Length);
         Assert.Equal(128, ((string)body["type"]!).Length);
-        Assert.Equal(2L, body["count"]);
+        Assert.Equal(Counts((new string('c', 128), 2L)), body["counts"]);
     }
+
+    private static object?[] Counts(params (string? Consumer, long Count)[] counts) =>
+        [
+            .. counts.Select(entry =>
+                entry.Consumer is null
+                    ? new Dictionary<string, object?> { ["count"] = entry.Count }
+                    : new Dictionary<string, object?>
+                    {
+                        ["consumer"] = entry.Consumer,
+                        ["count"] = entry.Count,
+                    }
+            ),
+        ];
 }

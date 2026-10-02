@@ -29,8 +29,10 @@ public class ValidationCaptureTests
         Assert.Equal("Id", body["field"]);
         Assert.Equal("The field Id must be between 1 and 1000.", body["message"]);
         Assert.Equal("", body["type"]);
-        Assert.Equal(1L, body["count"]);
-        Assert.False(body.ContainsKey("consumer"));
+        Assert.Equal(
+            new object?[] { new Dictionary<string, object?> { ["count"] = 1L } },
+            body["counts"]
+        );
         var query = events.Where(e => (string)e["method"]! == "GET").ToList();
         Assert.NotEmpty(query);
         Assert.All(query, e => Assert.Equal(("query", "limit"), (e["source"], e["field"])));
@@ -71,12 +73,15 @@ public class ValidationCaptureTests
                 ["field"] = "items[a.b].name",
                 ["message"] = "Name is required.",
                 ["type"] = "",
-                ["count"] = 2L,
+                ["counts"] = new object?[] { new Dictionary<string, object?> { ["count"] = 2L } },
             },
             events[0]
         );
         Assert.Equal("Ungültige E-Mail-Adresse.", events[1]["message"]);
-        Assert.Equal(1L, events[1]["count"]);
+        Assert.Equal(
+            new object?[] { new Dictionary<string, object?> { ["count"] = 1L } },
+            events[1]["counts"]
+        );
         Assert.All(
             receiver.Spans(),
             span => Assert.False(span.Attributes().ContainsKey("apitally.response.body"))

@@ -441,7 +441,7 @@ Emit once per serving process under the shared contract. Cross-host startup coor
 
 ### Error aggregates
 
-Use the shared validation/server aggregation identities, truncation rules and positive `UInt32` count range. Sentry event-ID enrichment is deferred from v1 as described in section 14. Limits remain 100 validation and 100 server groups per process between drains.
+Use the shared validation/server aggregation identities, truncation rules and positive `UInt32` count range. Sentry event-ID enrichment is deferred from v1 as described in section 14. Limits remain 100 validation and 100 server errors per process between drains. Each error counts occurrences per consumer, with a separate count for requests without a consumer; per-consumer counts are not limited.
 
 Drain atomically, then emit outside the synchronization boundary immediately before the logs pipeline flushes in ordinary and final cycles. Each aggregate has the native event name and a structured OTLP object body, not the startup event's JSON-string body. It carries no request trace context and bypasses application-log masking/truncation.
 
