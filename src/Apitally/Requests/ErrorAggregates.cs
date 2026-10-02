@@ -2,15 +2,15 @@ using Apitally.AspNetCore;
 
 namespace Apitally.Requests;
 
-// Bounded validation and server error groups between drains. Values are normalized and
-// truncated before keying; new groups beyond the limit are silently ignored.
+// Bounded validation and server errors between drains, each counted per consumer. Values are
+// normalized and truncated before keying; new errors beyond the limit are silently ignored.
 internal sealed class ErrorAggregates
 {
-    public const int MaxGroups = 100;
+    public const int MaxErrors = 100;
 
     private readonly object sync = new();
-    private Dictionary<ValidationErrorKey, long> validationErrors = [];
-    private Dictionary<ServerErrorKey, long> serverErrors = [];
+    private Dictionary<ValidationErrorKey, Dictionary<string, long>> validationErrors = [];
+    private Dictionary<ServerErrorKey, Dictionary<string, long>> serverErrors = [];
 
     public void AddValidationErrors(
         string? consumer,
@@ -21,12 +21,12 @@ internal sealed class ErrorAggregates
     {
         if (!IsValidMethod(method))
             return;
+        consumer = consumer is null ? null : Truncate(consumer, 128);
         lock (sync)
         {
             foreach (var detail in details)
             {
                 var key = new ValidationErrorKey(
-                    consumer is null ? null : Truncate(consumer, 128),
                     method,
                     Truncate(path, 2_000),
                     Truncate(detail.Source, 32),
@@ -34,7 +34,7 @@ internal sealed class ErrorAggregates
                     Truncate(detail.Message, 2_048),
                     Truncate(detail.Type, 128)
                 );
-                Increment(validationErrors, key);
+                Increment(validationErrors, key, consumer);
             }
         }
     }
@@ -43,8 +43,8 @@ internal sealed class ErrorAggregates
     {
         if (!IsValidMethod(method))
             return;
+        consumer = consumer is null ? null : Truncate(consumer, 128);
         var key = new ServerErrorKey(
-            consumer is null ? null : Truncate(consumer, 128),
             method,
             Truncate(path, 2_000),
             Truncate(exception.GetType().FullName ?? exception.GetType().Name, 256),
@@ -52,35 +52,44 @@ internal sealed class ErrorAggregates
             Truncate(ExceptionStacktrace.Get(exception), 65_536)
         );
         lock (sync)
-            Increment(serverErrors, key);
+            Increment(serverErrors, key, consumer);
     }
 
-    // Swaps the groups atomically; the caller emits events outside the lock.
+    // Swaps the errors atomically; the caller emits events outside the lock.
     public (
         List<Dictionary<string, object?>> Validation,
         List<Dictionary<string, object?>> Server
     ) Drain()
     {
-        Dictionary<ValidationErrorKey, long> validation;
-        Dictionary<ServerErrorKey, long> server;
+        Dictionary<ValidationErrorKey, Dictionary<string, long>> validation;
+        Dictionary<ServerErrorKey, Dictionary<string, long>> server;
         lock (sync)
         {
             (validation, validationErrors) = (validationErrors, []);
             (server, serverErrors) = (serverErrors, []);
         }
         return (
-            [.. validation.Select(group => group.Key.ToBody(group.Value))],
-            [.. server.Select(group => group.Key.ToBody(group.Value))]
+            [.. validation.Select(error => error.Key.ToBody(error.Value))],
+            [.. server.Select(error => error.Key.ToBody(error.Value))]
         );
     }
 
-    private static void Increment<TKey>(Dictionary<TKey, long> groups, TKey key)
+    private static void Increment<TKey>(
+        Dictionary<TKey, Dictionary<string, long>> errors,
+        TKey key,
+        string? consumer
+    )
         where TKey : notnull
     {
-        if (groups.TryGetValue(key, out var count))
-            groups[key] = Math.Min(count + 1, uint.MaxValue);
-        else if (groups.Count < MaxGroups)
-            groups[key] = 1;
+        if (!errors.TryGetValue(key, out var counts))
+        {
+            if (errors.Count >= MaxErrors)
+                return;
+            errors[key] = counts = [];
+        }
+        // Consumer identifiers are never empty, so "" counts requests without a consumer.
+        var consumerKey = consumer ?? "";
+        counts[consumerKey] = counts.GetValueOrDefault(consumerKey) + 1;
     }
 
     private static bool IsValidMethod(string method) =>
@@ -89,8 +98,20 @@ internal sealed class ErrorAggregates
     private static string Truncate(string value, int maxLength) =>
         value.Length > maxLength ? value[..maxLength] : value;
 
+    private static object?[] ToCountsBody(Dictionary<string, long> counts) =>
+        [
+            .. counts.Select(entry =>
+                entry.Key == ""
+                    ? new Dictionary<string, object?> { ["count"] = entry.Value }
+                    : new Dictionary<string, object?>
+                    {
+                        ["consumer"] = entry.Key,
+                        ["count"] = entry.Value,
+                    }
+            ),
+        ];
+
     private sealed record ValidationErrorKey(
-        string? Consumer,
         string Method,
         string Path,
         string Source,
@@ -99,24 +120,20 @@ internal sealed class ErrorAggregates
         string Type
     )
     {
-        public Dictionary<string, object?> ToBody(long count) =>
-            WithConsumer(
-                Consumer,
-                new()
-                {
-                    ["method"] = Method,
-                    ["path"] = Path,
-                    ["source"] = Source,
-                    ["field"] = Field,
-                    ["message"] = Message,
-                    ["type"] = Type,
-                    ["count"] = count,
-                }
-            );
+        public Dictionary<string, object?> ToBody(Dictionary<string, long> counts) =>
+            new()
+            {
+                ["method"] = Method,
+                ["path"] = Path,
+                ["source"] = Source,
+                ["field"] = Field,
+                ["message"] = Message,
+                ["type"] = Type,
+                ["counts"] = ToCountsBody(counts),
+            };
     }
 
     private sealed record ServerErrorKey(
-        string? Consumer,
         string Method,
         string Path,
         string Type,
@@ -124,28 +141,15 @@ internal sealed class ErrorAggregates
         string Stacktrace
     )
     {
-        public Dictionary<string, object?> ToBody(long count) =>
-            WithConsumer(
-                Consumer,
-                new()
-                {
-                    ["method"] = Method,
-                    ["path"] = Path,
-                    ["type"] = Type,
-                    ["message"] = Message,
-                    ["stacktrace"] = Stacktrace,
-                    ["count"] = count,
-                }
-            );
-    }
-
-    private static Dictionary<string, object?> WithConsumer(
-        string? consumer,
-        Dictionary<string, object?> body
-    )
-    {
-        if (consumer is not null)
-            body["consumer"] = consumer;
-        return body;
+        public Dictionary<string, object?> ToBody(Dictionary<string, long> counts) =>
+            new()
+            {
+                ["method"] = Method,
+                ["path"] = Path,
+                ["type"] = Type,
+                ["message"] = Message,
+                ["stacktrace"] = Stacktrace,
+                ["counts"] = ToCountsBody(counts),
+            };
     }
 }
