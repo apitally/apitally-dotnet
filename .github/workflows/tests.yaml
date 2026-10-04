@@ -8,17 +8,18 @@ on:
       - LICENSE
       - README.md
   pull_request:
-    paths-ignore:
-      - .gitignore
-      - LICENSE
-      - README.md
+  schedule:
+    - cron: "0 0,12 * * *" # 10am and 10pm AEST
+  workflow_dispatch:
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
@@ -26,11 +27,12 @@ jobs:
           dotnet-version: 10.0.x
       - name: Restore tools
         run: dotnet tool restore
-      - name: Check formatting
-        run: dotnet csharpier check .
+      - name: Run checks
+        run: make check
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -43,13 +45,42 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
-      - name: Restore dependencies
-        run: dotnet restore
-      - name: Build
-        run: dotnet build --no-restore
-      - name: Test with coverage
-        run: dotnet test --no-build --framework ${{ matrix.framework }} --collect:"XPlat Code Coverage"
+      - name: Run tests with coverage
+        run: make test-coverage FRAMEWORK=${{ matrix.framework }}
       - name: Upload coverage report to Codecov
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  ci-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - check
+      - test
+    if: always()
+    steps:
+      - name: Fail if any job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+
+  pi-fix-ci:
+    needs: ci-gate
+    if: |
+      always() &&
+      github.event_name == 'pull_request' &&
+      needs.ci-gate.result == 'failure' &&
+      github.run_attempt == 1 &&
+      github.actor == 'renovate[bot]' &&
+      github.event.pull_request.user.login == 'renovate[bot]' &&
+      startsWith(github.event.pull_request.head.ref, 'renovate/') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch Pi Fix CI workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run pi-fix-ci.yaml --ref main -f run_id="$GITHUB_RUN_ID"
