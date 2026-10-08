@@ -54,7 +54,7 @@ The SDK supports **.NET** `8`, `9` and `10`.
 
 \* Including both Minimal APIs and MVC controllers.
 
-Apitally also supports many other web frameworks in [JavaScript](https://github.com/apitally/apitally-js), [Python](https://github.com/apitally/apitally-py), [Go](https://github.com/apitally/apitally-go) and [Java](https://github.com/apitally/apitally-java) via our other SDKs.
+Apitally also supports many other web frameworks in [JavaScript](https://github.com/apitally/apitally-js), [Python](https://github.com/apitally/apitally-py) and [Go](https://github.com/apitally/apitally-go) via our other SDKs.
 
 ## Getting started
 
