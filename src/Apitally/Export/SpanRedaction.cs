@@ -253,7 +253,8 @@ internal sealed partial class SpanRedaction(
     // Only escaped string values are converted to .NET strings, which limits allocations.
     private string RedactJson(byte[] bytes)
     {
-        var reader = new Utf8JsonReader(bytes);
+        var json = bytes.AsSpan();
+        var reader = new Utf8JsonReader(json.StartsWith("\uFEFF"u8) ? json[3..] : json);
         var output = new ArrayBufferWriter<byte>(bytes.Length);
         using (var writer = new Utf8JsonWriter(output, JsonWriterOptions))
         {
