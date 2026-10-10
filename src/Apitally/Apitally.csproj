@@ -30,7 +30,7 @@
     <None Include="icon.png" Pack="true" PackagePath="/" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="OpenTelemetry" Version="1.19.0" />
+    <PackageReference Include="OpenTelemetry" Version="1.19.1" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
     <PackageReference Include="Google.Protobuf" Version="3.33.5" />
