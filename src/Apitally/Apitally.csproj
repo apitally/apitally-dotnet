@@ -33,7 +33,7 @@
     <PackageReference Include="OpenTelemetry" Version="1.19.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
-    <PackageReference Include="Google.Protobuf" Version="3.33.5" />
+    <PackageReference Include="Google.Protobuf" Version="3.36.2" />
     <PackageReference Include="Grpc.Tools" Version="2.76.0" PrivateAssets="all" />
   </ItemGroup>
   <ItemGroup>
