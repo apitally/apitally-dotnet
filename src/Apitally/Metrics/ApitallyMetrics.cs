@@ -29,13 +29,12 @@ internal sealed class ApitallyMetrics(
         string route,
         int statusCode,
         string? consumerIdentifier,
-        string scheme,
         TimeSpan duration,
         long? requestSize,
         long? responseSize
     )
     {
-        var key = new RequestMetricKey(method, route, statusCode, scheme, consumerIdentifier);
+        var key = new RequestMetricKey(method, route, statusCode, consumerIdentifier);
         lock (sync)
         {
             if (!requests.TryGetValue(key, out var values))
@@ -97,7 +96,6 @@ internal readonly record struct RequestMetricKey(
     string Method,
     string Route,
     int StatusCode,
-    string Scheme,
     string? ConsumerIdentifier
 );
 

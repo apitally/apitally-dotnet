@@ -285,7 +285,6 @@ internal sealed class RequestRegistry(
             route,
             completion.StatusCode,
             consumer?.Identifier,
-            completion.Scheme,
             Stopwatch.GetElapsedTime(state.StartTimestamp),
             completion.RequestBodySize,
             completion.ResponseBodySize

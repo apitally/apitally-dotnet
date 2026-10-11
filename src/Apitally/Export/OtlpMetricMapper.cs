@@ -157,7 +157,6 @@ internal static class OtlpMetricMapper
             OtlpEncoder.ToKeyValue("http.request.method", key.Method),
             OtlpEncoder.ToKeyValue("http.route", key.Route),
             OtlpEncoder.ToKeyValue("http.response.status_code", (long)key.StatusCode),
-            OtlpEncoder.ToKeyValue("url.scheme", key.Scheme),
         };
         if (key.ConsumerIdentifier is not null)
             attributes.Add(

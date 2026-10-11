@@ -57,7 +57,6 @@ public sealed class ApitallyMetricsTests : IDisposable
                 ["http.request.method"] = "GET",
                 ["http.route"] = "/error",
                 ["http.response.status_code"] = 500L,
-                ["url.scheme"] = "http",
                 ["error.type"] = "500",
             },
             OtlpDecoding.Attributes(points["/error"].Attributes)
@@ -218,7 +217,6 @@ public sealed class ApitallyMetricsTests : IDisposable
             "/a",
             200,
             null,
-            "http",
             TimeSpan.FromSeconds(durationSeconds),
             null,
             responseSize
@@ -232,7 +230,6 @@ public sealed class ApitallyMetricsTests : IDisposable
                 "/a",
                 200,
                 $"{prefix}-{i}",
-                "http",
                 TimeSpan.FromSeconds(1),
                 10,
                 20
@@ -266,7 +263,6 @@ public sealed class ApitallyMetricsTests : IDisposable
                 OtlpEncoder.ToKeyValue("http.request.method", "GET"),
                 OtlpEncoder.ToKeyValue("http.route", "/a"),
                 OtlpEncoder.ToKeyValue("http.response.status_code", 200L),
-                OtlpEncoder.ToKeyValue("url.scheme", "http"),
             },
         };
 
