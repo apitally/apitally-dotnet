@@ -57,7 +57,6 @@ public sealed class ApitallyMetricsTests : IDisposable
                 ["http.request.method"] = "GET",
                 ["http.route"] = "/error",
                 ["http.response.status_code"] = 500L,
-                ["error.type"] = "500",
             },
             OtlpDecoding.Attributes(points["/error"].Attributes)
         );
