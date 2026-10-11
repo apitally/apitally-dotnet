@@ -1,4 +1,3 @@
-using System.Globalization;
 using Apitally.Metrics;
 using Google.Protobuf;
 using OpenTelemetry.Proto.Collector.Metrics.V1;
@@ -161,13 +160,6 @@ internal static class OtlpMetricMapper
         if (key.ConsumerIdentifier is not null)
             attributes.Add(
                 OtlpEncoder.ToKeyValue("apitally.consumer.identifier", key.ConsumerIdentifier)
-            );
-        if (key.StatusCode >= 500)
-            attributes.Add(
-                OtlpEncoder.ToKeyValue(
-                    "error.type",
-                    key.StatusCode.ToString(CultureInfo.InvariantCulture)
-                )
             );
         return attributes;
     }
