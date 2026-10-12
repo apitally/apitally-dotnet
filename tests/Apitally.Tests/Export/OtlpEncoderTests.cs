@@ -22,7 +22,12 @@ public class OtlpEncoderTests
         OtlpEncoder.EncodeRequests(
             spans,
             OtlpTraceMapper.BuildRequest,
-            (request, _) => requests.Add(request.ToByteArray()),
+            (request, size) =>
+            {
+                var bytes = request.ToByteArray();
+                Assert.Equal(bytes.Length, size);
+                requests.Add(bytes);
+            },
             "traces",
             diagnostics.Diagnostics
         );
