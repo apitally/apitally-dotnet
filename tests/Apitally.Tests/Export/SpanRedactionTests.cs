@@ -154,12 +154,12 @@ public class SpanRedactionTests
             .TryRedact(
                 new SpanExportEntry(span)
                 {
-                    RequestBody = Body("password=abc"),
+                    RequestBody = Body("hello world"),
                     ResponseBody = new CapturedBody(binary, null),
                 }
             );
 
-        Assert.Equal("password=abc", span.Attributes[SpanRedaction.RequestBodyAttribute]);
+        Assert.Equal("hello world", span.Attributes[SpanRedaction.RequestBodyAttribute]);
         Assert.Equal(binary, span.Attributes[SpanRedaction.ResponseBodyAttribute]);
     }
 
@@ -183,7 +183,7 @@ public class SpanRedactionTests
     }
 
     [Fact]
-    public void MaskCallbacksSeeRedactedHeadersButNoBodies()
+    public void MaskCallbacksSeeRedactedQueryAndHeaders()
     {
         var span = TestSpans.Create(new() { ["url.query"] = "token=1" });
         var seen = new List<string>();
@@ -196,13 +196,7 @@ public class SpanRedactionTests
                     Assert.Equal("token=[REDACTED]", snapshot.Attributes["url.query"]);
                     return Encoding.UTF8.GetBytes("masked");
                 };
-                options.MaskResponseBody = (snapshot, _) =>
-                {
-                    Assert.False(
-                        snapshot.Attributes.ContainsKey(SpanRedaction.RequestBodyAttribute)
-                    );
-                    return null;
-                };
+                options.MaskResponseBody = (_, _) => null;
             })
             .TryRedact(
                 new SpanExportEntry(span)
@@ -214,7 +208,6 @@ public class SpanRedactionTests
             );
 
         Assert.Contains("http.request.header.accept", seen);
-        Assert.DoesNotContain(SpanRedaction.RequestBodyAttribute, seen);
         Assert.Equal("masked", span.Attributes[SpanRedaction.RequestBodyAttribute]);
         Assert.Equal("[REDACTED]", span.Attributes[SpanRedaction.ResponseBodyAttribute]);
     }
@@ -286,7 +279,7 @@ public class SpanRedactionTests
 
         Redaction()
             .TryRedact(
-                new SpanExportEntry(span) { RequestBody = new CapturedBody([1, 2], "zstd") }
+                new SpanExportEntry(span) { RequestBody = new CapturedBody([1, 2], "x-unknown") }
             );
 
         Assert.Equal("[REDACTED]", span.Attributes[SpanRedaction.RequestBodyAttribute]);

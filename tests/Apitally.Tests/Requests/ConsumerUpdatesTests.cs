@@ -89,7 +89,7 @@ public class ConsumerUpdatesTests
     }
 
     [Fact]
-    public void CacheEvictsLeastRecentlyUsedIdentifiers()
+    public void CacheIsBoundedAndEvictedIdentifiersEmitAgain()
     {
         var (updates, events) = Create();
 

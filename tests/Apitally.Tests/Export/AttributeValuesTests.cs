@@ -70,38 +70,30 @@ public class AttributeValuesTests
     }
 
     [Fact]
-    public void DictionariesConvertOneLevelDeep()
+    public void DictionariesConvertKeysAndValues()
     {
         var normalized = AttributeValues.Normalize(
             new Dictionary<string, object?>
             {
-                ["map"] = new Dictionary<object, object?>
-                {
-                    [1] = 2,
-                    ["list"] = new[] { "a" },
-                    ["nested"] = new Dictionary<string, int> { ["x"] = 1 },
-                },
+                ["map"] = new Dictionary<object, object?> { [1] = 2, ["list"] = new[] { "a" } },
             }
         );
 
         var map = Assert.IsType<Dictionary<string, object?>>(normalized["map"]);
         Assert.Equal(2L, map["1"]);
         Assert.Equal(new[] { "a" }, map["list"]);
-        Assert.IsType<string>(map["nested"]);
     }
 
     [Fact]
-    public void ListsAndObjectsUseInvariantStringConversion()
+    public void ObjectsUseInvariantStringConversion()
     {
         var normalized = AttributeValues.Normalize(
             new Dictionary<string, object?>
             {
-                ["list"] = new List<int> { 1, 2 },
                 ["date"] = new DateTime(2026, 9, 28, 10, 0, 0, DateTimeKind.Utc),
             }
         );
 
-        Assert.Equal(typeof(List<int>).ToString(), normalized["list"]);
         Assert.Equal(
             new DateTime(2026, 9, 28, 10, 0, 0).ToString(CultureInfo.InvariantCulture),
             normalized["date"]

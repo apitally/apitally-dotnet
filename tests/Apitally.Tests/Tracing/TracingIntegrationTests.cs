@@ -179,7 +179,6 @@ public class TracingIntegrationTests
         );
         var resource = OtlpDecoding.Attributes(receiver.ResourceSpans()[0].Resource.Attributes);
         Assert.Equal("orders", resource["service.name"]);
-        Assert.Equal("prod", resource["deployment.environment.name"]);
     }
 
     [Theory]

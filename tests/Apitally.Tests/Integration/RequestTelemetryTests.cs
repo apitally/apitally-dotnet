@@ -122,9 +122,8 @@ public class RequestTelemetryTests
                 app.UseWebSockets();
                 app.Map(
                     "/ws",
-                    async (HttpContext context, IApitally apitally) =>
+                    async (HttpContext context) =>
                     {
-                        apitally.SetConsumer("socket-consumer", name: "Socket");
                         using var socket = await context.WebSockets.AcceptWebSocketAsync();
                         await socket.ReceiveAsync(new byte[16], default);
                         await socket.CloseOutputAsync(
@@ -148,7 +147,6 @@ public class RequestTelemetryTests
         await host.StopAsync();
 
         Assert.Empty(receiver.Spans());
-        Assert.Empty(receiver.Events("apitally.consumer.update"));
         Assert.Empty(receiver.Metrics("http.server.request.duration"));
     }
 

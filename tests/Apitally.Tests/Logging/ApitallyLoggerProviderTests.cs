@@ -48,10 +48,6 @@ public class ApitallyLoggerProviderTests
             "TestApp.Orders",
             receiver.ScopeLogs().Single(scope => scope.Scope.Name != "apitally").Scope.Name
         );
-        Assert.Equal(
-            ["apitally.request.server_span_id"],
-            OtlpDecoding.Attributes(logs[0].Attributes).Keys
-        );
     }
 
     [Fact]

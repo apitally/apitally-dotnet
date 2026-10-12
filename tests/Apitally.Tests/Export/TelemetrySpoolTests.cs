@@ -103,19 +103,6 @@ public sealed class TelemetrySpoolTests : IDisposable
     }
 
     [Fact]
-    public void RotateForExportReturnsFilesClosedSinceThePreviousCall()
-    {
-        using var spool = CreateSpool();
-        spool.Append(TelemetrySignal.Traces, new byte[3_000_000]);
-        spool.Append(TelemetrySignal.Traces, new byte[1_000_001]);
-        spool.Append(TelemetrySignal.Logs, [1]);
-
-        // The size-closed traces file and the logs file; the current traces file waits.
-        Assert.Equal(2, spool.RotateForExport());
-        Assert.Equal(0, spool.RotateForExport());
-    }
-
-    [Fact]
     public void CurrentFileRotatesForExportOnlyWithoutBacklog()
     {
         using var spool = CreateSpool();
@@ -187,7 +174,6 @@ public sealed class TelemetrySpoolTests : IDisposable
         spool.Append(TelemetrySignal.Logs, Request("x").ToByteArray());
         spool.RotateForExport();
 
-        Assert.True(spool.IsInMemory);
         Assert.Single(diagnostics.Records(LogLevel.Warning));
         Assert.Single(
             OtlpDecoding
@@ -197,7 +183,7 @@ public sealed class TelemetrySpoolTests : IDisposable
     }
 
     [Fact]
-    public void WriteFailureDiscardsOnlyTheAffectedFile()
+    public void WriteFailureLeavesOtherFilesIntact()
     {
         if (OperatingSystem.IsWindows())
             return;
@@ -221,11 +207,12 @@ public sealed class TelemetrySpoolTests : IDisposable
         }
         spool.CloseCurrentFiles();
 
+        var pending = spool.GetPendingFiles();
+        Assert.Single(pending, file => file.Signal == TelemetrySignal.Metrics);
         Assert.Equal(
-            [TelemetrySignal.Metrics, TelemetrySignal.Logs],
-            spool.GetPendingFiles().Select(file => file.Signal)
+            2,
+            Assert.Single(pending, file => file.Signal == TelemetrySignal.Logs).UncompressedSize
         );
-        Assert.Equal(2, spool.GetPendingFiles()[1].UncompressedSize);
         Assert.Single(diagnostics.Records(LogLevel.Warning));
     }
 

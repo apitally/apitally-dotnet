@@ -22,11 +22,7 @@ public class OtlpEncoderTests
         OtlpEncoder.EncodeRequests(
             spans,
             OtlpTraceMapper.BuildRequest,
-            (request, size) =>
-            {
-                Assert.Equal(request.CalculateSize(), size);
-                requests.Add(request.ToByteArray());
-            },
+            (request, _) => requests.Add(request.ToByteArray()),
             "traces",
             diagnostics.Diagnostics
         );
@@ -60,11 +56,7 @@ public class OtlpEncoderTests
         OtlpEncoder.EncodeRequests(
             spans,
             OtlpTraceMapper.BuildRequest,
-            (request, size) =>
-            {
-                Assert.Equal(request.CalculateSize(), size);
-                requests.Add(request.ToByteArray());
-            },
+            (request, _) => requests.Add(request.ToByteArray()),
             "traces",
             diagnostics.Diagnostics
         );

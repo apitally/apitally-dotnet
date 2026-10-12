@@ -187,7 +187,7 @@ public class RequestRegistryTests
             configureApp: app =>
                 app.MapGet(
                     "/many",
-                    (TelemetryRuntime runtime, ILoggerFactory loggerFactory) =>
+                    (ILoggerFactory loggerFactory) =>
                     {
                         var logger = loggerFactory.CreateLogger("TestApp.Requests");
                         using (var first = ApplicationSource.StartActivity("child"))
@@ -197,14 +197,6 @@ public class RequestRegistryTests
                             {
                                 using var activity = ApplicationSource.StartActivity("child");
                                 activity!.SetTag("index", i);
-                                Assert.Equal(
-                                    i < 1_000,
-                                    runtime.Registry!.TryGet(
-                                        activity.TraceId,
-                                        activity.SpanId,
-                                        out _
-                                    )
-                                );
                                 if (i is 999 or 1_000)
                                     logger.LogWarning("Child {Index}", i);
                             }

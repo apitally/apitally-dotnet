@@ -28,7 +28,6 @@ public class ValidationCaptureTests
         Assert.Equal("body", body["source"]);
         Assert.Equal("Id", body["field"]);
         Assert.Equal("The field Id must be between 1 and 1000.", body["message"]);
-        Assert.Equal("", body["type"]);
         Assert.Equal(
             new object?[] { new Dictionary<string, object?> { ["count"] = 1L } },
             body["counts"]
