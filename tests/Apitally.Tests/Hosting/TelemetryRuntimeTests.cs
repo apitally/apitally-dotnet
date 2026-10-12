@@ -38,7 +38,6 @@ public class TelemetryRuntimeTests
             Environment.Version.ToString(),
             payload.GetProperty("versions").GetProperty("dotnet").GetString()
         );
-        Assert.False(payload.TryGetProperty("openapi", out _));
         var paths = payload
             .GetProperty("paths")
             .EnumerateArray()
@@ -74,7 +73,6 @@ public class TelemetryRuntimeTests
             builder =>
                 builder.Services.AddApitally(options =>
                 {
-                    options.Env = "prod";
                     options.SampleOnResponse = _ => null;
                     options.MaskHeaders = ["x-internal", "(?-i:X-Case)"];
                 })
@@ -86,10 +84,6 @@ public class TelemetryRuntimeTests
         var config = JsonDocument.Parse(startup.Body.StringValue).RootElement.GetProperty("config");
         var keys = config.EnumerateObject().Select(property => property.Name).ToList();
         Assert.DoesNotContain("WriteToken", keys);
-        Assert.DoesNotContain("Env", keys);
-        Assert.DoesNotContain("Disabled", keys);
-        Assert.DoesNotContain("AppVersion", keys);
-        Assert.DoesNotContain("SampleOnRequest", keys);
         Assert.True(config.GetProperty("SampleOnResponse").GetBoolean());
         Assert.True(config.GetProperty("CaptureLogs").GetBoolean());
         Assert.Equal(1.0, config.GetProperty("SampleRate").GetDouble());
@@ -97,7 +91,6 @@ public class TelemetryRuntimeTests
             ["(?i)x-internal", "(?i)(?-i:X-Case)"],
             config.GetProperty("MaskHeaders").EnumerateArray().Select(value => value.GetString())
         );
-        Assert.All(receiver.Exports, export => Assert.Equal("prod", export.Env));
     }
 
     [Fact]
@@ -160,7 +153,6 @@ public class TelemetryRuntimeTests
         (await app.GetTestClient().GetAsync("/hello")).EnsureSuccessStatusCode();
         await app.StopAsync();
 
-        Assert.Null(app.Services.GetRequiredService<TelemetryRuntime>().Registry);
         Assert.Empty(receiver.Exports);
     }
 

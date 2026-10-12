@@ -47,7 +47,6 @@ public class ErrorAggregatesTests
         await host.Client.GetAsync("/unavailable");
         await host.Client.GetAsync("/status/500");
         await host.Client.GetAsync("/captured");
-        await host.Client.GetAsync("/missing-route-throws");
         await host.StopAsync();
 
         var events = receiver

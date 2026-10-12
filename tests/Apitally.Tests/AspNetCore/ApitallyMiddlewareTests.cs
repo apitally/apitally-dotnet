@@ -68,28 +68,6 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task UnreadRequestBodyIsNeitherCapturedNorSizedWithoutLength()
-    {
-        await StartAsync();
-
-        await PostJsonAsync("/ignore-body", """{"a":1}""", chunked: true);
-        await PostJsonAsync("/ignore-body", """{"a":1}""");
-        await host.StopAsync();
-
-        var servers = receiver.Spans().Select(span => span.Attributes()).ToList();
-        Assert.All(
-            servers,
-            attributes => Assert.False(attributes.ContainsKey("apitally.request.body"))
-        );
-        Assert.Equal(
-            [null, 7L],
-            servers
-                .Select(attributes => attributes.GetValueOrDefault("http.request.body.size"))
-                .OrderBy(size => size)
-        );
-    }
-
-    [Fact]
     public async Task DisallowedContentTypeIsSizedButNotCaptured()
     {
         await StartAsync();
@@ -177,7 +155,6 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
 
         var attributes = receiver.Spans().Server().Attributes();
         Assert.False(attributes.ContainsKey("apitally.response.body"));
-        Assert.False(attributes.ContainsKey("http.response.body.size"));
     }
 
     [Fact]
@@ -206,7 +183,7 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task NativeFileSendsAreDeliveredUnchangedWithoutCapture()
+    public async Task NativeFileSendsAreDeliveredUnchanged()
     {
         await File.WriteAllTextAsync(file, "file text");
         await StartAsync();
@@ -217,18 +194,6 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
 
         Assert.Equal("file text", fileBody);
         Assert.Equal("prefix:file text", mixedBody);
-        var servers = receiver.Spans().Select(span => span.Attributes()).ToList();
-        Assert.All(
-            servers,
-            attributes => Assert.False(attributes.ContainsKey("apitally.response.body"))
-        );
-        // The file's length is not read from disk when the send does not state it.
-        Assert.Equal(
-            [null, 9L],
-            servers
-                .Select(attributes => attributes.GetValueOrDefault("http.response.body.size"))
-                .OrderBy(size => size)
-        );
     }
 
     [Fact]

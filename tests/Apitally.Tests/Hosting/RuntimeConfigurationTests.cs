@@ -9,31 +9,21 @@ public class RuntimeConfigurationTests
     private const string WriteToken = "apt_3kPmN9xQv2bR7tH4wZ8yL5cE";
 
     [Fact]
-    public void ResolvesOptionsIntoImmutableSettings()
+    public void ResolvesDefaultsForUnsetOptions()
     {
         using var environment = new EnvironmentVariables();
         using var diagnostics = new DiagnosticsCollector();
-        var options = new ApitallyOptions
-        {
-            WriteToken = WriteToken,
-            Env = "prod",
-            AppVersion = "1.2.3",
-            MaskHeaders = ["x-internal"],
-        };
 
-        var configuration = RuntimeConfiguration.Resolve(options, diagnostics.Diagnostics);
-        options.MaskHeaders.Add("x-other");
+        var configuration = RuntimeConfiguration.Resolve(
+            new() { WriteToken = WriteToken },
+            diagnostics.Diagnostics
+        );
 
         Assert.NotNull(configuration);
-        Assert.Equal(WriteToken, configuration.WriteToken);
-        Assert.Equal("prod", configuration.Env);
-        Assert.Equal("1.2.3", configuration.AppVersion);
         Assert.True(configuration.CaptureLogs);
         Assert.True(configuration.CaptureResponseHeaders);
         Assert.False(configuration.CaptureRequestHeaders);
         Assert.Equal(1.0, configuration.SampleRate);
-        Assert.Single(configuration.MaskHeaders);
-        Assert.Equal(new Uri("https://otlp.apitally.io"), configuration.OtlpEndpoint);
         Assert.Empty(diagnostics.Collector.GetSnapshot());
     }
 

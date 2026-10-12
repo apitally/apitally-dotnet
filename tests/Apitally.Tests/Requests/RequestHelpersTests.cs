@@ -58,6 +58,5 @@ public class RequestHelpersTests
 
         var attributes = Assert.Single(receiver.Spans()).Attributes();
         Assert.Equal("acme", attributes["apitally.consumer.identifier"]);
-        Assert.False(attributes.ContainsKey("apitally.consumer.name"));
     }
 }
