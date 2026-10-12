@@ -1,4 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>apitally/renovate-config"]
+  "extends": ["github>apitally/renovate-config"],
+  "packageRules": [
+    {
+      "description": "Keep minimum versions required by the library",
+      "matchPackageNames": ["OpenTelemetry", "OpenTelemetry.*", "Google.Protobuf", "Grpc.Tools"],
+      "enabled": false
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true
+  }
 }
