@@ -4,7 +4,13 @@
   "packageRules": [
     {
       "description": "Keep minimum versions required by the library",
-      "matchPackageNames": ["OpenTelemetry", "OpenTelemetry.*", "Google.Protobuf", "Grpc.Tools"],
+      "matchFileNames": ["src/Apitally/Apitally.csproj"],
+      "enabled": false
+    },
+    {
+      "description": "Keep tests on the library's minimum OpenTelemetry version",
+      "matchFileNames": ["tests/Apitally.Tests/Apitally.Tests.csproj"],
+      "matchPackageNames": ["OpenTelemetry.*"],
       "enabled": false
     }
   ],
