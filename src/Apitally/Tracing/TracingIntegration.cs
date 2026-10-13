@@ -12,7 +12,7 @@ namespace Apitally.Tracing;
 // provider. Apitally never registers a TracerProvider service on the application's behalf.
 internal sealed class TracingIntegration
 {
-    public const string ManualSourceName = "apitally.otel";
+    public const string ManualSourceName = "Apitally";
 
     private readonly ForwardingProcessor processor = new();
     private bool isAttachedThroughBuilder;

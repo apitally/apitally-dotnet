@@ -9,7 +9,11 @@ The .NET SDK now uses OpenTelemetry to collect and send metrics, logs, and trace
 
 ## Installation and setup
 
-The updated [setup guide](https://docs.apitally.io/sdk-reference/dotnet/v1/setup-guides/aspnet-core) provides the installation steps and initialization code. Follow it to replace your existing SDK integration.
+Upgrade the Apitally package to the latest version:
+
+```shell
+dotnet add package Apitally --prerelease
+```
 
 The SDK now requires .NET 8 or later. If your application references OpenTelemetry packages directly, upgrade them to version 1.19.0 or later.
 
@@ -17,7 +21,7 @@ The SDK now requires .NET 8 or later. If your application references OpenTelemet
 
 The SDK now authenticates with a **write token** instead of a client ID. Your existing app's token (`apt_...`) is available under _Setup instructions_ in the [Apitally dashboard](https://app.apitally.io/apps).
 
-Use this token as the `WriteToken` option in place of `ClientId`, or set the `APITALLY_WRITE_TOKEN` environment variable. A missing or invalid token no longer fails application startup. Instead, the SDK logs an error and disables itself.
+Use this token as the `WriteToken` option in place of `ClientId`, or set the `APITALLY_WRITE_TOKEN` environment variable.
 
 ### `UseApitally()` has been removed
 
@@ -129,7 +133,8 @@ var apitally = context.RequestServices.GetRequiredService<IApitally>();
 apitally.SetConsumer(
     user.Identifier,
     name: user.Name, // optional
-    group: user.Group // optional
+    group: user.Group, // optional
+    attributes: new Dictionary<string, string?> { ["plan"] = user.Plan } // optional
 );
 ```
 
@@ -137,9 +142,7 @@ The identifier is now always a `string`. Convert numeric identifiers with `ToStr
 
 ## Body masking callbacks
 
-`MaskRequestBody` and `MaskResponseBody` now both receive `(span, body)`, rather than the `Request` and `Response` objects. The body is passed as `byte[]` after decompression.
-
-Callbacks may run later on another thread against an ended span snapshot. Request metadata is available through [`span.Attributes`](https://docs.apitally.io/sdk-reference/dotnet/v1/attributes).
+`MaskRequestBody` and `MaskResponseBody` now both receive `(span, body)`, rather than the `Request` and `Response` objects. The body is passed as a `byte[]`. Request metadata is available through [`span.Attributes`](https://docs.apitally.io/sdk-reference/dotnet/v1/attributes).
 
 For example, a callback that masks bodies for admin routes becomes:
 
@@ -189,7 +192,7 @@ See [sampling](https://docs.apitally.io/sdk-reference/dotnet/v1/sampling) for de
 
 If your application registers a tracer provider via `AddOpenTelemetry().WithTracing(...)`, the SDK automatically adds its span processor. No manual registration is required.
 
-If you build a tracer provider separately, for example with `Sdk.CreateTracerProviderBuilder()`, add the ASP.NET Core instrumentation and the `apitally.otel` source to it, and register it with dependency injection so the SDK can find it:
+If you build a tracer provider separately, for example with `Sdk.CreateTracerProviderBuilder()`, add the ASP.NET Core instrumentation and the `Apitally` source to it, and register it with dependency injection so the SDK can find it:
 
 ```csharp
 builder.Services.AddSingleton<TracerProvider>(tracerProvider);

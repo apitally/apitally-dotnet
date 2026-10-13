@@ -112,7 +112,7 @@ public class OtlpTraceMapperTests
                 StartTimeUtc = DateTime.UtcNow,
                 Duration = TimeSpan.Zero,
                 Resource = other,
-                ScopeName = "apitally.otel",
+                ScopeName = "Apitally",
             },
         };
 
@@ -120,7 +120,7 @@ public class OtlpTraceMapperTests
 
         Assert.Equal(2, request.ResourceSpans.Count);
         Assert.Equal(2, request.ResourceSpans[0].ScopeSpans.Single().Spans.Count);
-        Assert.Equal("apitally.otel", request.ResourceSpans[1].ScopeSpans.Single().Scope.Name);
+        Assert.Equal("Apitally", request.ResourceSpans[1].ScopeSpans.Single().Scope.Name);
         Assert.True(request.ResourceSpans[1].ScopeSpans[0].Spans[0].ParentSpanId.IsEmpty);
     }
 }

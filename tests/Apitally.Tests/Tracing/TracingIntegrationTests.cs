@@ -282,7 +282,7 @@ public class TracingIntegrationTests
         var applicationSpans = new List<Activity>();
         using var provider = Sdk.CreateTracerProviderBuilder()
             .AddAspNetCoreInstrumentation()
-            .AddSource("apitally.otel", ApplicationSource.Name)
+            .AddSource("Apitally", ApplicationSource.Name)
             .AddInMemoryExporter(applicationSpans)
             .Build();
         await using (
