@@ -192,7 +192,7 @@ See [sampling](https://docs.apitally.io/sdk-reference/dotnet/v1/sampling) for de
 
 If your application registers a tracer provider via `AddOpenTelemetry().WithTracing(...)`, the SDK automatically adds its span processor. No manual registration is required.
 
-If you build a tracer provider separately, for example with `Sdk.CreateTracerProviderBuilder()`, add the ASP.NET Core instrumentation and the `apitally.otel` source to it, and register it with dependency injection so the SDK can find it:
+If you build a tracer provider separately, for example with `Sdk.CreateTracerProviderBuilder()`, add the ASP.NET Core instrumentation and the `Apitally` source to it, and register it with dependency injection so the SDK can find it:
 
 ```csharp
 builder.Services.AddSingleton<TracerProvider>(tracerProvider);
