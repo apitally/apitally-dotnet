@@ -30,6 +30,7 @@ public class RequestTelemetryTests
         Assert.Equal("token=[REDACTED]&page=1", attributes["url.query"]);
         Assert.Equal("http", attributes["url.scheme"]);
         Assert.Equal(5L, attributes["item.id"]);
+        Assert.Equal(["item.id"], (object?[])attributes["apitally.request.custom_attribute_keys"]!);
         var child = Assert.Single(spans, span => span.Kind == Span.Types.SpanKind.Internal);
         Assert.Equal("load-item", child.Name);
         Assert.Equal(server.SpanId, child.ParentSpanId);
