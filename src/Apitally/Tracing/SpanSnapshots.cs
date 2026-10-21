@@ -11,6 +11,8 @@ namespace Apitally.Tracing;
 internal static class SpanSnapshots
 {
     public const string ConsumerIdentifierAttribute = "apitally.consumer.identifier";
+    public const string RequestCustomAttributeKeysAttribute =
+        "apitally.request.custom_attribute_keys";
 
     public static SpanSnapshot Copy(Activity activity, Resource resource) =>
         new()
@@ -66,8 +68,11 @@ internal static class SpanSnapshots
     )
     {
         var attributes = server.OwnedAttributes;
-        foreach (var (key, value) in state.GetAttributes())
+        var requestAttributes = state.GetAttributes();
+        foreach (var (key, value) in requestAttributes)
             attributes[key] = value;
+        if (requestAttributes.Count > 0)
+            attributes[RequestCustomAttributeKeysAttribute] = requestAttributes.Keys.ToArray();
         var entry = state.Entry;
         attributes["http.request.method"] = entry.Method;
         attributes["url.scheme"] = transport.Scheme;
