@@ -29,8 +29,8 @@ internal sealed partial class RequestSampling(
     {
         var rate = configuration.SampleRate;
         if (configuration.SampleOnRequest is { } callback && snapshot is not null)
-            rate =
-                InvokeCallback(callback, snapshot, nameof(ApitallyOptions.SampleOnRequest)) ?? rate;
+            rate = InvokeCallback(callback, snapshot, nameof(ApitallyOptions.SampleOnRequest))
+                ?? rate;
         return ShouldKeep(traceId, rate);
     }
 

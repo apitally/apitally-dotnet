@@ -20,27 +20,23 @@ public class RequestRegistryTests
         await using var receiver = await OtlpReceiver.StartAsync();
         await using var host = await ApplicationHost.StartMinimalAsync(
             receiver,
-            configureApp: app =>
-                app.MapGet(
-                    "/nested",
-                    async (IApitally apitally) =>
+            configureApp: app => app.MapGet("/nested", async (IApitally apitally) =>
+                {
+                    using var outer = ApplicationSource.StartActivity("outer");
+                    using (ApplicationSource.StartActivity("inner"))
+                        apitally.SetRequestAttribute("set.in.child", true);
+                    var parent = outer!.Context;
+                    Activity.Current = null;
+                    await Task.Run(() =>
                     {
-                        using var outer = ApplicationSource.StartActivity("outer");
-                        using (ApplicationSource.StartActivity("inner"))
-                            apitally.SetRequestAttribute("set.in.child", true);
-                        var parent = outer!.Context;
-                        Activity.Current = null;
-                        await Task.Run(() =>
-                        {
-                            using var explicitChild = ApplicationSource.StartActivity(
-                                "explicit",
-                                ActivityKind.Internal,
-                                parent
-                            );
-                        });
-                        return "OK";
-                    }
-                )
+                        using var explicitChild = ApplicationSource.StartActivity(
+                            "explicit",
+                            ActivityKind.Internal,
+                            parent
+                        );
+                    });
+                    return "OK";
+                })
         );
 
         await host.Client.GetAsync("/nested");
@@ -100,23 +96,21 @@ public class RequestRegistryTests
     {
         await using var receiver = await OtlpReceiver.StartAsync();
         var seen = new List<(object?, object?, object?, TimeSpan?)>();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder =>
-                builder.Services.AddApitally(options =>
-                    options.SampleOnResponse = span =>
-                    {
-                        seen.Add(
-                            (
-                                span.Attributes["http.response.status_code"],
-                                span.Attributes["http.route"],
-                                span.Attributes.GetValueOrDefault("item.id"),
-                                span.Duration
-                            )
-                        );
-                        return span.Attributes["http.response.status_code"] is 500L ? 1 : 0;
-                    }
-                )
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder.Services.AddApitally(options =>
+                options.SampleOnResponse = span =>
+                {
+                    seen.Add(
+                        (
+                            span.Attributes["http.response.status_code"],
+                            span.Attributes["http.route"],
+                            span.Attributes.GetValueOrDefault("item.id"),
+                            span.Duration
+                        )
+                    );
+                    return span.Attributes["http.response.status_code"] is 500L ? 1 : 0;
+                }
+            )
         );
 
         await host.Client.GetAsync("/items/7");
@@ -133,16 +127,14 @@ public class RequestRegistryTests
     {
         await using var receiver = await OtlpReceiver.StartAsync();
         var seen = new List<SpanSnapshot>();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder =>
-                builder.Services.AddApitally(options =>
-                    options.SampleOnRequest = span =>
-                    {
-                        seen.Add(span);
-                        return span.Attributes["url.path"] is "/hello" ? 0 : null;
-                    }
-                )
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder.Services.AddApitally(options =>
+                options.SampleOnRequest = span =>
+                {
+                    seen.Add(span);
+                    return span.Attributes["url.path"] is "/hello" ? 0 : null;
+                }
+            )
         );
 
         await host.Client.GetAsync("/hello");
@@ -161,15 +153,13 @@ public class RequestRegistryTests
     public async Task ThrowingSamplingCallbacksKeepTheRequest()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder =>
-                builder.Services.AddApitally(options =>
-                {
-                    options.SampleRate = 0;
-                    options.SampleOnRequest = _ => throw new InvalidOperationException();
-                    options.SampleOnResponse = _ => 2.5;
-                })
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder.Services.AddApitally(options =>
+            {
+                options.SampleRate = 0;
+                options.SampleOnRequest = _ => throw new InvalidOperationException();
+                options.SampleOnResponse = _ => 2.5;
+            })
         );
 
         await host.Client.GetAsync("/hello");
@@ -184,28 +174,24 @@ public class RequestRegistryTests
         await using var receiver = await OtlpReceiver.StartAsync();
         await using var host = await ApplicationHost.StartMinimalAsync(
             receiver,
-            configureApp: app =>
-                app.MapGet(
-                    "/many",
-                    (ILoggerFactory loggerFactory) =>
+            configureApp: app => app.MapGet("/many", (ILoggerFactory loggerFactory) =>
+                {
+                    var logger = loggerFactory.CreateLogger("TestApp.Requests");
+                    using (var first = ApplicationSource.StartActivity("child"))
                     {
-                        var logger = loggerFactory.CreateLogger("TestApp.Requests");
-                        using (var first = ApplicationSource.StartActivity("child"))
+                        first!.SetTag("index", 0);
+                        for (var i = 1; i < 1_001; i++)
                         {
-                            first!.SetTag("index", 0);
-                            for (var i = 1; i < 1_001; i++)
-                            {
-                                using var activity = ApplicationSource.StartActivity("child");
-                                activity!.SetTag("index", i);
-                                if (i is 999 or 1_000)
-                                    logger.LogWarning("Child {Index}", i);
-                            }
-                            logger.LogWarning("Retained child");
+                            using var activity = ApplicationSource.StartActivity("child");
+                            activity!.SetTag("index", i);
+                            if (i is 999 or 1_000)
+                                logger.LogWarning("Child {Index}", i);
                         }
-                        logger.LogWarning("Request");
-                        return "OK";
+                        logger.LogWarning("Retained child");
                     }
-                )
+                    logger.LogWarning("Request");
+                    return "OK";
+                })
         );
 
         await host.Client.GetAsync("/many");
@@ -236,20 +222,16 @@ public class RequestRegistryTests
         var lateSpanEnded = new TaskCompletionSource();
         await using var host = await ApplicationHost.StartMinimalAsync(
             receiver,
-            configureApp: app =>
-                app.MapGet(
-                    "/fire-and-forget",
-                    () =>
+            configureApp: app => app.MapGet("/fire-and-forget", () =>
+                {
+                    _ = Task.Run(async () =>
                     {
-                        _ = Task.Run(async () =>
-                        {
-                            using (ApplicationSource.StartActivity("late"))
-                                await Task.Delay(300);
-                            lateSpanEnded.SetResult();
-                        });
-                        return "OK";
-                    }
-                )
+                        using (ApplicationSource.StartActivity("late"))
+                            await Task.Delay(300);
+                        lateSpanEnded.SetResult();
+                    });
+                    return "OK";
+                })
         );
 
         await host.Client.GetAsync("/fire-and-forget");
@@ -267,16 +249,12 @@ public class RequestRegistryTests
         var releaseRequest = new TaskCompletionSource();
         await using var host = await ApplicationHost.StartMinimalAsync(
             receiver,
-            configureApp: app =>
-                app.MapGet(
-                    "/slow",
-                    async () =>
-                    {
-                        requestStarted.SetResult();
-                        await releaseRequest.Task;
-                        return "OK";
-                    }
-                )
+            configureApp: app => app.MapGet("/slow", async () =>
+                {
+                    requestStarted.SetResult();
+                    await releaseRequest.Task;
+                    return "OK";
+                })
         );
 
         await host.Client.GetAsync("/hello");

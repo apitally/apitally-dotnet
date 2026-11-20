@@ -28,17 +28,14 @@ public class ErrorAggregatesTests
                     })
                 );
                 app.MapGet("/unavailable", string () => throw new TimeoutException());
-                app.MapGet(
-                    "/captured",
-                    (IApitally apitally) =>
-                    {
-                        apitally.CaptureException(
-                            new AggregateException(new ArgumentException("first"))
-                        );
-                        apitally.CaptureException(new InvalidOperationException("second"));
-                        return Results.StatusCode(500);
-                    }
-                );
+                app.MapGet("/captured", (IApitally apitally) =>
+                {
+                    apitally.CaptureException(
+                        new AggregateException(new ArgumentException("first"))
+                    );
+                    apitally.CaptureException(new InvalidOperationException("second"));
+                    return Results.StatusCode(500);
+                });
             }
         );
 

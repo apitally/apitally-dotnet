@@ -13,9 +13,8 @@ public class ValidationCaptureTests
     public async Task MvcModelValidationIsCapturedIndependentlyOfSampling()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder => builder.Services.AddApitally(options => options.SampleRate = 0)
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder.Services.AddApitally(options => options.SampleRate = 0)
         );
 
         await host.Client.PostAsJsonAsync("/controller/items", new { id = 5000, name = "a" });
@@ -45,14 +44,11 @@ public class ValidationCaptureTests
     )
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder =>
-            {
-                if (addProblemDetails)
-                    builder.Services.AddProblemDetails();
-            }
-        );
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+        {
+            if (addProblemDetails)
+                builder.Services.AddProblemDetails();
+        });
 
         await host.Client.GetAsync("/validation");
         await host.Client.GetAsync("/validation");
@@ -81,9 +77,8 @@ public class ValidationCaptureTests
             new object?[] { new Dictionary<string, object?> { ["count"] = 1L } },
             events[1]["counts"]
         );
-        Assert.All(
-            receiver.Spans(),
-            span => Assert.False(span.Attributes().ContainsKey("apitally.response.body"))
+        Assert.All(receiver.Spans(), span =>
+            Assert.False(span.Attributes().ContainsKey("apitally.response.body"))
         );
     }
 

@@ -38,13 +38,11 @@ public sealed class ApitallyMetricsTests : IDisposable
         var responseSize = Assert.Single(receiver.Metrics("http.server.response.body.size"));
         Assert.Equal("s", duration.Unit);
         Assert.Equal("By", requestSize.Unit);
-        Assert.All(
-            new[] { duration, requestSize, responseSize },
-            metric =>
-                Assert.Equal(
-                    AggregationTemporality.Delta,
-                    metric.ExponentialHistogram.AggregationTemporality
-                )
+        Assert.All(new[] { duration, requestSize, responseSize }, metric =>
+            Assert.Equal(
+                AggregationTemporality.Delta,
+                metric.ExponentialHistogram.AggregationTemporality
+            )
         );
         var points = duration.ExponentialHistogram.DataPoints.ToDictionary(point =>
             (string)OtlpDecoding.Attributes(point.Attributes)["http.route"]!
@@ -80,14 +78,12 @@ public sealed class ApitallyMetricsTests : IDisposable
     public async Task OptionsAndUnmatchedRequestsAreNotRecordedButExcludedAndSampledOutAre()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder =>
-                builder.Services.AddApitally(options =>
-                {
-                    options.SampleRate = 0;
-                    options.ExcludePaths = ["^/hello$"];
-                })
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder.Services.AddApitally(options =>
+            {
+                options.SampleRate = 0;
+                options.ExcludePaths = ["^/hello$"];
+            })
         );
 
         await host.Client.GetAsync("/hello");
@@ -181,26 +177,23 @@ public sealed class ApitallyMetricsTests : IDisposable
             [1_000, 1_000, 500],
             histogramRequests.Select(request => request[0].ExponentialHistogram.DataPoints.Count)
         );
-        Assert.All(
-            histogramRequests,
-            request =>
-            {
-                Assert.Equal(
-                    [
-                        "http.server.request.duration",
-                        "http.server.request.body.size",
-                        "http.server.response.body.size",
-                    ],
-                    request.Select(metric => metric.Name)
-                );
-                var consumers = request.Select(metric =>
-                    metric.ExponentialHistogram.DataPoints.Select(point =>
-                        OtlpDecoding.Attributes(point.Attributes)["apitally.consumer.identifier"]
-                    )
-                );
-                Assert.All(consumers, ids => Assert.Equal(consumers.First(), ids));
-            }
-        );
+        Assert.All(histogramRequests, request =>
+        {
+            Assert.Equal(
+                [
+                    "http.server.request.duration",
+                    "http.server.request.body.size",
+                    "http.server.response.body.size",
+                ],
+                request.Select(metric => metric.Name)
+            );
+            var consumers = request.Select(metric =>
+                metric.ExponentialHistogram.DataPoints.Select(point =>
+                    OtlpDecoding.Attributes(point.Attributes)["apitally.consumer.identifier"]
+                )
+            );
+            Assert.All(consumers, ids => Assert.Equal(consumers.First(), ids));
+        });
     }
 
     public void Dispose()

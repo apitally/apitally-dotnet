@@ -52,14 +52,11 @@ internal sealed class ApplicationHost : IAsyncDisposable
     {
         var environment = Environment(receiver);
         var logs = new FakeLogCollector();
-        var app = Program.CreateMinimalApp(
-            Arguments(arguments),
-            builder =>
-            {
-                builder.Logging.AddProvider(new FakeLoggerProvider(logs));
-                configure?.Invoke(builder);
-            }
-        );
+        var app = Program.CreateMinimalApp(Arguments(arguments), builder =>
+        {
+            builder.Logging.AddProvider(new FakeLoggerProvider(logs));
+            configure?.Invoke(builder);
+        });
         configureApp?.Invoke(app);
         return StartAsync(new ApplicationHost(app, environment, logs));
     }

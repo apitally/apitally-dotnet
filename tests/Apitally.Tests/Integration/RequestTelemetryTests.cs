@@ -93,9 +93,8 @@ public class RequestTelemetryTests
     public async Task ExcludedAndOptionsRequestsExportNoSpans()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder => builder.Services.AddApitally(options => options.ExcludePaths = ["^/hello$"])
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder.Services.AddApitally(options => options.ExcludePaths = ["^/hello$"])
         );
 
         await host.Client.GetAsync("/hello");
@@ -121,19 +120,16 @@ public class RequestTelemetryTests
             configureApp: app =>
             {
                 app.UseWebSockets();
-                app.Map(
-                    "/ws",
-                    async (HttpContext context) =>
-                    {
-                        using var socket = await context.WebSockets.AcceptWebSocketAsync();
-                        await socket.ReceiveAsync(new byte[16], default);
-                        await socket.CloseOutputAsync(
-                            WebSocketCloseStatus.NormalClosure,
-                            null,
-                            default
-                        );
-                    }
-                );
+                app.Map("/ws", async (HttpContext context) =>
+                {
+                    using var socket = await context.WebSockets.AcceptWebSocketAsync();
+                    await socket.ReceiveAsync(new byte[16], default);
+                    await socket.CloseOutputAsync(
+                        WebSocketCloseStatus.NormalClosure,
+                        null,
+                        default
+                    );
+                });
             }
         );
 

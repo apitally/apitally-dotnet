@@ -270,83 +270,62 @@ public sealed class ApitallyMiddlewareTests : IAsyncDisposable
 
     private void MapRoutes(WebApplication app)
     {
-        app.MapPost(
-            "/read-pipe",
-            async (HttpContext context) =>
+        app.MapPost("/read-pipe", async (HttpContext context) =>
+        {
+            while (true)
             {
-                while (true)
-                {
-                    var result = await context.Request.BodyReader.ReadAsync();
-                    context.Request.BodyReader.AdvanceTo(result.Buffer.End);
-                    if (result.IsCompleted)
-                        return "OK";
-                }
+                var result = await context.Request.BodyReader.ReadAsync();
+                context.Request.BodyReader.AdvanceTo(result.Buffer.End);
+                if (result.IsCompleted)
+                    return "OK";
             }
-        );
+        });
         app.MapPost("/ignore-body", () => "OK");
-        app.MapGet(
-            "/write-stream",
-            async (HttpContext context) =>
+        app.MapGet("/write-stream", async (HttpContext context) =>
+        {
+            context.Response.ContentType = "text/plain";
+            await context.Response.Body.WriteAsync(Encoding.UTF8.GetBytes("stream text"));
+        });
+        app.MapGet("/write-pipe", async (HttpContext context) =>
+        {
+            // Pipe writes are advanced before the response starts and OnStarting runs.
+            context.Response.OnStarting(() =>
             {
                 context.Response.ContentType = "text/plain";
-                await context.Response.Body.WriteAsync(Encoding.UTF8.GetBytes("stream text"));
-            }
-        );
-        app.MapGet(
-            "/write-pipe",
-            async (HttpContext context) =>
-            {
-                // Pipe writes are advanced before the response starts and OnStarting runs.
-                context.Response.OnStarting(() =>
-                {
-                    context.Response.ContentType = "text/plain";
-                    return Task.CompletedTask;
-                });
-                var bytes = Encoding.UTF8.GetBytes("pipe text");
-                bytes.CopyTo(context.Response.BodyWriter.GetSpan(bytes.Length));
-                context.Response.BodyWriter.Advance(bytes.Length);
-                await context.Response.BodyWriter.FlushAsync();
-            }
-        );
-        app.MapGet(
-            "/large",
-            async (HttpContext context) =>
-            {
-                context.Response.ContentType = "text/plain";
-                for (var i = 0; i < 6; i++)
-                    await context.Response.WriteAsync(new string('x', 10_000));
-            }
-        );
-        app.MapGet(
-            "/fail-mid-stream",
-            async (HttpContext context) =>
-            {
-                context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("partial");
-                await context.Response.Body.FlushAsync();
-                throw new InvalidOperationException("Failed after start");
-            }
-        );
-        app.MapGet(
-            "/abort",
-            async (HttpContext context) =>
-            {
-                context.Response.ContentType = "text/plain";
-                context.Response.ContentLength = 100;
-                await context.Response.WriteAsync("partial");
-                context.Abort();
-            }
-        );
+                return Task.CompletedTask;
+            });
+            var bytes = Encoding.UTF8.GetBytes("pipe text");
+            bytes.CopyTo(context.Response.BodyWriter.GetSpan(bytes.Length));
+            context.Response.BodyWriter.Advance(bytes.Length);
+            await context.Response.BodyWriter.FlushAsync();
+        });
+        app.MapGet("/large", async (HttpContext context) =>
+        {
+            context.Response.ContentType = "text/plain";
+            for (var i = 0; i < 6; i++)
+                await context.Response.WriteAsync(new string('x', 10_000));
+        });
+        app.MapGet("/fail-mid-stream", async (HttpContext context) =>
+        {
+            context.Response.ContentType = "text/plain";
+            await context.Response.WriteAsync("partial");
+            await context.Response.Body.FlushAsync();
+            throw new InvalidOperationException("Failed after start");
+        });
+        app.MapGet("/abort", async (HttpContext context) =>
+        {
+            context.Response.ContentType = "text/plain";
+            context.Response.ContentLength = 100;
+            await context.Response.WriteAsync("partial");
+            context.Abort();
+        });
         app.MapGet("/file", () => Results.File(file, "text/plain"));
-        app.MapGet(
-            "/mixed-file",
-            async (HttpContext context) =>
-            {
-                context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("prefix:");
-                await context.Response.SendFileAsync(file);
-            }
-        );
+        app.MapGet("/mixed-file", async (HttpContext context) =>
+        {
+            context.Response.ContentType = "text/plain";
+            await context.Response.WriteAsync("prefix:");
+            await context.Response.SendFileAsync(file);
+        });
     }
 
     private async Task PostJsonAsync(string path, string json, bool chunked = false)
