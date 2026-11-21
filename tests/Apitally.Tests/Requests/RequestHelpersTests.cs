@@ -22,9 +22,8 @@ public class RequestHelpersTests
     public async Task ConsumerIsAttributedAndUpdatedIndependentlyOfSampling()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder => builder.Services.AddApitally(options => options.SampleRate = 0)
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder.Services.AddApitally(options => options.SampleRate = 0)
         );
 
         await host.Client.GetAsync("/consumers/acme");

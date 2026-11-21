@@ -22,9 +22,8 @@ public class TelemetryRuntimeTests
     public async Task StartedHostDeliversStartupEventAndProcessMetrics()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder => builder.Services.AddApitally(options => options.AppVersion = "1.2.3")
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder.Services.AddApitally(options => options.AppVersion = "1.2.3")
         );
 
         await host.StopAsync();
@@ -68,14 +67,12 @@ public class TelemetryRuntimeTests
     public async Task StartupEventConfigOmitsCredentialsAndMarksCallbacks()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder =>
-                builder.Services.AddApitally(options =>
-                {
-                    options.SampleOnResponse = _ => null;
-                    options.MaskHeaders = ["x-internal", "(?-i:X-Case)"];
-                })
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder.Services.AddApitally(options =>
+            {
+                options.SampleOnResponse = _ => null;
+                options.MaskHeaders = ["x-internal", "(?-i:X-Case)"];
+            })
         );
 
         await host.StopAsync();
@@ -110,9 +107,8 @@ public class TelemetryRuntimeTests
     public async Task DisabledHostExportsNothing()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder => builder.Services.AddApitally(options => options.Disabled = true)
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder.Services.AddApitally(options => options.Disabled = true)
         );
 
         (await host.Client.GetAsync("/hello")).EnsureSuccessStatusCode();
@@ -144,9 +140,8 @@ public class TelemetryRuntimeTests
         using var environment = new EnvironmentVariables(
             ("APITALLY_OTLP_ENDPOINT", receiver.Endpoint.ToString())
         );
-        await using var app = Program.CreateMinimalApp(
-            ApplicationHost.Arguments(),
-            builder => builder.WebHost.UseTestServer()
+        await using var app = Program.CreateMinimalApp(ApplicationHost.Arguments(), builder =>
+            builder.WebHost.UseTestServer()
         );
 
         await app.StartAsync();
@@ -207,10 +202,8 @@ public class TelemetryRuntimeTests
     public async Task ContainerDisposalRemovesTracingAfterFailedPipelineConfiguration()
     {
         using var source = new ActivitySource("Apitally.Tests.FailedPipeline");
-        var app = Program.CreateMinimalApp(
-            ApplicationHost.Arguments(),
-            builder =>
-                builder.Services.AddApitally().AddTransient<IStartupFilter, ThrowingStartupFilter>()
+        var app = Program.CreateMinimalApp(ApplicationHost.Arguments(), builder =>
+            builder.Services.AddApitally().AddTransient<IStartupFilter, ThrowingStartupFilter>()
         );
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => app.StartAsync());

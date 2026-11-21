@@ -21,10 +21,9 @@ internal static class OtlpEncoder
     // Regenerated on every process start; the server treats a restart as a new instance.
     public static readonly string InstanceId = Guid.NewGuid().ToString();
 
-    public static readonly string DistroVersion =
-        typeof(OtlpEncoder)
-            .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-            ?.InformationalVersion.Split('+')[0]
+    public static readonly string DistroVersion = typeof(OtlpEncoder)
+        .Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+        ?.InformationalVersion.Split('+')[0]
         ?? "unknown";
 
     private static readonly ConditionalWeakTable<Resource, OtlpResource> OtlpResources = new();
@@ -87,16 +86,13 @@ internal static class OtlpEncoder
 
     // Resources are immutable and generated messages cache nothing, so requests share one message.
     public static OtlpResource ToOtlpResource(Resource resource) =>
-        OtlpResources.GetValue(
-            resource,
-            static resource =>
-            {
-                var output = new OtlpResource();
-                foreach (var attribute in resource.Attributes)
-                    output.Attributes.Add(ToKeyValue(attribute.Key, attribute.Value));
-                return output;
-            }
-        );
+        OtlpResources.GetValue(resource, static resource =>
+        {
+            var output = new OtlpResource();
+            foreach (var attribute in resource.Attributes)
+                output.Attributes.Add(ToKeyValue(attribute.Key, attribute.Value));
+            return output;
+        });
 
     public static ByteString ToByteString(ActivityTraceId traceId)
     {

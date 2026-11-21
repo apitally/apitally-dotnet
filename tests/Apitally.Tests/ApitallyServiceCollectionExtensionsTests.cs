@@ -96,15 +96,12 @@ public class ApitallyServiceCollectionExtensionsTests
     {
         using var environment = new EnvironmentVariables();
 
-        var options = ResolveOptions(
-            new() { ["Apitally:Env"] = "prod" },
-            services =>
-            {
-                services.Configure<ApitallyOptions>(options => options.AppVersion = "before");
-                services.AddApitally();
-                services.Configure<ApitallyOptions>(options => options.Env = "after");
-            }
-        );
+        var options = ResolveOptions(new() { ["Apitally:Env"] = "prod" }, services =>
+        {
+            services.Configure<ApitallyOptions>(options => options.AppVersion = "before");
+            services.AddApitally();
+            services.Configure<ApitallyOptions>(options => options.Env = "after");
+        });
 
         Assert.Equal("before", options.AppVersion);
         Assert.Equal("after", options.Env);

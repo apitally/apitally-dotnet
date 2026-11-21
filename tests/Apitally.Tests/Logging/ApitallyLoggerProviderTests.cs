@@ -30,17 +30,14 @@ public class ApitallyLoggerProviderTests
             ["Handling order 42", "Inside child"],
             logs.Select(log => log.Body.StringValue)
         );
-        Assert.All(
-            logs,
-            log =>
-            {
-                Assert.Equal(server.TraceId, log.TraceId);
-                Assert.Equal(
-                    server.SpanId.Hex(),
-                    OtlpDecoding.Attributes(log.Attributes)["apitally.request.server_span_id"]
-                );
-            }
-        );
+        Assert.All(logs, log =>
+        {
+            Assert.Equal(server.TraceId, log.TraceId);
+            Assert.Equal(
+                server.SpanId.Hex(),
+                OtlpDecoding.Attributes(log.Attributes)["apitally.request.server_span_id"]
+            );
+        });
         Assert.Equal(server.SpanId, logs[0].SpanId);
         Assert.Equal(child.SpanId, logs[1].SpanId);
         Assert.Equal(SeverityNumber.Info, logs[0].SeverityNumber);
@@ -54,10 +51,8 @@ public class ApitallyLoggerProviderTests
     public async Task MaskCallbackEditsApplyAndDropsAreHonored()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await StartAsync(
-            receiver,
-            options =>
-                options.MaskLogRecord = record =>
+        await using var host = await StartAsync(receiver, options => options.MaskLogRecord =
+                record =>
                 {
                     if (record.Body!.Contains("drop"))
                         return null;
@@ -67,8 +62,7 @@ public class ApitallyLoggerProviderTests
                         record.Body = "";
                     record.Body = record.Body.Replace("42", "**");
                     return record;
-                }
-        );
+                });
 
         await host.Client.GetAsync("/log-variants");
         await host.StopAsync();
@@ -83,15 +77,12 @@ public class ApitallyLoggerProviderTests
     {
         var maskedLengths = new ConcurrentQueue<int>();
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await StartAsync(
-            receiver,
-            options =>
-                options.MaskLogRecord = record =>
+        await using var host = await StartAsync(receiver, options => options.MaskLogRecord =
+                record =>
                 {
                     maskedLengths.Enqueue(record.Body!.Length);
                     return record;
-                }
-        );
+                });
 
         await host.Client.GetAsync("/long-log");
         await host.StopAsync();
@@ -122,9 +113,8 @@ public class ApitallyLoggerProviderTests
         await using var sampledOut = await StartAsync(receiver, options => options.SampleRate = 0);
         await sampledOut.Client.GetAsync("/log");
         await sampledOut.StopAsync();
-        await using var disabled = await StartAsync(
-            receiver,
-            options => options.CaptureLogs = false
+        await using var disabled = await StartAsync(receiver, options =>
+            options.CaptureLogs = false
         );
         await disabled.Client.GetAsync("/log");
         await disabled.StopAsync();
@@ -177,52 +167,37 @@ public class ApitallyLoggerProviderTests
                 var logger = app
                     .Services.GetRequiredService<ILoggerFactory>()
                     .CreateLogger("TestApp.Orders");
-                app.MapGet(
-                    "/log",
-                    () =>
-                    {
-                        logger.LogInformation("Handling order {OrderId}", 42);
-                        using (ApplicationSource.StartActivity("child"))
-                            logger.LogInformation("Inside child");
-                        return "OK";
-                    }
-                );
-                app.MapGet(
-                    "/log-exception",
-                    () =>
-                    {
-                        logger.LogError(new InvalidOperationException("Broken"), "Failed");
-                        return "OK";
-                    }
-                );
-                app.MapGet(
-                    "/log-variants",
-                    () =>
-                    {
-                        logger.LogInformation("Handling order {OrderId}", 42);
-                        logger.LogInformation("Please drop this");
-                        logger.LogInformation("Please throw");
-                        logger.LogInformation("Make it empty");
-                        return "OK";
-                    }
-                );
-                app.MapGet(
-                    "/long-log",
-                    () =>
-                    {
-                        logger.LogInformation(new string('b', 3_000));
-                        return "OK";
-                    }
-                );
-                app.MapGet(
-                    "/many-logs",
-                    () =>
-                    {
-                        for (var i = 0; i < 1_005; i++)
-                            logger.LogInformation("Log {Index}", i);
-                        return "OK";
-                    }
-                );
+                app.MapGet("/log", () =>
+                {
+                    logger.LogInformation("Handling order {OrderId}", 42);
+                    using (ApplicationSource.StartActivity("child"))
+                        logger.LogInformation("Inside child");
+                    return "OK";
+                });
+                app.MapGet("/log-exception", () =>
+                {
+                    logger.LogError(new InvalidOperationException("Broken"), "Failed");
+                    return "OK";
+                });
+                app.MapGet("/log-variants", () =>
+                {
+                    logger.LogInformation("Handling order {OrderId}", 42);
+                    logger.LogInformation("Please drop this");
+                    logger.LogInformation("Please throw");
+                    logger.LogInformation("Make it empty");
+                    return "OK";
+                });
+                app.MapGet("/long-log", () =>
+                {
+                    logger.LogInformation(new string('b', 3_000));
+                    return "OK";
+                });
+                app.MapGet("/many-logs", () =>
+                {
+                    for (var i = 0; i < 1_005; i++)
+                        logger.LogInformation("Log {Index}", i);
+                    return "OK";
+                });
             },
             arguments
         );

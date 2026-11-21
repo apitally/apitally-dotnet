@@ -41,28 +41,25 @@ internal sealed class OtlpReceiver : IAsyncDisposable
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         var app = builder.Build();
         var receiver = new OtlpReceiver(app);
-        app.MapPost(
-            "/v1/{signal}",
-            async (HttpContext context) =>
-            {
-                using var body = new MemoryStream();
-                await context.Request.Body.CopyToAsync(body);
-                var export = new ReceivedExport(
-                    context.Request.Path,
-                    context.Request.ContentType,
-                    context.Request.Headers.ContentEncoding,
-                    context.Request.Headers.Authorization,
-                    context.Request.Headers["Apitally-Env"],
-                    body.ToArray()
-                );
-                var (status, interval) = receiver.Respond(export);
-                receiver.Exports.Enqueue(export);
-                receiver.received.Release();
-                context.Response.StatusCode = status;
-                if (interval is not null)
-                    context.Response.Headers["Apitally-Export-Interval"] = interval;
-            }
-        );
+        app.MapPost("/v1/{signal}", async (HttpContext context) =>
+        {
+            using var body = new MemoryStream();
+            await context.Request.Body.CopyToAsync(body);
+            var export = new ReceivedExport(
+                context.Request.Path,
+                context.Request.ContentType,
+                context.Request.Headers.ContentEncoding,
+                context.Request.Headers.Authorization,
+                context.Request.Headers["Apitally-Env"],
+                body.ToArray()
+            );
+            var (status, interval) = receiver.Respond(export);
+            receiver.Exports.Enqueue(export);
+            receiver.received.Release();
+            context.Response.StatusCode = status;
+            if (interval is not null)
+                context.Response.Headers["Apitally-Export-Interval"] = interval;
+        });
         await app.StartAsync();
         var address = app
             .Services.GetRequiredService<IServer>()

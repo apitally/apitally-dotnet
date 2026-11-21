@@ -20,15 +20,11 @@ public class TracingIntegrationTests
         await using var receiver = await OtlpReceiver.StartAsync();
         await using var host = await ApplicationHost.StartMinimalAsync(
             receiver,
-            configureApp: app =>
-                app.MapGet(
-                    "/work",
-                    () =>
-                    {
-                        using var activity = ApplicationSource.StartActivity("application-work");
-                        return "OK";
-                    }
-                )
+            configureApp: app => app.MapGet("/work", () =>
+                {
+                    using var activity = ApplicationSource.StartActivity("application-work");
+                    return "OK";
+                })
         );
 
         await host.Client.GetAsync("/work");
@@ -86,17 +82,13 @@ public class TracingIntegrationTests
         using var outgoing = new HttpClient();
         await using var host = await ApplicationHost.StartMinimalAsync(
             receiver,
-            configureApp: app =>
-                app.MapGet(
-                    "/outgoing",
-                    async () =>
-                    {
-                        using var response = await outgoing.GetAsync(
-                            new Uri(receiver.Endpoint, "/other")
-                        );
-                        return (int)response.StatusCode;
-                    }
-                )
+            configureApp: app => app.MapGet("/outgoing", async () =>
+                {
+                    using var response = await outgoing.GetAsync(
+                        new Uri(receiver.Endpoint, "/other")
+                    );
+                    return (int)response.StatusCode;
+                })
         );
 
         await host.Client.GetAsync("/outgoing");
@@ -137,45 +129,38 @@ public class TracingIntegrationTests
     {
         await using var receiver = await OtlpReceiver.StartAsync();
         var applicationSpans = new List<Activity>();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder =>
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+        {
+            void AddApplicationTracing() =>
+                builder
+                    .Services.AddOpenTelemetry()
+                    .ConfigureResource(resource => resource.AddService("orders"))
+                    .WithTracing(tracing =>
+                        tracing.AddAspNetCoreInstrumentation().AddInMemoryExporter(applicationSpans)
+                    );
+            if (isApplicationFirst)
+                AddApplicationTracing();
+            builder.Services.AddApitally(options =>
             {
-                void AddApplicationTracing() =>
-                    builder
-                        .Services.AddOpenTelemetry()
-                        .ConfigureResource(resource => resource.AddService("orders"))
-                        .WithTracing(tracing =>
-                            tracing
-                                .AddAspNetCoreInstrumentation()
-                                .AddInMemoryExporter(applicationSpans)
-                        );
-                if (isApplicationFirst)
-                    AddApplicationTracing();
-                builder.Services.AddApitally(options =>
-                {
-                    options.CaptureRequestHeaders = true;
-                    options.CaptureResponseBody = true;
-                });
-                if (!isApplicationFirst)
-                    AddApplicationTracing();
-            }
-        );
+                options.CaptureRequestHeaders = true;
+                options.CaptureResponseBody = true;
+            });
+            if (!isApplicationFirst)
+                AddApplicationTracing();
+        });
 
         await host.Client.GetAsync("/items/1");
         await host.StopAsync();
 
         Assert.Equal(2, receiver.Spans().Count);
         Assert.Single(receiver.Spans(), span => span.Kind == OtlpSpan.Types.SpanKind.Server);
-        var server = Assert.Single(
-            applicationSpans,
-            activity => activity.DisplayName == "GET /items/{id:int}"
+        var server = Assert.Single(applicationSpans, activity =>
+            activity.DisplayName == "GET /items/{id:int}"
         );
         Assert.Contains(applicationSpans, activity => activity.DisplayName == "load-item");
         Assert.True(receiver.Spans().Server().Attributes().ContainsKey("apitally.response.body"));
-        Assert.DoesNotContain(
-            server.TagObjects,
-            tag => tag.Key.StartsWith("apitally.") || tag.Key.StartsWith("http.request.header.")
+        Assert.DoesNotContain(server.TagObjects, tag =>
+            tag.Key.StartsWith("apitally.") || tag.Key.StartsWith("http.request.header.")
         );
         var resource = OtlpDecoding.Attributes(receiver.ResourceSpans()[0].Resource.Attributes);
         Assert.Equal("orders", resource["service.name"]);
@@ -187,12 +172,10 @@ public class TracingIntegrationTests
     public async Task ApplicationSamplerGovernsExportedDetail(SamplingDecision decision)
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder =>
-                builder
-                    .Services.AddOpenTelemetry()
-                    .WithTracing(tracing => tracing.SetSampler(new FixedSampler(decision)))
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder
+                .Services.AddOpenTelemetry()
+                .WithTracing(tracing => tracing.SetSampler(new FixedSampler(decision)))
         );
 
         await host.Client.GetAsync("/items/1");
@@ -205,16 +188,14 @@ public class TracingIntegrationTests
     public async Task RequestsFilteredByApplicationInstrumentationAreReleased()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder =>
-                builder
-                    .Services.AddOpenTelemetry()
-                    .WithTracing(tracing =>
-                        tracing.AddAspNetCoreInstrumentation(options =>
-                            options.Filter = context => context.Request.Path != "/items/1"
-                        )
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder
+                .Services.AddOpenTelemetry()
+                .WithTracing(tracing =>
+                    tracing.AddAspNetCoreInstrumentation(options =>
+                        options.Filter = context => context.Request.Path != "/items/1"
                     )
+                )
         );
 
         await host.Client.GetAsync("/items/1");
@@ -227,12 +208,10 @@ public class TracingIntegrationTests
     public async Task RequestsFilteredByApplicationProcessorAreReleased()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await ApplicationHost.StartMinimalAsync(
-            receiver,
-            builder =>
-                builder
-                    .Services.AddOpenTelemetry()
-                    .WithTracing(tracing => tracing.AddProcessor(new UnrecordingProcessor()))
+        await using var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+            builder
+                .Services.AddOpenTelemetry()
+                .WithTracing(tracing => tracing.AddProcessor(new UnrecordingProcessor()))
         );
 
         await host.Client.GetAsync("/items/1");
@@ -251,21 +230,17 @@ public class TracingIntegrationTests
                 builder
                     .Services.AddOpenTelemetry()
                     .WithTracing(tracing => tracing.AddSource(ApplicationSource.Name)),
-            app =>
-                app.MapGet(
-                    "/hub",
-                    () =>
-                    {
-                        // Like a SignalR hub invocation: a parentless SERVER activity.
-                        Activity.Current = null;
-                        using var invocation = ApplicationSource.StartActivity(
-                            "hub-invocation",
-                            ActivityKind.Server
-                        );
-                        using (ApplicationSource.StartActivity("hub-child")) { }
-                        return invocation?.Recorded;
-                    }
-                )
+            app => app.MapGet("/hub", () =>
+                {
+                    // Like a SignalR hub invocation: a parentless SERVER activity.
+                    Activity.Current = null;
+                    using var invocation = ApplicationSource.StartActivity(
+                        "hub-invocation",
+                        ActivityKind.Server
+                    );
+                    using (ApplicationSource.StartActivity("hub-child")) { }
+                    return invocation?.Recorded;
+                })
         );
 
         var recorded = await host.Client.GetStringAsync("/hub");
@@ -286,9 +261,8 @@ public class TracingIntegrationTests
             .AddInMemoryExporter(applicationSpans)
             .Build();
         await using (
-            var host = await ApplicationHost.StartMinimalAsync(
-                receiver,
-                builder => builder.Services.AddSingleton(provider)
+            var host = await ApplicationHost.StartMinimalAsync(receiver, builder =>
+                builder.Services.AddSingleton(provider)
             )
         )
         {
@@ -316,10 +290,8 @@ public class TracingIntegrationTests
                         tracing.AddHttpClientInstrumentation().AddInMemoryExporter(applicationSpans)
                     ),
             app =>
-                app.MapGet(
-                    "/outgoing",
-                    async () =>
-                        (await outgoing.GetAsync(new Uri(receiver.Endpoint, "/other"))).StatusCode
+                app.MapGet("/outgoing", async () =>
+                    (await outgoing.GetAsync(new Uri(receiver.Endpoint, "/other"))).StatusCode
                 )
         );
 

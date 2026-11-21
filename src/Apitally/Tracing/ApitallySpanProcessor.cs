@@ -75,8 +75,7 @@ internal sealed class ApitallySpanProcessor(
     private Resource GetExportResource(BaseProvider? provider) =>
         provider is null
             ? Resource.Empty
-            : exportResources.GetValue(
-                provider,
-                key => OtlpEncoder.CreateExportResource(key.GetResource(), env)
+            : exportResources.GetValue(provider, key =>
+                OtlpEncoder.CreateExportResource(key.GetResource(), env)
             );
 }

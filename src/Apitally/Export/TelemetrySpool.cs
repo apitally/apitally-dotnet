@@ -209,8 +209,7 @@ internal sealed class TelemetrySpool : IDisposable
         while (currentFiles.Values.Concat(closedFiles).Sum(file => file.StoredSize) > MaxSize)
         {
             var byAge = closedFiles.OrderBy(file => file.Sequence).ToList();
-            var oldest =
-                byAge.FirstOrDefault(file => file.Signal != TelemetrySignal.Metrics)
+            var oldest = byAge.FirstOrDefault(file => file.Signal != TelemetrySignal.Metrics)
                 ?? byAge.FirstOrDefault();
             if (oldest is null)
                 return;

@@ -111,14 +111,11 @@ public class ConsumerUpdatesTests
                 emitted.Enqueue(log);
         });
         var updates = new ConsumerUpdates(new InternalEvents(processor, TimeProvider.System));
-        return (
-            updates,
-            () =>
-            {
-                processor.Shutdown();
-                return [.. emitted];
-            }
-        );
+        return (updates, () =>
+        {
+            processor.Shutdown();
+            return [.. emitted];
+        });
     }
 
     private static RequestConsumer Consumer(
