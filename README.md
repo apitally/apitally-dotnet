@@ -46,7 +46,7 @@ Learn more about Apitally on our 🌎 [website](https://apitally.io) or check ou
 
 ## Compatibility
 
-The SDK supports [**ASP.NET Core**](https://github.com/dotnet/aspnetcore) on **.NET** `8`, `9` and `10`, including both Minimal APIs and MVC controllers.
+The SDK supports [**ASP.NET Core**](https://github.com/dotnet/aspnetcore) on **.NET** `8`, `9`, `10` and `11`, including both Minimal APIs and MVC controllers.
 
 Apitally also supports many other web frameworks in [JavaScript](https://github.com/apitally/apitally-js), [Python](https://github.com/apitally/apitally-py) and [Go](https://github.com/apitally/apitally-go) via our other SDKs.
 
