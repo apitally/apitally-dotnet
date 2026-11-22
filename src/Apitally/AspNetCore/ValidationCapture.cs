@@ -134,7 +134,7 @@ internal static class ValidationCapture
     }
 
     // The standard problem document is identified by its type and status fields; the compact
-    // .NET 10 Minimal API form by its default title and absent type and status.
+    // Minimal API form by its default title, absent type, and either no status or status 400.
     private static List<ValidationDetail> ParseKnownShape(
         JsonElement root,
         int statusCode,
@@ -172,9 +172,16 @@ internal static class ValidationCapture
         var isCompact =
             statusCode == 400
             && !isProblemJson
-            && !hasStatus
             && !hasType
-            && title.GetString() == ValidationTitle;
+            && title.GetString() == ValidationTitle
+            && (
+                !hasStatus
+                || (
+                    status.ValueKind == JsonValueKind.Number
+                    && status.TryGetInt32(out var compactStatus)
+                    && compactStatus == statusCode
+                )
+            );
         if (!isStandard && !isCompact)
             return [];
         var details = new List<ValidationDetail>();
