@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        framework: [net8.0, net9.0, net10.0]
+        framework: [net8.0, net9.0, net10.0, net11.0]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
@@ -45,6 +45,7 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+            11.0.x
       - name: Run tests with coverage
         run: make test-coverage FRAMEWORK=${{ matrix.framework }}
       - name: Upload coverage report to Codecov
