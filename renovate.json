@@ -8,6 +8,13 @@
       "enabled": false
     },
     {
+      "description": "Automerge test-only NuGet packages and dotnet tools",
+      "matchFileNames": ["tests/**", ".config/dotnet-tools.json"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": ".NET test dependencies",
+      "automerge": true
+    },
+    {
       "description": "Keep tests on the library's minimum OpenTelemetry version",
       "matchFileNames": ["tests/Apitally.Tests/Apitally.Tests.csproj"],
       "matchPackageNames": ["OpenTelemetry.*"],
