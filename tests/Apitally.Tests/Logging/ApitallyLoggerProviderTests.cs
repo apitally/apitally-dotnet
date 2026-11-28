@@ -51,18 +51,19 @@ public class ApitallyLoggerProviderTests
     public async Task MaskCallbackEditsApplyAndDropsAreHonored()
     {
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await StartAsync(receiver, options => options.MaskLogRecord =
-                record =>
-                {
-                    if (record.Body!.Contains("drop"))
-                        return null;
-                    if (record.Body.Contains("throw"))
-                        throw new InvalidOperationException();
-                    if (record.Body.Contains("empty"))
-                        record.Body = "";
-                    record.Body = record.Body.Replace("42", "**");
-                    return record;
-                });
+        await using var host = await StartAsync(receiver, options =>
+            options.MaskLogRecord = record =>
+            {
+                if (record.Body!.Contains("drop"))
+                    return null;
+                if (record.Body.Contains("throw"))
+                    throw new InvalidOperationException();
+                if (record.Body.Contains("empty"))
+                    record.Body = "";
+                record.Body = record.Body.Replace("42", "**");
+                return record;
+            }
+        );
 
         await host.Client.GetAsync("/log-variants");
         await host.StopAsync();
@@ -77,12 +78,13 @@ public class ApitallyLoggerProviderTests
     {
         var maskedLengths = new ConcurrentQueue<int>();
         await using var receiver = await OtlpReceiver.StartAsync();
-        await using var host = await StartAsync(receiver, options => options.MaskLogRecord =
-                record =>
-                {
-                    maskedLengths.Enqueue(record.Body!.Length);
-                    return record;
-                });
+        await using var host = await StartAsync(receiver, options =>
+            options.MaskLogRecord = record =>
+            {
+                maskedLengths.Enqueue(record.Body!.Length);
+                return record;
+            }
+        );
 
         await host.Client.GetAsync("/long-log");
         await host.StopAsync();
